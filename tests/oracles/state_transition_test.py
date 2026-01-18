@@ -11,56 +11,38 @@ FLOW.md Section 1/2 기반 상태 전환 기대값(oracle) 검증
 """
 
 import pytest
+import sys
+from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+# src를 import path에 추가
+src_path = Path(__file__).parent.parent.parent / "src"
+sys.path.insert(0, str(src_path))
 
-# ========== Domain Models (최소 정의, 추후 src/domain/에서 import) ==========
-
-class State(Enum):
-    """State Machine 상태 (FLOW Section 1)"""
-    FLAT = "FLAT"
-    ENTRY_PENDING = "ENTRY_PENDING"
-    IN_POSITION = "IN_POSITION"
-    EXIT_PENDING = "EXIT_PENDING"
-    HALT = "HALT"
-    COOLDOWN = "COOLDOWN"
-
-
-class StopStatus(Enum):
-    """Stop Loss 서브상태 (FLOW Section 1)"""
-    ACTIVE = "ACTIVE"
-    PENDING = "PENDING"
-    MISSING = "MISSING"
-    ERROR = "ERROR"
+# ========== Domain Models (src/domain/state.py에서 import) ==========
+from domain.state import (
+    State,
+    StopStatus,
+    EventType,
+    ExecutionEvent
+)
 
 
-class EventType(Enum):
-    """Execution Event 타입 (FLOW Section 2.5)"""
-    FILL = "FILL"
-    PARTIAL_FILL = "PARTIAL_FILL"
-    CANCEL = "CANCEL"
-    REJECT = "REJECT"
-    LIQUIDATION = "LIQUIDATION"
-    ADL = "ADL"
-
-
-@dataclass
-class ExecutionEvent:
-    """Execution Event (FLOW Section 2.5)"""
-    type: EventType
-    order_id: str
-    filled_qty: int = 0
-    order_qty: int = 0
-
+# ========== Test Helper Models (oracle 전용, 도메인 아님) ==========
 
 @dataclass
 class Position:
-    """Position 상태 (FLOW Section 1)"""
+    """
+    Position 상태 (Oracle 테스트용 간소화 버전)
+
+    Note: src/domain/state.py의 Position은 더 완전한 필드 포함
+    Oracle 테스트는 핵심 필드만 검증
+    """
     qty: int
     entry_price: float
-    direction: str  # "LONG" or "SHORT"
+    direction: str  # "LONG" or "SHORT" (간소화)
     stop_status: StopStatus
     entry_working: bool = False  # 잔량 주문 활성 여부
 

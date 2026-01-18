@@ -1,414 +1,433 @@
 # docs/plans/task_plan.md
-# PLAN: Account Builder Trading Flow → Implementation Tasks (v2, Bybit Inverse-ready)
-Last Updated: 2026-01-18
-Status: READY (implementation can start)
+# Task Plan: Account Builder Implementation (v2.2, Gate-Driven)
+Last Updated: 2026-01-18 (KST)
+Status: GATE-DRIVEN (No placeholder tests, Phase DoD required)
+Policy: docs/specs/account_builder_policy.md
+Flow: docs/constitution/FLOW.md
+
+---
 
 ## 0. Goal
-Implement an Account Builder system ($100 → $1,000) that is:
-- executable in real trading (Bybit Inverse Futures constraints)
-- survival-first but growth-enforcing (time + stage targets)
-- deterministic gates (no vague "X%", no "short window")
 
-Non-goal:
-- over-architecting (keep components testable + replaceable only)
-- fantasy liquidation math (use exchange-derived liq where possible)
+Account Builder ($100 → $1,000) 봇을 **실거래 가능한 수준**으로 구현한다.
+- Bybit Inverse Futures 제약 준수
+- survival-first + growth-enforcing (시간/스테이지 목표)
+- 결정 규칙은 반드시 **결정론적(deterministic)** 이고 **테스트로 고정**된다
 
----
-
-## 1. Core Constants (code constants)
-
-### 1.1 Time Targets
-- Target: $100 → $1,000 within 6–12 months (max 18)
-- Review Trigger: 12 months without $200
-- Hard Failure: 18 months without $1,000
-
-### 1.2 Hard Stops
-- Balance < $80 => HALT (manual reset only)
-- Liquidation warning / liquidation event => HALT (manual reset only)
-
-### 1.3 Leverage Policy
-- Default leverage: 3x
-- Increase: forbidden
-- Decrease: allowed (balance > $500 => consider 2x)
-
-### 1.4 Loss Budget (BTC percentage with USD cap) — FINAL
-
-Because Bybit Inverse is BTC-margined, a fixed $10 loss can become an unsafe % of balance when BTC price drops.
-Therefore loss budget is defined in BTC with a USD cap.
-
-Definitions:
-- equity_btc = wallet_balance_btc + unrealized_pnl_btc  (Bybit equity)
-- btc_price_usd = current_mark_price
-- equity_usd = equity_btc * btc_price_usd
-
-Stage USD caps:
-- Stage 1 ($100–$300): max_loss_usd_cap = $10
-- Stage 2 ($300–$700): max_loss_usd_cap = $20
-- Stage 3 ($700–$1,000): max_loss_usd_cap = $30
-
-BTC percentage caps (safety):
-- Stage 1: pct_cap = 12%
-- Stage 2: pct_cap = 8%
-- Stage 3: pct_cap = 6%
-
-Compute:
-- max_loss_btc = min(equity_btc * pct_cap, max_loss_usd_cap / btc_price_usd)
-
-This max_loss_btc is used by sizing (contracts).
-USD values are for display/logging only.
-
-### 1.5 Trade Frequency
-- balance < $300  : max_trades_per_day = 5
-- balance >= $300 : max_trades_per_day = 10
+Non-goal
+- 과한 추상화/과잉 설계
+- liquidation “추정 공식”을 멋대로 만드는 행위(가능하면 거래소-derived 사용)
 
 ---
 
-## 2. Stage & Mode (explicit parameter bundles)
+## 1. Global Rules (협상 불가)
 
-### Stage 1 — Expansion ($100 → $300) : Aggressive
-- max_loss: $10
-- EV gate: expected_profit_usd >= estimated_fee_usd * 2
-- volatility: ATR_pct_24h > 3%
-- maker-only: enforced
-- max_trades/day: 5
+### 1.1 Test Rules (No Placeholder)
+- `assert True`, `pass`, `TODO`, “일단 통과”는 **테스트로 인정하지 않는다**
+- 모든 체크박스는 **fail→pass 증거**(테스트가 실제로 실패했다가 구현 후 통과) 가 있어야 DONE
 
-### Stage 2 — Acceleration ($300 → $700) : Balanced
-- max_loss: $20
-- EV gate: expected_profit_usd >= estimated_fee_usd * 2.5
-- volatility: ATR_pct_24h > 4%
-- maker-only: optional (default maker preferred)
-- max_trades/day: 10
+### 1.2 Definition of DONE (DoD)
+각 작업 체크박스는 아래 3가지를 모두 만족해야 DONE:
+1) **관련 테스트 최소 1개 이상 존재** (`tests/` 아래)
+2) 테스트가 **구현 전 실패했고(RED)** 구현 후 통과했음(GREEN)
+3) 코드가 **Flow/Policy 정의와 충돌하지 않음** (아래 1.3~1.5 Gate)
 
-### Stage 3 — Preservation ($700 → $1,000) : Defensive
-- max_loss: $30
-- leverage: 2x default
-- EV gate: expected_profit_usd >= estimated_fee_usd * 3
-- volatility: ATR_pct_24h > 5%
-- max_trades/day: 10
+### 1.3 Oracle First
+- Primary truth: `tests/oracles/state_transition_test.py`
+  - 상태 전이 + intents를 동시에 검증한다
+  - 오라클은 “문서 흉내”가 아니라 “실제 assert”여야 한다
+- Integration tests는 연결 확인용(5~10개)으로 제한한다
 
----
+### 1.4 Architecture Gates
+- Blocking wait 금지(WS는 async, REST는 timeout 필수)
+- state machine 모든 전환은 테스트로 커버해야 함
+- Emergency는 Signal보다 **항상 먼저** 실행
+- Idempotency 보장(중복 주문 방지)
+- God Object 금지(책임 분리)
 
-## 2.4 Stage Determination (USD Equity-based) — FINAL
-
-Stage is determined ONLY at NEW ENTRY time.
-
-Balance calculation (Bybit equity):
-- equity_btc = wallet_balance_btc + unrealized_pnl_btc
-- btc_price_usd = current_mark_price
-- equity_usd = equity_btc * btc_price_usd
-
-Stage by USD equity:
-- Stage 1: equity_usd < $300
-- Stage 2: $300 ≤ equity_usd < $700
-- Stage 3: equity_usd ≥ $700
-
-Entry-time snapshot rule:
-- Determine stage at order placement time using current mark price.
-- Store `entry_stage` inside Position.
-- Open positions keep entry_stage rules until exit.
-
-Anti-flap:
-- If stage changes >2 times within 1 hour => block new entries for 1 hour.
+### 1.5 Real Trading Trap Fix Gates (FLOW v1.4~v1.6)
+아래는 “실거래 함정 방지”로 **누락 시 DONE 불가**:
+- Position Mode One-way 검증
+- PARTIAL_FILL `entry_working` 플래그
+- REST Budget 90/min rolling window
+- Reconcile 히스테리시스(연속 3회, 5초 COOLDOWN)
+- Fee 단위: contracts = USD notional
+- Liquidation gate(거래소-derived 우선)
+- Idempotency key `{signal_id}_{direction}` (SHA1 축약)
+- Stop 주문 속성: reduceOnly=True, positionIdx=0
+- Stop amend 우선(공백 방지) + debounce(20%/2s)
+- WS DEGRADED (진입 차단 + IN_POSITION 1초 reconcile)
+- orderLinkId 규격 검증(<=36, [A-Za-z0-9_-])
+- Tick/Lot 보정 + 보정 후 재검증
+- Event-driven 상태 확정(REST 폴링 금지)
+- StopLoss 방식 B 고정(혼용 금지)
+- 정상/DEGRADED 분리(DEGRADED 60초 후 HALT)
+- stop_status 서브상태(ACTIVE/PENDING/MISSING/ERROR) 감시/복구
 
 ---
 
-## 3. Emergency (Priority 0, BEFORE signal)
+## 2. Repo Map (Single Source of Location)
 
-### Thresholds (no “short window”)
-- price_drop_1m <= -10% => HALT
-- price_drop_5m <= -20% => HALT
-- exchange_latency >= 5.0s => cancel pending orders + block new entries
-- balance anomaly (<=0 or API invalid) => HALT
+src/
+domain/ # Pure (no I/O)
+state.py # State, StopStatus, Position, Pending
+intent.py # PlaceStop, AmendStop, CancelOrder, Log, Halt
+events.py # ExecutionEvent (FILL/PARTIAL/CANCEL/REJECT/LIQ/ADL)
+ids.py # signal_id, orderLinkId validators, SHA1 shortener
 
-### HALT Recovery Rules (must exist)
-Manual-only recovery:
-- liquidation warning/event
-- balance < $80
+application/ # Use-cases (pure preferred)
+transition.py # transition(...) -> (state, position, pending, intents)
+entry_allowed.py # entry gates (policy-driven)
+sizing.py # Bybit inverse sizing (contracts)
+liquidation_gate.py # liquidation distance checks + fallback rules
+emergency.py # emergency policy + recovery + cooldown
+ws_health.py # ws health tracker + degraded rules
+order_executor.py # make/submit/cancel/amend intents -> exchange calls
+stop_manager.py # stop placement/amend/debounce; stop_status recovery
+metrics_tracker.py # winrate/streak/multipliers
 
-Auto-recovery (temporary HALT only):
-- price_drop_1m > -5% AND price_drop_5m > -10% for 5 consecutive minutes
-- then: lift HALT but enforce cooldown: no entries for 30 minutes
-
----
-
-## 4. Fees (Bybit Inverse Futures, entry-time estimable)
-
-Key property (Inverse):
-- contract_value = 1 USD per contract
-- position_notional_usd = contracts
-- therefore estimated_fee_usd = contracts * fee_rate  (price cancels out)
-
-### Fee Estimation
-- maker_fee_rate = 0.0001 (0.01%)
-- taker_fee_rate = 0.0006 (0.06%)
-
-estimated_fee_usd = contracts * fee_rate
-
-### EV Gate
-if expected_profit_usd < estimated_fee_usd * K(stage):
-  REJECT
-
-### Post-trade verification
-- record actual fee from fill
-- if actual_fee_usd > estimated_fee_usd * 1.5 => log "fee_spike" and tighten entries for 24h
-
----
-
-## 4.5 Maker-only Timeout Fallback (small account realism)
-
-Rule:
-- balance < $300 => maker-only enforced by default
-
-If 3 consecutive maker timeouts for same signal:
-- allow ONE taker order
-- condition: expected_profit_usd >= estimated_taker_fee_usd * 5
-- max taker entries per day: 1
-- if taker also fails (slippage/fee spike) => block entries 1 hour
-
-Rationale:
-Survival > rule purity, but taker is heavily gated.
-
----
-
-## 5. Position Sizing (correct for Bybit Inverse)
-
-IMPORTANT:
-- Size must be computed in contracts (not USD notional as a final unit).
-- Loss budget must be enforced by STOP distance, not liquidation math.
-- Liquidation distance is a safety buffer check (use exchange-derived liq if possible).
-
-### Step A: Stop Distance (Grid Strategy) — FINAL
-
-Grid mechanics:
-- Entry: at a grid level
-- Primary exit: next grid level (profit-taking)
-- Stop loss: emergency exit when structure breaks
-
-stop_distance_pct is derived from grid spacing:
-
-Inputs:
-- grid_spacing_pct  (strategy parameter or derived from recent volatility/grid config)
-
-Rule:
-- stop_distance_pct = clamp(grid_spacing_pct * 1.5, min=2.0%, max=6.0%)
-
-Fallback:
-- if grid_spacing_pct is unavailable => stop_distance_pct = 3.0%
-
-If stop_distance_pct <= 0 or missing => REJECT
-
-### Step B: Compute contracts from loss budget — FINAL
-
-Inverse property (loss in BTC):
-- loss_btc_at_stop ≈ (contracts / entry_price_usd) * stop_distance_pct
-
-Rearrange:
-- contracts = (max_loss_btc * entry_price_usd) / stop_distance_pct
-
-Where max_loss_btc from Section 1.4.
-
-Constraints:
-- contracts >= 1 (Bybit minimum)
-- floor(contracts) to integer
-- if contracts < 1 => REJECT
-
-### Step C: Margin Feasibility (BTC-denominated, USD for display) — FINAL
-
-Inverse Futures operates in BTC margin.
-
-Definitions:
-- entry_price_usd = current_mark_price
-- contracts_to_btc = contracts / entry_price_usd
-- required_margin_btc = contracts_to_btc / leverage
-
-Fees (maker default):
-- fee_buffer_btc = contracts_to_btc * maker_fee_rate * 2   (entry+exit)
-
-Feasibility check (true):
-- if required_margin_btc + fee_buffer_btc > equity_btc:
-    REJECT
-
-USD display for logging:
-- required_margin_usd = required_margin_btc * entry_price_usd
-- equity_usd = equity_btc * entry_price_usd
-
-### Step D: Liquidation safety buffer (do NOT fake the formula)
-- Obtain liquidation price/distance from exchange endpoint if available.
-- Require: liq_distance_pct >= 30% (stage 1–2) or >= 20% (stage 3 with 2x)
-
-If cannot obtain liq estimate:
-- fallback conservative proxy: require leverage <= 3 and stop_distance_pct <= 5%
-- and force smaller contracts by 20% (safety haircut)
-
----
-
-## 6. Winrate Gating (adaptive for small accounts)
-
-Definitions:
-- N = number of CLOSED trades (rolling stats)
-- live_winrate computed on last 50 closed trades (or fewer if <50)
-
-Rules:
-- N < 10: gate uses backtest_winrate >= 55% only
-- 10 <= N < 30: soft gate
-  - if live_winrate < 40% => WARNING + size_multiplier *= 0.5
-- N >= 30: hard gate
-  - if live_winrate < 45% => HALT (manual reset recommended)
-
----
-
-## 7. Loss Streak Multiplier (with recovery)
-
-- Min multiplier: 0.25, Max: 1.0
-
-Reduction:
-- 3 consecutive losses => size_multiplier = max(size_multiplier * 0.5, 0.25)
-
-Recovery:
-- 3 consecutive wins => size_multiplier = min(size_multiplier * 1.5, 1.0)
-
----
-
-## 8. Final Criteria (code-enforceable)
-
-SUCCESS:
-- balance >= 1000
-- no liquidation
-- within 18 months
-
-FAILURE (HALT):
-- liquidation warning/event
-- balance < 80
-- time_elapsed > 18 months without reaching 1000
-
-REVIEW TRIGGER:
-- time_elapsed > 12 months without 200 => flag strategy_review_required
-
----
-
-## 9. Minimal Architecture (prevent God Object, keep testable)
-
-app/
-  orchestrator.py        # flow only: stage order + stop-on-reject
-  session_state.py       # HALT, stage, cooldown, trade/day counts
-  metrics_tracker.py     # winrate, streak, rolling stats
-
+infrastructure/
 exchange/
-  adapter.py             # interface
-  bybit_adapter.py       # real impl
-  mock_adapter.py        # tests
-
+adapter.py # interface
+bybit_adapter.py # real
+fake_exchange.py # deterministic tests
 logging/
-  trade_logger.py        # entry/exit audit
-  halt_logger.py         # HALT reasons + context snapshot
-  metrics_logger.py      # daily summaries
+trade_logger.py
+halt_logger.py
+metrics_logger.py
 
 config/
-  constants.py           # invariants (hard stops, leverage limits)
-  stage_config.yaml      # stage params (K, ATR threshold, max trades/day)
-  emergency_config.yaml  # emergency thresholds
+constants.py # hard stops, invariants
+stage_config.yaml
+emergency_config.yaml
+fees_config.yaml
+sizing_config.yaml
+performance_config.yaml
+
+tests/
+oracles/
+state_transition_test.py # primary truth: state + intents
+unit/
+test_transition_*.py
+test_entry_allowed.py
+test_sizing.py
+test_emergency.py
+test_ws_health.py
+test_ids.py
+test_stop_manager.py
+integration/
+test_orchestrator.py # only 5~10 E2E
+
+yaml
+코드 복사
 
 ---
 
-## 10. Implementation Reference
+## 3. Progress Tracking Rules (컨텍스트 끊김 방지 핵심)
 
-**실행 Flow 규칙**: `docs/constitution/FLOW.md` 참조 (헌법)
+### 3.1 문서 업데이트는 “일”의 일부다 (DONE에 포함)
+- 작업이 DONE되면 **즉시** 이 문서의 “Progress Table”에서 상태를 갱신한다.
+- 갱신하지 않으면 DONE로 인정하지 않는다(다음 작업 착수 금지).
 
-본 문서는 **구현 작업 체크리스트**만 포함.
-Flow(실행 순서/상태 전환)를 수정하려면 FLOW.md를 ADR과 함께 변경.
+### 3.2 진행 표시는 3단계만 사용
+- `TODO` : 착수 전
+- `DOING` : 브랜치/커밋에서 작업 중
+- `DONE` : DoD 충족(테스트 포함) + 표 갱신 완료
 
-### Build Order (Implementation Tasks)
+### 3.3 DONE 증거 링크 규칙
+각 DONE 항목에는 최소 2개를 남긴다:
+- 관련 테스트 파일 경로(예: `tests/unit/test_sizing.py::test_contracts_formula`)
+- 구현 파일 경로(예: `src/application/sizing.py`)
+선택(가능하면):
+- 커밋 해시/PR 번호
 
-**Phase 0: Foundation**
-- [ ] Config system (YAML + constants)
-- [ ] Core types (Enums, Dataclasses)
-- [ ] State Machine (FLAT/ENTRY_PENDING/IN_POSITION/EXIT_PENDING/HALT/COOLDOWN)
-- [ ] Position Mode Verification (FLOW v1.4 Section 3.1: One-way 강제)
-- [ ] REST Budget Tracker (90회/분 rolling window)
-- [ ] Tests: config validation, state transitions, position mode check
+### 3.4 문서 상단 “Last Updated” 반드시 갱신
+- Progress 표가 바뀌면 Last Updated도 갱신한다.
 
-**Phase 1: Market & Emergency**
-- [ ] Bybit Adapter (Interface + Mock)
-- [ ] Market Data (candles, ATR, drops, latency)
-- [ ] Emergency Checker (HALT conditions + recovery)
-- [ ] WS Health Tracker (heartbeat timeout, event drop count) (FLOW v1.5 Section 2.6)
-- [ ] WS DEGRADED Mode (진입 차단 + IN_POSITION 1초 reconcile) (FLOW v1.5 Section 2.6)
-- [ ] Tests: Emergency paths, auto-recovery, DEGRADED mode transitions
+---
 
-**Phase 2: Entry Flow (FLAT → ENTRY_PENDING)**
-- [ ] Signal Engine (Grid spacing, EV estimation)
-  - [ ] Signal ID 생성: SHA1 해시 축약 (36자 제한) (FLOW v1.5 Section 8)
-  - [ ] orderLinkId 검증: 길이 <= 36, 영숫자+`-_` 만 (FLOW v1.5 Section 8)
-- [ ] Risk Gate (7 gates: stage/trades/volatility/EV/maker/winrate/cooldown)
-  - [ ] One-way mode 검증: 포지션 있으면 반대방향 진입 REJECT (Section 3.1)
-- [ ] Position Sizer (Bybit Inverse PnL formula, margin double-check)
-  - [ ] Tick/Lot Size 보정: qtyStep, tickSize (FLOW v1.5 Section 3.4)
-  - [ ] 보정 후 재검증: margin, liquidation (FLOW v1.5 Section 3.4)
-- [ ] Liquidation Distance Calculator (FLOW v1.4 Section 7.5)
-- [ ] Liquidation Distance Gate (동적 기준: stop × 배수 + 최소 절대값) (FLOW v1.5 Section 7.5)
-- [ ] Tests: Sizing accuracy, margin feasibility, liquidation distance, reject reasons, tick/lot size
+## 4. Implementation Phases (0, 0.5, 1~6) — with Detailed Conditions
 
-**Phase 3: Execution (ENTRY_PENDING → IN_POSITION)**
-- [ ] Order Executor (Maker 주문, Idempotency)
-  - [ ] Client Order ID: {signal_id}_{direction} (entry_price 제거, Section 8)
-  - [ ] positionIdx=0 강제 (Section 3.1)
-- [ ] Execution Event Handler (fills, cancels, timeouts)
-  - [ ] PARTIAL_FILL: entry_working=True 플래그 설정 (Section 2.5)
-- [ ] Fee Post-Trade Verification (FLOW v1.4 Section 6.2)
-  - [ ] Inverse fee 단위: contracts = USD notional
-- [ ] Fee Spike Detection & 24h Tightening (fee_ratio > 1.5)
-- [ ] Maker Fallback (3 timeout → 1 taker)
-- [ ] Tests: Partial fills, duplicate orders, taker gating, fee spike handling
+### Phase 0: Foundation (Vocabulary Freeze)
+Goal: “transition vocabulary”를 고정하고 오라클로 박는다.
 
-**Phase 4: Position Management (IN_POSITION → EXIT_PENDING/FLAT)**
-- [ ] Stop Loss placement (Grid exit vs Emergency exit)
-  - [ ] Stop 주문 속성: reduceOnly=True, positionIdx=0, orderType="Market" (Section 4.5)
-  - [ ] Stop 갱신: Amend 우선 (SL 공백 방지) (FLOW v1.5 Section 2.5)
-  - [ ] Debounce: 20% threshold + 2초 간격 (Rate limit 절약) (FLOW v1.5 Section 2.5)
-  - [ ] entry_working=True 상태에서 잔량 체결 시 조건부 Stop 갱신 (Section 2.5)
-- [ ] Position Monitor (PnL tracking, exit conditions)
-- [ ] Metrics Tracker (Winrate, Streak, Size multiplier)
-- [ ] Tests: Stop order integrity, Amend vs Cancel+Place, debounce, metrics accuracy, entry_working 처리
+#### Deliverables
+- `src/domain/state.py`
+  - `State` enum: FLAT, ENTRY_PENDING, IN_POSITION, EXIT_PENDING, HALT, COOLDOWN
+  - `StopStatus` enum: ACTIVE, PENDING, MISSING, ERROR
+  - `Position` dataclass (필수 필드)
+    - `side` (LONG/SHORT or +1/-1)
+    - `qty` (int contracts or domain qty, 명확히)
+    - `entry_price_usd` (float)
+    - `entry_stage` (1/2/3)
+    - `entry_working` (bool)  # partial fill 보호
+    - `stop_price_usd` (float|None)
+    - `policy_version` (str, 예: "2.1")
+    - `stop_status` (StopStatus)
+  - `Pending` dataclass (필수 필드)
+    - `order_id` (str|None)   # exchange id
+    - `signal_id` (str)
+    - `order_link_id` (str)   # validated
+    - `direction` (LONG/SHORT)
+    - `qty` (int)
+    - `price_usd` (float|None)
+- `src/domain/intent.py`
+  - Intent base + 최소 Intent
+    - `PlaceStop(qty, trigger_price, reduce_only=True, position_idx=0, order_link_id)`
+    - `AmendStop(stop_order_id, new_qty, new_trigger_price?)`
+    - `CancelOrder(order_id|order_link_id)`
+    - `Log(level, code, message, context)`
+    - `Halt(reason, manual_only: bool)`
+- `src/domain/events.py`
+  - ExecutionEvent 최소:
+    - `FILL(qty, price, order_link_id)`
+    - `PARTIAL_FILL(qty, price, order_link_id, cum_qty?)`
+    - `CANCEL(order_link_id)`
+    - `REJECT(order_link_id, reason)`
+    - `LIQUIDATION(reason?)`
+    - `ADL(reason?)`
+- `src/application/transition.py`
+  - 시그니처(협상 불가):
+    ```python
+    def transition(
+        state,
+        position,
+        pending,
+        event,
+        ctx=None
+    ) -> tuple[state, position, pending, list[intent]]:
+        """Pure. No I/O. Deterministic."""
+    ```
 
-**Phase 5: Observability**
-- [ ] Trade Logger (Entry/Exit audit trail)
-- [ ] HALT Logger (Emergency context snapshot)
-- [ ] Metrics Logger (Daily rollup)
-- [ ] Tests: Log schema, required fields
+#### Conditions (명확한 규칙)
+- transition은 **I/O 금지**: exchange 호출/시간/랜덤/환경 접근 금지
+- 모든 side/direction/qty 단위가 문서상 정의와 일치해야 함(혼용 금지)
 
-**Phase 6: Orchestrator Integration**
-- [ ] Tick Loop (1초 간격, non-blocking)
-- [ ] Snapshot Update (Market + Account + Orders)
-- [ ] Flow execution (Emergency → Events → Position/Entry)
-- [ ] Tests: End-to-end state transitions
+#### Tests (must)
+- `tests/oracles/state_transition_test.py` 최소 10케이스, 모두 “상태+intent” assert
+  - 예: `assert new_state == State.ENTRY_PENDING`
+  - 예: `assert any(isinstance(x, PlaceStop) for x in intents)`
 
-### Definition of DONE
+#### DoD
+- [ ] core types 정의 완료(위 Deliverables 충족)
+- [ ] transition 시그니처 고정 + pure 보장
+- [ ] 오라클 10케이스: 실제 assert, placeholder 0
+- [ ] Progress Table 업데이트
 
-- [ ] Flow 규칙 (FLOW.md v1.6) 위반 없음
-- [ ] Blocking wait 사용 없음
-- [ ] BTC-denominated 계산 검증
-- [ ] State machine 모든 전환 테스트
-- [ ] Emergency가 Signal보다 우선 실행
-- [ ] Idempotency 보장 (중복 주문 방지)
-- [ ] God Object 없음 (책임 분리 검증)
-- [ ] **v1.4 구조적 구멍 8개 수정 검증**:
-  - [ ] Position Mode = One-way 검증 (Section 3.1)
-  - [ ] PARTIAL_FILL entry_working 플래그 구현 (Section 2.5)
-  - [ ] REST Budget 90회/분 합산 제한 (Section 2)
-  - [ ] Reconcile 히스테리시스 (연속 3회, 5초 COOLDOWN) (Section 2.6)
-  - [ ] Fee 계산 단위: contracts = USD notional (Section 6.2)
-  - [ ] Liquidation Gate 동적 기준 (Section 7.5)
-  - [ ] Idempotency Key: {signal_id}_{direction} SHA1 해시 축약 (Section 8)
-  - [ ] Stop 주문 속성: reduceOnly=True, positionIdx=0 (Section 4.5)
-- [ ] **v1.5 실거래 함정 5개 수정 검증**:
-  - [ ] Stop Loss Amend API 우선 (SL 공백 제거) (Section 2.5)
-  - [ ] Stop 갱신 Debounce (20% threshold + 2초) (Section 2.5)
-  - [ ] WS DEGRADED Mode (진입 차단 + IN_POSITION 1초 reconcile) (Section 2.6)
-  - [ ] orderLinkId 길이 <= 36, 영숫자+`-_` 검증 (Section 8)
-  - [ ] Tick/Lot Size 보정 + 재검증 (Section 3.4)
-- [ ] **v1.6 실거래 API 충돌 5개 수정 검증** (참조: ADR-0005):
-  - [ ] Event-driven 상태 확정 (REST 폴링 금지) (Section 4.1)
-  - [ ] Stop Loss = Conditional Order 방식 B 고정 (reduceOnly + stopLoss 혼용 금지) (Section 4.5)
-  - [ ] positionIdx=0 강제 (문자열 검증은 로그만) (Section 3.1)
-  - [ ] 정상/DEGRADED 모드 분리 (DEGRADED 60초 후 HALT) (Section 2.5)
-  - [ ] stop_status 서브상태 (ACTIVE/PENDING/MISSING/ERROR) 감시 및 복구 (Section 1)
+---
+
+### Phase 0.5: Minimal IN_POSITION Event Handling (Bridge)
+Goal: IN_POSITION에서 “죽지 않게” 만들고 핵심 이벤트를 처리한다.
+
+#### Conditions
+- IN_POSITION에서 이벤트가 오면 **무조건 결정론적 처리**:
+  - PARTIAL_FILL: `position.qty += filled_qty`, `entry_working=True`
+  - FILL(잔량 포함 최종): `entry_working=False`
+  - LIQ/ADL: `HALT` + `HaltIntent(reason)`
+- stop 관련 intent는 이 단계에서 “최소”만(필요 시 Log/Halt). 본격 stop 관리(Amend/Debounce)는 Phase 4.
+
+#### Tests
+- Oracle에 +3~6케이스 추가
+  - PARTIAL_FILL: qty 증가, entry_working True
+  - PARTIAL → FILL: entry_working False
+  - LIQUIDATION/ADL: HALT + HaltIntent
+
+#### DoD
+- [ ] IN_POSITION 이벤트 4종(PARTIAL/FILL/LIQ/ADL) 처리
+- [ ] 오라클 케이스 추가 통과
+- [ ] Progress Table 업데이트
+
+---
+
+### Phase 1: Market & Emergency
+Goal: 정책에 따른 emergency 판단과 degraded/health를 구현한다.
+
+#### Conditions (정의/측정)
+- latency는 Policy의 정의를 따른다(REST RTT p95 등)
+- “DEGRADED”는 Flow 규칙에 의해:
+  - 신규 진입 차단
+  - IN_POSITION은 1초 reconcile 수행
+  - 60초 지속 시 HALT
+
+#### Deliverables
+- exchange adapter interface + fake + bybit impl(최소 endpoints)
+- `src/application/emergency.py`
+  - drop_1m/drop_5m 판단
+  - balance anomaly 판단
+  - halt vs temporary halt + auto-recovery + cooldown
+- `src/application/ws_health.py`
+  - heartbeat timeout / event drop count -> degraded
+  - degraded duration -> halt
+
+#### Tests
+- unit: emergency 5~8케이스(하락/지연/이상치/복구/쿨다운)
+- unit: ws_health 3~5케이스(heartbeat/degraded/60s halt)
+
+#### DoD
+- [ ] emergency 판단 + recovery/cooldown 구현
+- [ ] degraded/health 구현
+- [ ] 관련 unit tests 통과
+- [ ] Progress Table 업데이트
+
+---
+
+### Phase 2: Entry Flow (FLAT → ENTRY_PENDING)
+Goal: entry_allowed(게이트) + sizing(contracts) + liquidation gate.
+
+#### Conditions (게이트는 “왜 거절됐는지” 코드로 남겨라)
+- entry_allowed는 “REJECT 이유(code)”를 반드시 반환/로그 Intent로 남김
+- Gate 순서는 고정(Policy/Flow와 충돌 금지):
+  1) emergency/entry_allowed 기본
+  2) cooldown/trades/day
+  3) stage params
+  4) volatility(ATR)
+  5) EV gate
+  6) maker/taker policy
+  7) winrate/streak multiplier
+  8) one-way mode
+
+#### Deliverables
+- `src/domain/ids.py`
+  - `make_signal_id(payload)->short_sha1`
+  - `validate_order_link_id(s)->bool` (<=36, [A-Za-z0-9_-])
+- `src/application/entry_allowed.py`
+- `src/application/sizing.py`
+- `src/application/liquidation_gate.py`
+
+#### Tests
+- unit entry_allowed: 10~15케이스(각 gate 별 reject/allow)
+- unit sizing: 8~12케이스(공식/마진/보정/재검증)
+- unit ids: 6케이스
+
+#### DoD
+- [ ] signal_id/orderLinkId 규격 구현+테스트
+- [ ] 7 gate + one-way + cooldown + reject 이유코드
+- [ ] sizing contracts 공식 + margin feasibility + tick/lot 보정
+- [ ] liquidation gate + fallback 규칙(Policy 준수)
+- [ ] Progress Table 업데이트
+
+---
+
+### Phase 3: Execution (ENTRY_PENDING → IN_POSITION)
+Goal: intents → exchange 실행(실제 I/O) + idempotency + fill/cancel 처리.
+
+#### Conditions
+- transition은 pure 유지. I/O는 executor에서만.
+- idempotency key는 `{signal_id}_{direction}` 기반으로 중복 방지.
+- “event-driven 상태 확정” 준수: REST 폴링으로 상태를 “확정”하면 실패.
+
+#### Deliverables
+- `src/application/order_executor.py`
+- `src/application/event_handler.py`
+- `src/application/fee_verification.py`
+
+#### Tests
+- unit executor: idempotency/positionIdx/ids
+- unit event_handler: fill/partial/cancel/reject
+- unit fee_verification: fee spike + tighten intent
+
+#### DoD
+- [ ] executor 구현(최소: place/cancel/amend)
+- [ ] event_handler 처리
+- [ ] fee verify + tightening
+- [ ] Progress Table 업데이트
+
+---
+
+### Phase 4: Position Management (IN_POSITION → EXIT_PENDING/FLAT)
+Goal: stop_manager(Amend 우선 + debounce) + stop_status 복구 + metrics.
+
+#### Conditions
+- Stop Loss 방식은 Policy/Flow의 “Conditional Order 방식 B” 고정
+- stop 갱신은 Amend 우선(공백 방지), cancel+place는 최후
+- debounce: 20% threshold + 최소 2초 간격
+- stop_status는 ACTIVE/PENDING/MISSING/ERROR를 감시하고 recovery intents 생성
+
+#### Deliverables
+- `src/application/stop_manager.py`
+- `src/application/metrics_tracker.py`
+
+#### Tests
+- stop_manager: 10케이스(속성/Amend/공백방지/debounce/entry_working 연동)
+- metrics: 6케이스(winrate rolling, streak mult)
+
+#### DoD
+- [ ] stop_manager + stop_status recovery
+- [ ] metrics_tracker
+- [ ] Progress Table 업데이트
+
+---
+
+### Phase 5: Observability
+Goal: 실거래 감사(audit) 가능한 로그 스키마.
+
+#### Conditions
+- 로그는 “재현 가능”해야 한다(결정 근거/정책 버전/스테이지/게이트 결과 포함)
+- HALT 로그는 “context snapshot” 필수(가격, equity, stage_candidate, latency 등)
+
+#### Deliverables
+- trade_logger / halt_logger / metrics_logger
+
+#### Tests
+- schema 테스트(필수 필드 누락 시 실패)
+
+#### DoD
+- [ ] 3 logger + schema tests
+- [ ] Progress Table 업데이트
+
+---
+
+### Phase 6: Orchestrator Integration
+Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
+
+#### Conditions (Flow 준수)
+- Tick 순서 고정: Emergency → Events → Position → Entry
+- degraded/normal 분리, degraded 60s -> halt
+- integration 케이스는 5~10개 제한(늪 방지)
+
+#### Deliverables
+- `src/application/orchestrator.py`
+
+#### Tests
+- integration 5~10케이스(전체 사이클/ halt-recover-cooldown / degraded)
+
+#### DoD
+- [ ] orchestrator + integration tests
+- [ ] Progress Table 업데이트
+
+---
+
+## 5. Progress Table (Update on Every Completion)
+
+> 규칙: DONE되면 반드시 아래 표를 갱신한다. 갱신 없으면 DONE 취소.
+
+| Phase | Status (TODO/DOING/DONE) | Evidence (tests) | Evidence (impl) | Notes / Commit |
+|------:|--------------------------|------------------|------------------|----------------|
+| 0 | TODO | - | - | - |
+| 0.5 | TODO | - | - | - |
+| 1 | TODO | - | - | - |
+| 2 | TODO | - | - | - |
+| 3 | TODO | - | - | - |
+| 4 | TODO | - | - | - |
+| 5 | TODO | - | - | - |
+| 6 | TODO | - | - | - |
+
+---
+
+## 6. Appendix: File Ownership (누가 뭘 담당하는지)
+
+- transition.py: 상태/인텐트 “유일한” 전이 엔진(핵심)
+- entry_allowed.py: entry gate 결정(거절 사유코드 포함)
+- sizing.py: contracts 산출(단위 고정)
+- emergency.py/ws_health.py: 안전 모드/복구/차단
+- order_executor.py: intents를 I/O로 실행(테스트는 fake_exchange로)
+- stop_manager.py: SL 공백 방지의 주체
+- orchestrator.py: Flow 순서 실행자(로직 최소)
+
+---
+
+## 7. Change History
+| Date | Version | Change |
+|------|---------|--------|
+| 2026-01-18 | 2.2 | 조건/DoD 강화, 진행상황표/업데이트 룰 추가, 컨텍스트 끊김 방지 구조 확정 |
+| 2026-01-18 | 2.0 | 정책/구현 분리, Gates 추가, Phase 0/0.5 강화 |

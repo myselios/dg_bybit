@@ -9,7 +9,7 @@ FLOW.md Section 2.5 기반 상태 전환 로직
 3. CANCEL 시 filled_qty 확인 필수
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from dataclasses import replace
 import sys
 from pathlib import Path
@@ -35,12 +35,23 @@ class EventRouter:
     - Execution event → state transition
     - Position 생성/업데이트
     - Stop status 관리 (외부 호출 필요)
+
+    Oracle 테스트 계약:
+    - state, position: 상태 검증
+    - halt_reason: HALT 사유 추적
+    - degraded_mode: WS 상태 추적
+    - entry_allowed: 진입 차단 여부 (HALT/COOLDOWN)
     """
 
     def __init__(self):
         self.state: State = State.FLAT
         self.position: Optional[Position] = None
         self.pending_order: Optional[PendingOrder] = None
+
+        # Oracle 테스트 계약 필드
+        self.halt_reason: Optional[str] = None
+        self.degraded_mode: bool = False
+        self.cooldown_ends_at: Optional[float] = None  # COOLDOWN 만료 시각
 
     def handle_event(
         self,
@@ -193,12 +204,54 @@ class EventRouter:
         self.state = new_state
 
     def halt(self, reason: str):
-        """HALT 상태로 전환"""
+        """
+        HALT 상태로 전환
+
+        Args:
+            reason: HALT 사유 (oracle 테스트용)
+        """
         self.state = State.HALT
+        self.halt_reason = reason
         # Position은 유지 (Stop Loss 유지)
+
+    @property
+    def entry_allowed(self) -> bool:
+        """
+        진입 허용 여부 (oracle 테스트 계약)
+
+        Returns:
+            False: HALT or COOLDOWN
+            True: otherwise
+        """
+        if self.state == State.HALT:
+            return False
+        if self.state == State.COOLDOWN:
+            return False
+        return True
+
+    def get_stop_update_intent(self) -> Optional[Dict[str, Any]]:
+        """
+        Stop 갱신 의도 반환 (oracle 테스트 계약)
+
+        Returns:
+            {
+                "action": "NONE" | "PLACE" | "AMEND" | "CANCEL_AND_PLACE",
+                "desired_qty": Optional[int],
+                "reason": str
+            }
+
+        Note: 실제 구현은 StopUpdatePolicy 컴포넌트로 분리 예정
+              지금은 테스트 계약 정의만
+        """
+        # 스텁: 실제 구현은 나중에
+        # 현재는 테스트가 FakeExchange.calls를 통해 검증 가능
+        return None
 
     def reset(self):
         """상태 초기화 (테스트용)"""
         self.state = State.FLAT
         self.position = None
         self.pending_order = None
+        self.halt_reason = None
+        self.degraded_mode = False
+        self.cooldown_ends_at = None

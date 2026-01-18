@@ -6,11 +6,12 @@ FakeExchange — 테스트용 거래소 시뮬레이터
 2. orderLinkId 중복 체크
 3. 이벤트 시뮬레이션 (테스트 제어 가능)
 4. WebSocket 이벤트 스트림 흉내
+5. Stop 명령 호출 기록 (oracle 테스트용)
 """
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Tuple, Any
 from collections import deque
 import time
 import sys
@@ -28,6 +29,14 @@ class OrderStatus(Enum):
     FILLED = "Filled"
     CANCELLED = "Cancelled"
     REJECTED = "Rejected"
+
+
+class StopOrderResult(Enum):
+    """Stop 주문 결과 (oracle 테스트용)"""
+    OK = "OK"
+    REJECTED = "REJECTED"
+    NOT_FOUND = "NOT_FOUND"
+    RATE_LIMIT = "RATE_LIMIT"
 
 
 @dataclass
@@ -63,6 +72,7 @@ class FakeExchange:
     - orderLinkId 중복 체크
     - 이벤트 시뮬레이션 (시나리오 기반)
     - 시간 제어 (tick)
+    - Stop 명령 호출 기록 (oracle 테스트용)
     """
 
     def __init__(self):
@@ -77,6 +87,15 @@ class FakeExchange:
         # 시뮬레이션 상태
         self.current_time = time.time()
         self.order_counter = 1000
+
+        # 호출 기록 (oracle 테스트용)
+        self.calls: List[Tuple[str, float, Dict[str, Any]]] = []  # (method, ts, params)
+
+        # 실패 주입 플래그 (oracle 테스트용)
+        self.inject_stop_place_reject: bool = False
+        self.inject_stop_amend_reject: bool = False
+        self.inject_stop_amend_not_found: bool = False
+        self.inject_stop_amend_rate_limit: bool = False
 
     def place_order(
         self,
@@ -279,6 +298,184 @@ class FakeExchange:
         """시나리오 초기화"""
         self.scenario = None
 
+    # ========== Stop Order Methods (Oracle 테스트용) ==========
+
+    def place_stop_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: int,
+        trigger_price: str,
+        trigger_direction: int,
+        trigger_by: str = "LastPrice",
+        order_link_id: Optional[str] = None,
+        **kwargs
+    ) -> Tuple[StopOrderResult, Optional[Order]]:
+        """
+        Stop Loss 주문 생성 (Conditional Market Order)
+
+        Args:
+            symbol: 심볼
+            side: "Buy" or "Sell"
+            qty: 수량
+            trigger_price: 트리거 가격
+            trigger_direction: 1 (rising) or 2 (falling)
+            trigger_by: "LastPrice" (기본값)
+            order_link_id: orderLinkId
+
+        Returns:
+            (StopOrderResult, Order or None)
+        """
+        # 호출 기록
+        self.calls.append((
+            "place_stop_order",
+            self.current_time,
+            {
+                "symbol": symbol,
+                "side": side,
+                "qty": qty,
+                "trigger_price": trigger_price,
+                "trigger_direction": trigger_direction,
+                "order_link_id": order_link_id
+            }
+        ))
+
+        # 실패 주입
+        if self.inject_stop_place_reject:
+            return (StopOrderResult.REJECTED, None)
+
+        # 성공: place_order 재사용
+        try:
+            order = self.place_order(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=None,
+                order_type="Market",
+                order_link_id=order_link_id,
+                trigger_price=trigger_price,
+                trigger_direction=trigger_direction,
+                trigger_by=trigger_by,
+                reduce_only=True,
+                position_idx=0,
+                **kwargs
+            )
+            return (StopOrderResult.OK, order)
+        except Exception:
+            return (StopOrderResult.REJECTED, None)
+
+    def amend_stop_order(
+        self,
+        order_id: Optional[str] = None,
+        order_link_id: Optional[str] = None,
+        qty: Optional[int] = None,
+        trigger_price: Optional[str] = None,
+        **kwargs
+    ) -> StopOrderResult:
+        """
+        Stop Loss 주문 수정 (AMEND)
+
+        Args:
+            order_id: 주문 ID
+            order_link_id: orderLinkId
+            qty: 수정할 수량
+            trigger_price: 수정할 트리거 가격
+
+        Returns:
+            StopOrderResult
+        """
+        # 호출 기록
+        self.calls.append((
+            "amend_stop_order",
+            self.current_time,
+            {
+                "order_id": order_id,
+                "order_link_id": order_link_id,
+                "qty": qty,
+                "trigger_price": trigger_price
+            }
+        ))
+
+        # 실패 주입 (우선순위: NOT_FOUND > RATE_LIMIT > REJECT)
+        if self.inject_stop_amend_not_found:
+            return StopOrderResult.NOT_FOUND
+
+        if self.inject_stop_amend_rate_limit:
+            return StopOrderResult.RATE_LIMIT
+
+        if self.inject_stop_amend_reject:
+            return StopOrderResult.REJECTED
+
+        # 주문 조회
+        order = None
+        if order_id:
+            order = self.get_order(order_id)
+        elif order_link_id:
+            order = self.get_order_by_link_id(order_link_id)
+
+        if not order:
+            return StopOrderResult.NOT_FOUND
+
+        # 수정
+        if qty is not None:
+            order.qty = qty
+        if trigger_price is not None:
+            order.trigger_price = trigger_price
+
+        return StopOrderResult.OK
+
+    def cancel_stop_order(
+        self,
+        order_id: Optional[str] = None,
+        order_link_id: Optional[str] = None,
+        **kwargs
+    ) -> StopOrderResult:
+        """
+        Stop Loss 주문 취소
+
+        Args:
+            order_id: 주문 ID
+            order_link_id: orderLinkId
+
+        Returns:
+            StopOrderResult
+        """
+        # 호출 기록
+        self.calls.append((
+            "cancel_stop_order",
+            self.current_time,
+            {
+                "order_id": order_id,
+                "order_link_id": order_link_id
+            }
+        ))
+
+        # 주문 조회
+        order = None
+        if order_id:
+            order = self.get_order(order_id)
+        elif order_link_id:
+            order = self.get_order_by_link_id(order_link_id)
+
+        if not order:
+            return StopOrderResult.NOT_FOUND
+
+        # 취소
+        order.status = OrderStatus.CANCELLED
+
+        # 이벤트 큐에 CANCEL 추가
+        event = ExecutionEvent(
+            type=EventType.CANCEL,
+            order_id=order.order_id,
+            order_link_id=order.order_link_id,
+            filled_qty=order.filled_qty,
+            order_qty=order.qty,
+            timestamp=self.current_time
+        )
+        self.event_queue.append(event)
+
+        return StopOrderResult.OK
+
     def reset(self):
         """상태 초기화 (테스트 간 격리)"""
         self.orders.clear()
@@ -286,6 +483,11 @@ class FakeExchange:
         self.event_queue.clear()
         self.scenario = None
         self.order_counter = 1000
+        self.calls.clear()
+        self.inject_stop_place_reject = False
+        self.inject_stop_amend_reject = False
+        self.inject_stop_amend_not_found = False
+        self.inject_stop_amend_rate_limit = False
 
 
 class DuplicateOrderError(Exception):
