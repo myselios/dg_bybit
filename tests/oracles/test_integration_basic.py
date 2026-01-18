@@ -16,8 +16,8 @@ src_path = Path(__file__).parent.parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 from infrastructure.exchange.fake_exchange import FakeExchange, DuplicateOrderError
-from domain.state import State, StopStatus, Direction, EventType
-from application.services.event_router import EventRouter, PendingOrder
+from domain.state import State, StopStatus, Direction, EventType, PendingOrder
+from application.event_router import EventRouter
 
 
 class TestBasicIntegration:
@@ -128,7 +128,8 @@ class TestBasicIntegration:
         router = EventRouter()
 
         # Given: ENTRY_PENDING
-        router.state = State.ENTRY_PENDING
+        current_state = State.ENTRY_PENDING
+        current_position = None
         pending_order = PendingOrder(
             order_id="test_order_1",
             order_link_id="test_order_link_1",
@@ -150,7 +151,9 @@ class TestBasicIntegration:
             timestamp=1001.0
         )
 
-        new_state, new_position = router.handle_event(event, pending_order)
+        new_state, new_position, intents = router.handle_event(
+            current_state, current_position, event, pending_order
+        )
 
         # Then: IN_POSITION
         assert new_state == State.IN_POSITION
@@ -166,7 +169,8 @@ class TestBasicIntegration:
         router = EventRouter()
 
         # Given: ENTRY_PENDING
-        router.state = State.ENTRY_PENDING
+        current_state = State.ENTRY_PENDING
+        current_position = None
         pending_order = PendingOrder(
             order_id="test_order_2",
             order_link_id="test_order_link_2",
@@ -188,7 +192,9 @@ class TestBasicIntegration:
             timestamp=1001.0
         )
 
-        new_state, new_position = router.handle_event(event, pending_order)
+        new_state, new_position, intents = router.handle_event(
+            current_state, current_position, event, pending_order
+        )
 
         # Then: IN_POSITION + entry_working=True
         assert new_state == State.IN_POSITION
@@ -202,7 +208,8 @@ class TestBasicIntegration:
         router = EventRouter()
 
         # Given: ENTRY_PENDING
-        router.state = State.ENTRY_PENDING
+        current_state = State.ENTRY_PENDING
+        current_position = None
         pending_order = PendingOrder(
             order_id="test_order_3",
             order_link_id="test_order_link_3",
@@ -224,7 +231,9 @@ class TestBasicIntegration:
             timestamp=1001.0
         )
 
-        new_state, new_position = router.handle_event(event, pending_order)
+        new_state, new_position, intents = router.handle_event(
+            current_state, current_position, event, pending_order
+        )
 
         # Then: FLAT
         assert new_state == State.FLAT
@@ -235,7 +244,8 @@ class TestBasicIntegration:
         router = EventRouter()
 
         # Given: ENTRY_PENDING
-        router.state = State.ENTRY_PENDING
+        current_state = State.ENTRY_PENDING
+        current_position = None
         pending_order = PendingOrder(
             order_id="test_order_4",
             order_link_id="test_order_link_4",
@@ -257,7 +267,9 @@ class TestBasicIntegration:
             timestamp=1001.0
         )
 
-        new_state, new_position = router.handle_event(event, pending_order)
+        new_state, new_position, intents = router.handle_event(
+            current_state, current_position, event, pending_order
+        )
 
         # Then: FLAT
         assert new_state == State.FLAT
@@ -268,7 +280,8 @@ class TestBasicIntegration:
         router = EventRouter()
 
         # Given: ENTRY_PENDING
-        router.state = State.ENTRY_PENDING
+        current_state = State.ENTRY_PENDING
+        current_position = None
         pending_order = PendingOrder(
             order_id="test_order_5",
             order_link_id="test_order_link_5",
@@ -290,7 +303,9 @@ class TestBasicIntegration:
             timestamp=1001.0
         )
 
-        new_state, new_position = router.handle_event(event, pending_order)
+        new_state, new_position, intents = router.handle_event(
+            current_state, current_position, event, pending_order
+        )
 
         # Then: IN_POSITION (부분체결됨)
         assert new_state == State.IN_POSITION

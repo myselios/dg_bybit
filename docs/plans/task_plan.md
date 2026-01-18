@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.2, Gate-Driven)
-Last Updated: 2026-01-18 22:15 (KST)
-Status: Phase 0.5 DONE (IN_POSITION 이벤트 처리 + stop 복구 + invalid qty 방어)
+# Task Plan: Account Builder Implementation (v2.3, Gate-Driven)
+Last Updated: 2026-01-18 23:45 (KST)
+Status: Gate 1 PASS (Oracle Placeholder Zero Tolerance 완전 달성)
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -426,7 +426,7 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 
 | Gate | 규칙 | 상태 | Evidence |
 |------|------|------|----------|
-| 1 | Oracle Placeholder Zero Tolerance | ✅ PASS | tests/oracles/state_transition_test.py (6케이스 실체화, assert True 제거) |
+| 1 | Oracle Placeholder Zero Tolerance | ✅ PASS (COMPLETE) | **17개 placeholder 테스트 삭제** → docs/plans/task_plan.md Oracle Backlog 섹션으로 이동. **Gate 7 검증 결과**: (1a) placeholder 표현 0개, (1b) skip/xfail 0개, (1c) 의미있는 assert 155개, (5) oracle tests 24 passed, (전체) 33 passed. **Solution D 완료** (2026-01-18 23:45) |
 | 2 | No Test-Defined Domain | ✅ PASS | tests/oracles/state_transition_test.py:24-33 (Position 클래스 제거, domain.state에서 import) |
 | 3 | Single Transition Truth | ✅ PASS | src/application/transition.py (SSOT), src/application/event_router.py (thin wrapper), tests/unit/test_event_router.py (2 증명 테스트) |
 | 4 | Repo Map Alignment | ✅ PASS | src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT 경로 확정) |
@@ -462,8 +462,64 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 
 ---
 
-## 7. Change History
+## 7. Oracle Backlog (Future Phases)
+
+> 규칙: 미래 Phase를 위한 테스트 케이스는 **테스트 파일에 placeholder로 존재하지 않는다** (Gate 1 위반).
+> 대신 이 섹션에 문서화하고, 해당 Phase 시작 시 **TDD (RED→GREEN)** 로 작성한다.
+
+### Stop Status Recovery (Phase 1+)
+
+| ID | Preconditions | Event | Expected State | Expected Intents | Evidence |
+|----|---------------|-------|----------------|------------------|----------|
+| SR-1 | state=IN_POSITION, position.qty=100, stop_status=MISSING | tick (복구 시도) | IN_POSITION | stop_status=ACTIVE, stop_recovery_fail_count=0 | TBD |
+| SR-2 | state=IN_POSITION, stop_status=MISSING, stop_recovery_fail_count=2 | tick (복구 실패) | HALT | stop_status=ERROR, halt_reason="stop_loss_unrecoverable" | TBD |
+
+### WS DEGRADED Mode (Phase 1+)
+
+| ID | Preconditions | Event | Expected State | Expected Intents | Evidence |
+|----|---------------|-------|----------------|------------------|----------|
+| WS-1 | state=FLAT, ws_heartbeat_timeout=True (10초 초과) | tick | FLAT | degraded_mode=True, entry_allowed=False | TBD |
+| WS-2 | state=IN_POSITION, ws_event_drop_count=3 | tick | IN_POSITION | degraded_mode=True, reconcile_interval=1.0, entry_allowed=True | TBD |
+| WS-3 | state=FLAT (or any), degraded_mode=True, degraded_mode_entered_at = now() - 61s | tick | HALT | halt_reason="degraded_mode_timeout" | TBD |
+
+### orderLinkId Validation (Phase 2: Entry Flow)
+
+| ID | Preconditions | Event | Expected State | Expected Intents | Evidence |
+|----|---------------|-------|----------------|------------------|----------|
+| VAL-1 | signal_id 길이 36자 초과 | place_order 호출 전 검증 | - | ValidationError, 주문 시도 0회 | TBD |
+| VAL-2 | signal_id="grid_a3f8d2e1c4_l", direction="Buy" | place_order 재시도 (동일 signal) | - | orderLinkId 동일, Bybit 중복 감지 | TBD |
+| VAL-3 | client_order_id contains invalid chars (space, unicode, special) | validate before sending | - | ValidationError, 주문 호출 0회 | TBD |
+
+### Entry Gates (Phase 2: Entry Flow)
+
+| ID | Preconditions | Event | Expected State | Expected Intents | Evidence |
+|----|---------------|-------|----------------|------------------|----------|
+| GATE-1 | state=HALT | tick | HALT | place_order calls=0 | TBD |
+| GATE-2 | state=COOLDOWN, cooldown_ends_at = now() + 3s | tick before timeout | COOLDOWN | entry_allowed=False | TBD |
+| GATE-3 | state=COOLDOWN, cooldown_ends_at = now() - 1s | tick | FLAT | - | TBD |
+| GATE-4 | positionIdx=1 or 2 | reconcile reads snapshot | HALT | halt_reason="hedge_mode_detected" | TBD |
+| GATE-5 | rest_budget_remaining=0, ws_healthy=True | tick wants to call REST snapshot | - | REST call blocked, state unchanged or degraded_mode | TBD |
+
+### Stop Update Policy (Phase 4: Position Management)
+
+> 핵심 생존 규칙: 20% threshold + 2초 debounce + AMEND 우선 + cancel+place 최후 수단
+
+| ID | Preconditions | Event | Expected State | Expected Intents | Evidence |
+|----|---------------|-------|----------------|------------------|----------|
+| PF-2 | state=IN_POSITION, position.qty=20, stop.qty=20 (ACTIVE), last_stop_update_at=1.0 | PARTIAL_FILL (+3, ts=5.0, delta 15% < 20%) | IN_POSITION | position.qty=23, stop.qty=20 (유지), stop_intent.action="NONE", reason="delta_under_20pct_threshold_blocks_stop_update" | TBD |
+| PF-3 | state=IN_POSITION, position.qty=20, stop.qty=20 (ACTIVE), last_stop_update_at=1.0 | PARTIAL_FILL (+4, ts=5.0, delta 20% == threshold) | IN_POSITION | position.qty=24, stop_intent.action="AMEND", desired_qty=24, reason="delta_at_or_above_20pct_triggers_amend_priority" | TBD |
+| PF-5 | state=IN_POSITION, position.qty=20→24, stop.qty=20 (ACTIVE), AMEND intent issued, amend_fail_count=1 | AMEND 거절, next tick | IN_POSITION | next_intent.action="AMEND", desired_qty=24, reason="amend_rejected_retry_amend_before_cancel_place" | TBD |
+| PF-6 | (A) stop_status=MISSING or (C) amend_fail_count=2 | position.qty changed + debounce 통과 | IN_POSITION | stop_intent.action="CANCEL_AND_PLACE", desired_qty, reason 조건별 | TBD |
+
+**Notes:**
+- PF-2~PF-6: Stop Update Policy는 Phase 4에서 구현. AMEND 우선 원칙과 Stop 공백 방지가 핵심.
+- PF-4 (debounce coalescing): 현재 transition()이 stateless이므로 Phase 4 Stop Update Executor에서 구현 예정.
+
+---
+
+## 8. Change History
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-18 | 2.3 | Oracle Backlog 섹션 추가 (17개 미래 케이스 문서화, Gate 1 위반 제거) |
 | 2026-01-18 | 2.2 | 조건/DoD 강화, 진행상황표/업데이트 룰 추가, 컨텍스트 끊김 방지 구조 확정 |
 | 2026-01-18 | 2.0 | 정책/구현 분리, Gates 추가, Phase 0/0.5 강화 |

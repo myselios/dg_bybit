@@ -25,13 +25,8 @@ from domain.state import (
     PendingOrder,
     Position
 )
-from application.services.state_transition import (
-    transition,
-    StopIntent,
-    HaltIntent,
-    TransitionIntents,
-    is_entry_allowed
-)
+from application.transition import transition, is_entry_allowed
+from domain.intent import TransitionIntents, StopIntent, HaltIntent
 
 
 class TestEntryPendingTransitions:
