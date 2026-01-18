@@ -1,7 +1,8 @@
 """
-State Transition — Pure Function (Single Source of Truth)
+State Transition — Pure Function
 
 FLOW.md Section 2.5 기반 상태 전환 로직 (순수 함수)
+FLOW_REF: docs/constitution/FLOW.md#2.5 (Last verified: 2026-01-19)
 
 원칙:
 1. 순수 함수 (side-effect 없음, I/O 금지)
@@ -9,7 +10,7 @@ FLOW.md Section 2.5 기반 상태 전환 로직 (순수 함수)
 3. 출력: (new_state, new_position, intents)
 4. Oracle 테스트로 전부 검증 가능
 
-이 파일이 전이 규칙의 유일한 진실(Single Source of Truth)이다.
+이 파일은 FLOW.md 전이 규칙의 구현체다 (테스트로 준수 강제).
 """
 
 from typing import Optional, Tuple

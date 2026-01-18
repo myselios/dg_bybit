@@ -30,34 +30,18 @@ CBGB는 작은 시드로 시작해 계좌의 절대 규모를 "점프"시키는 
 5. **동적 적응**: 시장 환경에 따른 임계값 조정
 6. **학습 시스템**: Hindsight 기반 결정 평가 및 개선
 
-### 문서 구조
+### 문서 구조 (Single Source of Truth)
 
-#### 헌법 (최상위)
-- **[docs/base/BASE_ARCHITECTURE.md](docs/base/BASE_ARCHITECTURE.md)**: 구조적 헌법
-- **[docs/base/INTERFACES.md](docs/base/INTERFACES.md)**: 컴포넌트 계약
+이 프로젝트는 3개의 SSOT(Single Source of Truth) 문서로 운영됩니다:
 
-#### 필수 보완 문서
-- **[docs/base/DECISION_LOG.md](docs/base/DECISION_LOG.md)**: 결정 기록 시스템
-- **[docs/base/TIME_CONTEXT.md](docs/base/TIME_CONTEXT.md)**: 시간 기반 제약
-- **[docs/base/EXECUTION_EVENTS.md](docs/base/EXECUTION_EVENTS.md)**: 실행 이벤트 처리
-- **[docs/base/EXPANSION_POLICY.md](docs/base/EXPANSION_POLICY.md)**: Expansion 재검증
+#### 헌법 (불변 규칙)
+- **[docs/constitution/FLOW.md](docs/constitution/FLOW.md)**: 실행 순서, 상태 전환, 모드 규칙
 
-#### 기능 명세서
-- **[docs/base/PRD.md](docs/base/PRD.md)**: 목표 및 제약 정의
-- **[docs/base/EV_FRAMEWORK.md](docs/base/EV_FRAMEWORK.md)**: EV 검증 기준 (v2.1: 동적 임계값)
-- **[docs/base/STATE_MACHINE.md](docs/base/STATE_MACHINE.md)**: 상태 흐름
-- **[docs/base/STRATEGY.md](docs/base/STRATEGY.md)**: 진입 조건
-- **[docs/base/RISK.md](docs/base/RISK.md)**: 리스크 정책
-- **[docs/base/POSITION_MODEL.md](docs/base/POSITION_MODEL.md)**: 사이징 로직
-- **[docs/base/EXECUTION_MODEL.md](docs/base/EXECUTION_MODEL.md)**: 체결 처리
-- **[docs/base/TASK_BREAKDOWN.md](docs/base/TASK_BREAKDOWN.md)**: 구현 우선순위 (Risk Priority)
+#### 정책 (튜닝 가능 규칙)
+- **[docs/specs/account_builder_policy.md](docs/specs/account_builder_policy.md)**: 정책 수치, 게이트 정의, 단위, 스키마
 
-#### 구현 계획 (Implementation Plans)
-- **[docs/plans/roadmap.md](docs/plans/roadmap.md)**: 전체 로드맵 (v2.1 → v3.0)
-- **[docs/plans/P0_critical_fixes.md](docs/plans/P0_critical_fixes.md)**: 청산 방지 (1주차)
-- **[docs/plans/P1_core_completion.md](docs/plans/P1_core_completion.md)**: 핵심 기능 (2~3주차)
-- **[docs/plans/P2_learning_system.md](docs/plans/P2_learning_system.md)**: 학습 시스템 (6~8주차)
-- **[docs/plans/P3_meta_system.md](docs/plans/P3_meta_system.md)**: 메타 시스템 (선택)
+#### 구현 계획 (Gate 기반 체크리스트)
+- **[docs/plans/task_plan.md](docs/plans/task_plan.md)**: Gate 기반 구현 순서, DoD, 진행표
 
 ## 개발 명령어
 

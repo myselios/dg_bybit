@@ -113,3 +113,40 @@ def test_deprecated_oracle_file_does_not_exist():
         f"Deprecated oracle file {deprecated_path} still exists. "
         "It should be renamed to test_state_transition_oracle.py."
     )
+
+
+def test_transition_py_references_flow_md():
+    """
+    transition.py가 FLOW.md를 SSOT로 참조해야 한다.
+
+    Given: src/application/transition.py 존재
+    When: 파일 헤더 읽기
+    Then: "FLOW.md" 또는 "FLOW_REF" 참조 존재
+          AND "유일한 진실" OR "Single Source of Truth" 문구 없음
+
+    치명성: SSOT 선언이 충돌하면
+           - 전이 규칙 수정 시 문서/코드 중 하나만 바뀜
+           - "문서상 PASS / 실제 PASS" 분리
+           - 회귀 테스트 기준 붕괴
+    """
+    transition_path = Path("src/application/transition.py")
+    assert transition_path.exists(), "transition.py must exist"
+
+    content = transition_path.read_text()
+
+    # FLOW.md 참조 존재 확인
+    assert "FLOW.md" in content or "FLOW_REF" in content, (
+        "transition.py must reference FLOW.md as the constitutional source. "
+        "Add 'FLOW_REF: docs/constitution/FLOW.md#section' to the header."
+    )
+
+    # 충돌 문구 제거 확인
+    assert "유일한 진실" not in content, (
+        "transition.py must not claim to be the 'sole truth'. "
+        "Remove '유일한 진실' phrase. FLOW.md is the constitutional SSOT."
+    )
+
+    assert "Single Source of Truth" not in content, (
+        "transition.py must not claim to be the 'Single Source of Truth'. "
+        "Remove this phrase. FLOW.md is the constitutional SSOT."
+    )
