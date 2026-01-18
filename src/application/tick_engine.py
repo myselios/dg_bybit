@@ -80,5 +80,5 @@ def tick(snapshot: Dict[str, Any]) -> TransitionIntents:
     # [5] Evaluate Exit (IN_POSITION only)
     # TODO: Phase 3 구현
 
-    # 현재는 빈 intents 반환
-    return TransitionIntents(stop_intents=[], halt_intents=[])
+    # 현재는 빈 intents 반환 (Phase 1+에서 구현 예정)
+    return TransitionIntents()

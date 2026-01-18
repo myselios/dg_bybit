@@ -692,54 +692,8 @@ class TestEmergencyEvents:
         assert intents.entry_blocked is True
         assert intents.stop_intent is None
 
-    def test_adl_from_in_position_should_halt(self):
-        """
-        Case 20: ADL (IN_POSITION) → HALT
-
-        Given:
-          - state = IN_POSITION
-          - position.qty = 50
-        When: ADL event
-        Then:
-          - new_state = HALT
-          - position = None (청산됨)
-          - halt_intent.reason = "adl_event_requires_immediate_halt"
-          - entry_blocked = True
-        """
-        # Given
-        current_state = State.IN_POSITION
-        current_position = Position(
-            qty=50,
-            entry_price=51000.0,
-            direction=Direction.SHORT,
-            signal_id="signal_adl",
-            stop_status=StopStatus.ACTIVE,
-            entry_working=False
-        )
-
-        event = ExecutionEvent(
-            type=EventType.ADL,
-            order_id="adl_order",
-            order_link_id="adl_link",
-            filled_qty=50,
-            order_qty=50,
-            timestamp=3500.0
-        )
-
-        # When
-        new_state, new_position, intents = transition(
-            current_state,
-            current_position,
-            event,
-            None
-        )
-
-        # Then
-        assert new_state == State.HALT
-        assert new_position is None
-        assert intents.halt_intent is not None
-        assert intents.halt_intent.reason == "adl_event_requires_immediate_halt"
-        assert intents.entry_blocked is True
+    # ADL 테스트는 oracles/test_state_transition_oracle.py에서 FLOW 준수로 검증
+    # (test_in_position_adl_reduces_qty_and_stays_in_position, test_in_position_adl_qty_zero_goes_flat)
 
     def test_liquidation_from_flat_should_halt(self):
         """

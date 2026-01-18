@@ -802,17 +802,18 @@ class TestStateTransitionOracleAdditional:
         assert "liquidation" in intents.halt_intent.reason.lower()
         assert intents.entry_blocked == True
 
-    def test_in_position_adl_should_halt(self):
+    def test_in_position_adl_reduces_qty_and_stays_in_position(self):
         """
-        Case 20: IN_POSITION + ADL → HALT
+        Case 20a: IN_POSITION + ADL (수량 감소) → IN_POSITION (FLOW Section 2.5 준수)
 
-        ADL은 체결/청산이 의도와 다르게 발생한 것이라 시스템 신뢰가 깨진 상태.
-        Given: state=IN_POSITION
-        When: ADL event arrives
+        FLOW.md: ADL → 수량 감소 or FLAT
+        Given: state=IN_POSITION, qty=100
+        When: ADL event, position_qty_after=60
         Then:
-          - state = HALT
-          - halt_reason contains "adl"
-          - entry_blocked = True
+          - state = IN_POSITION
+          - position.qty = 60
+          - stop_intent.action = AMEND
+          - stop_intent.desired_qty = 60
         """
         # Given
         initial_state = State.IN_POSITION
@@ -820,7 +821,7 @@ class TestStateTransitionOracleAdditional:
             qty=100,
             entry_price=50000.0,
             direction=Direction.LONG,
-            signal_id="test_signal_adl",
+            signal_id="test_signal_adl_reduce",
             stop_status=StopStatus.ACTIVE,
             entry_working=False
         )
@@ -832,7 +833,8 @@ class TestStateTransitionOracleAdditional:
             order_link_id="adl_link",
             filled_qty=0,
             order_qty=0,
-            timestamp=3100.0
+            timestamp=3100.0,
+            position_qty_after=60  # ADL 후 수량 감소
         )
 
         new_state, new_position, intents = transition(
@@ -843,11 +845,58 @@ class TestStateTransitionOracleAdditional:
         )
 
         # Then
-        assert new_state == State.HALT
+        assert new_state == State.IN_POSITION
+        assert new_position is not None
+        assert new_position.qty == 60
+        assert new_position.entry_working == False  # ADL 후 entry order 없음
+        assert intents.stop_intent is not None
+        assert intents.stop_intent.action == "AMEND"
+        assert intents.stop_intent.desired_qty == 60
+        assert "adl" in intents.stop_intent.reason.lower()
+
+    def test_in_position_adl_qty_zero_goes_flat(self):
+        """
+        Case 20b: IN_POSITION + ADL (수량 0) → FLAT (FLOW Section 2.5 준수)
+
+        FLOW.md: ADL → 수량 감소 or FLAT
+        Given: state=IN_POSITION, qty=100
+        When: ADL event, position_qty_after=0
+        Then:
+          - state = FLAT
+          - position = None
+        """
+        # Given
+        initial_state = State.IN_POSITION
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_adl_flat",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=False
+        )
+
+        # When
+        event = ExecutionEvent(
+            type=EventType.ADL,
+            order_id="adl_event",
+            order_link_id="adl_link",
+            filled_qty=0,
+            order_qty=0,
+            timestamp=3100.0,
+            position_qty_after=0  # ADL 후 수량 0
+        )
+
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
+
+        # Then
+        assert new_state == State.FLAT
         assert new_position is None
-        assert intents.halt_intent is not None
-        assert "adl" in intents.halt_intent.reason.lower()
-        assert intents.entry_blocked == True
 
     def test_in_position_missing_stop_emits_place_stop_intent(self):
         """

@@ -1,21 +1,18 @@
 """
-Emergency Module (FLOW.md Section 1.5 준수)
+Emergency Module (FLOW.md Section 1.5 & Section 5 준수)
 
 FLOW_REF: docs/constitution/FLOW.md#1.5 (Emergency Check, 최우선, 항상)
+FLOW_REF: docs/constitution/FLOW.md#5 (Emergency Priority: price_drop → HALT)
 Policy_REF: docs/specs/account_builder_policy.md Section 7 (Emergency Gates)
 Last verified: 2026-01-19
 
 Priority 0 (Signal보다 먼저 실행):
-- price_drop_1m <= -10% → State.COOLDOWN (auto-recovery 가능)
-- price_drop_5m <= -20% → State.COOLDOWN (auto-recovery 가능)
+- price_drop_1m <= -10% → State.HALT (FLOW Section 5 준수)
+- price_drop_5m <= -20% → State.HALT (FLOW Section 5 준수)
 - balance anomaly (equity <= 0 OR stale timestamp > 30s) → State.HALT (manual reset)
-- latency_rest >= 5.0s → emergency_block=True (State 변경 없음)
+- latency_rest >= 5.0s → emergency_block=True (진입 차단, State 변경 없음)
 
-Auto-Recovery (Policy Section 7.3):
-- drop_1m > -5% AND drop_5m > -10% for 5 consecutive minutes → FLAT
-- Recovery 후 30분 cooldown
-
-Implementation Status: Phase 1 완전 구현
+Implementation Status: FLOW Section 5 완전 준수
 """
 
 from typing import Dict, Any
@@ -29,12 +26,10 @@ class EmergencyStatus:
 
     Attributes:
         is_halt: True이면 State.HALT (manual reset 필요)
-        is_cooldown: True이면 State.COOLDOWN (auto-recovery 가능)
         is_blocked: True이면 emergency_block=True (진입 차단, State 변경 없음)
         reason: Emergency 사유 (로그/디버깅용)
     """
     is_halt: bool
-    is_cooldown: bool
     is_blocked: bool
     reason: str
 
@@ -62,20 +57,19 @@ def check_emergency(market_data) -> EmergencyStatus:
     Returns:
         EmergencyStatus
 
-    Gate 순서 (Policy Section 7):
+    Gate 순서 (FLOW Section 5):
         1. Balance Anomaly (equity <= 0 OR stale > 30s) → HALT (최우선)
-        2. Price Drop (1m <= -10% OR 5m <= -20%) → COOLDOWN
-        3. Latency (rest >= 5.0s) → emergency_block=True
+        2. Price Drop (1m <= -10% OR 5m <= -20%) → HALT (FLOW 준수)
+        3. Latency (rest >= 5.0s) → emergency_block=True (진입 차단)
 
     Implementation:
-        Phase 1 완전 구현 (Policy Section 7.1, 7.2 준수)
+        FLOW Section 5 완전 준수
     """
     # [1] Balance Anomaly Gate (최우선)
     equity_btc = market_data.get_equity_btc()
     if equity_btc <= 0.0:
         return EmergencyStatus(
             is_halt=True,
-            is_cooldown=False,
             is_blocked=False,
             reason="balance_anomaly_equity_zero_or_negative"
         )
@@ -87,13 +81,11 @@ def check_emergency(market_data) -> EmergencyStatus:
         if staleness > 30.0:
             return EmergencyStatus(
                 is_halt=True,
-                is_cooldown=False,
                 is_blocked=False,
                 reason=f"balance_anomaly_stale_timestamp_{staleness:.1f}s"
             )
 
-    # [2] Price Drop Gate
-    # Calculate price_drop from market_data
+    # [2] Price Drop Gate (FLOW Section 5: → HALT)
     if hasattr(market_data, 'get_price_drop_1m'):
         price_drop_1m = market_data.get_price_drop_1m()
     else:
@@ -106,26 +98,23 @@ def check_emergency(market_data) -> EmergencyStatus:
 
     if price_drop_1m <= -0.10:
         return EmergencyStatus(
-            is_halt=False,
-            is_cooldown=True,
+            is_halt=True,
             is_blocked=False,
             reason=f"price_drop_1m_{price_drop_1m*100:.1f}pct_exceeds_-10pct"
         )
 
     if price_drop_5m <= -0.20:
         return EmergencyStatus(
-            is_halt=False,
-            is_cooldown=True,
+            is_halt=True,
             is_blocked=False,
             reason=f"price_drop_5m_{price_drop_5m*100:.1f}pct_exceeds_-20pct"
         )
 
-    # [3] Latency Gate
+    # [3] Latency Gate (진입 차단, State 변경 없음)
     latency_rest_p95 = market_data.get_rest_latency_p95_1m()
     if latency_rest_p95 >= 5.0:
         return EmergencyStatus(
             is_halt=False,
-            is_cooldown=False,
             is_blocked=True,
             reason=f"latency_rest_p95_{latency_rest_p95:.1f}s_exceeds_5.0s"
         )
@@ -133,7 +122,6 @@ def check_emergency(market_data) -> EmergencyStatus:
     # No emergency
     return EmergencyStatus(
         is_halt=False,
-        is_cooldown=False,
         is_blocked=False,
         reason=""
     )
@@ -211,9 +199,9 @@ def evaluate(snapshot: Dict[str, Any]) -> EmergencyStatus:
         현재는 하위 호환성 유지.
     """
     # Phase 0.5 골격 유지 (항상 safe 반환)
+    # FLOW Section 5 준수: is_cooldown 제거
     return EmergencyStatus(
         is_halt=False,
-        is_cooldown=False,
         is_blocked=False,
         reason=""
     )

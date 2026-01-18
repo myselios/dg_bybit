@@ -48,3 +48,4 @@ class ExecutionEvent:
     # 추가 정보 (optional)
     exec_price: Optional[float] = None
     fee_paid: Optional[float] = None
+    position_qty_after: Optional[int] = None  # ADL 이벤트 처리용 (변경 후 포지션 수량)

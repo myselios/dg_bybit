@@ -59,13 +59,14 @@ def transition(
     - EXIT_PENDING + FILL → FLAT
     - EXIT_PENDING + REJECT/CANCEL → stay (재시도)
     - FLAT + FILL (unexpected) → HALT
-    - LIQUIDATION/ADL → HALT (any state)
+    - LIQUIDATION → HALT (any state)
+    - ADL → IN_POSITION (수량 감소 or FLAT) [FLOW Section 2.5]
     - IN_POSITION + PARTIAL_FILL/FILL → qty 증가
     """
     intents = TransitionIntents()
 
-    # Emergency events (모든 상태에서 최우선 처리)
-    if event.type in [EventType.LIQUIDATION, EventType.ADL]:
+    # Emergency events: LIQUIDATION만 최우선 처리 (FLOW 준수)
+    if event.type == EventType.LIQUIDATION:
         return _handle_emergency(current_state, event, intents)
 
     # ENTRY_PENDING 상태 처리
@@ -262,7 +263,10 @@ def _handle_emergency(
     intents: TransitionIntents
 ) -> Tuple[State, Optional[Position], TransitionIntents]:
     """
-    Emergency Events 처리 (LIQUIDATION, ADL)
+    Emergency Events 처리 (LIQUIDATION only)
+
+    FLOW 준수: LIQUIDATION만 즉시 HALT
+    (ADL은 IN_POSITION에서 수량 변경으로 처리)
 
     모든 상태에서 최우선 처리
     → HALT 전환 + halt_intent 생성
@@ -286,6 +290,7 @@ def _handle_in_position(
     IN_POSITION 상태에서 추가 체결 처리 (Phase 0.5)
 
     규칙:
+    - ADL: 수량 감소 or FLAT (FLOW Section 2.5 준수)
     - PARTIAL_FILL (entry_working=True): qty 증가 + AMEND intent
     - FILL (entry order 완전 체결): qty 증가 + entry_working=False
     - stop_status=MISSING → PLACE intent (복구)
@@ -294,6 +299,35 @@ def _handle_in_position(
     if current_position is None:
         # Position 없으면 비정상 → 상태 유지
         return State.IN_POSITION, current_position, intents
+
+    # [ADL 처리] FLOW Section 2.5 준수: 수량 감소 or FLAT
+    if event.type == EventType.ADL:
+        if event.position_qty_after is None:
+            # ADL 이벤트에 position_qty_after 없음 → HALT (데이터 무결성)
+            intents.halt_intent = HaltIntent(
+                reason="adl_event_missing_position_qty_after"
+            )
+            intents.entry_blocked = True
+            return State.HALT, None, intents
+
+        if event.position_qty_after == 0:
+            # 수량 0 → FLAT
+            return State.FLAT, None, intents
+        else:
+            # 수량 감소 → IN_POSITION 유지 + Stop AMEND
+            new_position = replace(
+                current_position,
+                qty=event.position_qty_after,
+                entry_working=False  # ADL 후 entry order는 없음
+            )
+
+            intents.stop_intent = StopIntent(
+                action="AMEND",
+                desired_qty=event.position_qty_after,
+                reason="adl_reduced_position_qty_requires_stop_update"
+            )
+
+            return State.IN_POSITION, new_position, intents
 
     # (D) Invalid qty 방어: filled_qty <= 0 → HALT
     if event.type in [EventType.PARTIAL_FILL, EventType.FILL]:

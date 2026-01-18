@@ -25,44 +25,43 @@ from infrastructure.exchange.fake_market_data import FakeMarketData
 from application.emergency import check_emergency, check_recovery
 
 
-def test_price_drop_1m_exceeds_threshold_enters_cooldown():
+def test_price_drop_1m_exceeds_threshold_enters_halt():
     """
-    price_drop_1m <= -10%이면 COOLDOWN 진입.
+    price_drop_1m <= -10%이면 HALT 진입 (FLOW Section 5 준수).
 
     Given: price_drop_1m = -12% (threshold 초과)
     When: check_emergency 호출
-    Then: is_cooldown=True, is_halt=False, is_blocked=False
+    Then: is_halt=True, is_blocked=False
 
-    Policy: docs/specs/account_builder_policy.md Section 7.2
+    FLOW: docs/constitution/FLOW.md Section 5 (Emergency Priority)
     """
     fake_data = FakeMarketData()
     fake_data.inject_price_drop(pct_1m=-0.12, pct_5m=-0.05)
 
     status = check_emergency(fake_data)
 
-    assert status.is_cooldown is True, "price_drop_1m <= -10% should trigger COOLDOWN"
-    assert status.is_halt is False, "price drop alone should not HALT"
-    assert status.is_blocked is False, "price drop triggers COOLDOWN, not block"
+    assert status.is_halt is True, "price_drop_1m <= -10% should trigger HALT"
+    assert status.is_blocked is False, "price drop triggers HALT, not block"
     assert "price_drop_1m" in status.reason.lower()
 
 
-def test_price_drop_5m_exceeds_threshold_enters_cooldown():
+def test_price_drop_5m_exceeds_threshold_enters_halt():
     """
-    price_drop_5m <= -20%이면 COOLDOWN 진입.
+    price_drop_5m <= -20%이면 HALT 진입 (FLOW Section 5 준수).
 
     Given: price_drop_5m = -22% (threshold 초과)
     When: check_emergency 호출
-    Then: is_cooldown=True
+    Then: is_halt=True
 
-    Policy: docs/specs/account_builder_policy.md Section 7.2
+    FLOW: docs/constitution/FLOW.md Section 5 (Emergency Priority)
     """
     fake_data = FakeMarketData()
     fake_data.inject_price_drop(pct_1m=-0.05, pct_5m=-0.22)
 
     status = check_emergency(fake_data)
 
-    assert status.is_cooldown is True, "price_drop_5m <= -20% should trigger COOLDOWN"
-    assert status.is_halt is False
+    assert status.is_halt is True, "price_drop_5m <= -20% should trigger HALT"
+    assert status.is_blocked is False
     assert "price_drop_5m" in status.reason.lower()
 
 
@@ -72,17 +71,16 @@ def test_price_drop_both_below_threshold_no_action():
 
     Given: price_drop_1m = -5%, price_drop_5m = -10% (안전)
     When: check_emergency 호출
-    Then: is_cooldown=False, is_halt=False, is_blocked=False
+    Then: is_halt=False, is_blocked=False
 
-    Policy: 정상 변동성 허용
+    FLOW: 정상 변동성 허용
     """
     fake_data = FakeMarketData()
     fake_data.inject_price_drop(pct_1m=-0.05, pct_5m=-0.10)
 
     status = check_emergency(fake_data)
 
-    assert status.is_cooldown is False, "price drop below threshold should not trigger"
-    assert status.is_halt is False
+    assert status.is_halt is False, "price drop below threshold should not trigger"
     assert status.is_blocked is False
     assert status.reason == ""
 
@@ -104,7 +102,7 @@ def test_balance_anomaly_zero_equity_halts():
     status = check_emergency(fake_data)
 
     assert status.is_halt is True, "equity <= 0 should trigger HALT"
-    assert status.is_cooldown is False, "balance anomaly is HALT, not COOLDOWN"
+    assert status.is_blocked is False, "balance anomaly is HALT, not block"
     assert "equity" in status.reason.lower() or "balance" in status.reason.lower()
 
 
@@ -146,7 +144,6 @@ def test_latency_exceeds_5s_sets_emergency_block():
 
     assert status.is_blocked is True, "latency >= 5.0s should set emergency_block"
     assert status.is_halt is False, "latency block is not HALT"
-    assert status.is_cooldown is False, "latency block is not COOLDOWN"
     assert "latency" in status.reason.lower()
 
 
