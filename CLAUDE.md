@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **CBGB (Controlled BTC Growth Bot)** - Bybit Inverse Futures 기반 BTC 트레이딩 봇
 
 ### Core Objective
-- **목표**: BTC 수량 증가 (USD 수익 아님)
+- **목표**: USD 가치 증가 ($100 → $1,000, BTC 수량 무관)
 - **시장**: Bybit BTC Coin-Margined (Inverse) Futures only
 - **전략**: Directional-filtered Grid Strategy
+- **측정**: Account Equity in USD (BTC balance × BTC price)
 
 ## 0) 🔴 응답 관점 규칙 (Response Perspective Rules)
 
