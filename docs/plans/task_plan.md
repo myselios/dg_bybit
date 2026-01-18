@@ -1,6 +1,6 @@
 # docs/plans/task_plan.md
 # Task Plan: Account Builder Implementation (v2.5, Gate-Driven)
-Last Updated: 2026-01-19 02:00 (KST)
+Last Updated: 2026-01-19 03:00 (KST)
 Status: Phase 0/0.5 COMPLETE | Gate 1-8 ALL PASS | Migration Complete | Ready for Phase 1
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
@@ -120,6 +120,8 @@ src/
 │
 ├── infrastructure/
 │   ├── exchange/
+│   │   ├── market_data_interface.py # Phase 1: market data interface (6 methods)
+│   │   ├── fake_market_data.py # Phase 1: deterministic test data injection
 │   │   ├── adapter.py # interface
 │   │   └── bybit_adapter.py # real exchange implementation
 │   └── logging/
@@ -286,32 +288,110 @@ Goal: IN_POSITION에서 "죽지 않게" 만들고 핵심 이벤트를 처리한�
 ### Phase 1: Market & Emergency
 Goal: 정책에 따른 emergency 판단과 degraded/health를 구현한다.
 
-#### Conditions (정의/측정)
-- latency는 Policy의 정의를 따른다(REST RTT p95 등)
-- “DEGRADED”는 Flow 규칙에 의해:
-  - 신규 진입 차단
-  - IN_POSITION은 1초 reconcile 수행
-  - 60초 지속 시 HALT
+#### Conditions (정의/측정 - SSOT 정렬 완료)
 
-#### Deliverables
-- exchange adapter interface + fake + bybit impl(최소 endpoints)
+**1. Emergency 판단 기준** (Policy Section 7):
+- `price_drop_1m <= -10%` → `State.COOLDOWN` (manual_reset=False, auto-recovery 가능)
+- `price_drop_5m <= -20%` → `State.COOLDOWN` (manual_reset=False, auto-recovery 가능)
+- `balance anomaly` (equity <= 0 OR stale timestamp > 30s) → `State.HALT` (manual_reset=True)
+- `latency_rest_p95 >= 5.0s` → `emergency_block=True` (진입 차단, pending cancel, State 변경 없음)
+
+**2. WS Health 판단 기준** (FLOW Section 2.4):
+- `heartbeat timeout > 10s` → `degraded_mode=True`
+- `event drop count >= 3` → `degraded_mode=True`
+- `degraded_mode duration >= 60s` → `State.HALT` (manual_reset=True)
+
+**3. State Mapping** (SSOT 확정):
+- **Manual-only HALT**: `State.HALT` with `manual_reset=True` (liquidation, balance < 80, degraded 60s timeout)
+- **Auto-recovery temporary block**: `State.COOLDOWN` with `auto_lift_at` timestamp (price drop auto-recovery)
+- **Emergency latency block**: `emergency_block=True` (boolean flag, State 변경 없음)
+- **DEGRADED**: `degraded_mode=True` (boolean flag, State와 독립적)
+
+**4. Recovery 조건** (Policy Section 7.3):
+- **Emergency auto-recovery**: `drop_1m > -5% AND drop_5m > -10%` for 5 consecutive minutes → `State.FLAT` + cooldown 30분
+- **WS recovery**: `heartbeat OK AND event drop == 0` → `degraded_mode=False` + cooldown 5분
+- **Latency recovery**: `latency_rest_p95 < 5.0s` → `emergency_block=False` (즉시)
+
+**5. 측정 정의** (Policy Section 7.1):
+- `exchange_latency_rest_s`: REST RTT p95 over 1 minute window
+- `balance anomaly`: API returns equity <= 0 OR schema invalid OR stale timestamp > 30s
+- `price_drop_1m`: (current_price - price_1m_ago) / price_1m_ago
+- `price_drop_5m`: (current_price - price_5m_ago) / price_5m_ago
+
+#### Deliverables (의존성 순서)
+
+**1a. Market Data Interface** (선행 필수):
+- `src/infrastructure/exchange/market_data_interface.py`
+  - `get_mark_price() -> float`
+  - `get_equity_btc() -> float`
+  - `get_rest_latency_p95_1m() -> float`
+  - `get_ws_last_heartbeat_ts() -> float`
+  - `get_ws_event_drop_count() -> int`
+  - `get_timestamp() -> float`
+
+**1b. Fake Market Data** (테스트용):
+- `src/infrastructure/exchange/fake_market_data.py`
+  - Deterministic data injection
+  - `inject_price_drop(pct_1m: float, pct_5m: float)`
+  - `inject_latency(value_s: float)`
+  - `inject_balance_anomaly()`
+  - `inject_ws_event(heartbeat_ok: bool, event_drop_count: int)`
+
+**1c. Emergency Module**:
 - `src/application/emergency.py`
-  - drop_1m/drop_5m 판단
-  - balance anomaly 판단
-  - halt vs temporary halt + auto-recovery + cooldown
+  - `check_emergency(market_data) -> EmergencyStatus`
+    - EmergencyStatus(is_halt: bool, is_cooldown: bool, is_blocked: bool, reason: str)
+  - `check_recovery(market_data, cooldown_started_at) -> RecoveryStatus`
+    - RecoveryStatus(can_recover: bool, cooldown_minutes: int)
+
+**1d. WS Health Module**:
 - `src/application/ws_health.py`
-  - heartbeat timeout / event drop count -> degraded
-  - degraded duration -> halt
+  - `check_ws_health(market_data) -> WSHealthStatus`
+    - WSHealthStatus(is_degraded: bool, duration_s: float, reason: str)
+  - `check_degraded_timeout(degraded_started_at) -> bool`
 
-#### Tests
-- unit: emergency 5~8케이스(하락/지연/이상치/복구/쿨다운)
-- unit: ws_health 3~5케이스(heartbeat/degraded/60s halt)
+#### Tests (정확한 13 케이스)
 
-#### DoD
-- [ ] emergency 판단 + recovery/cooldown 구현
-- [ ] degraded/health 구현
-- [ ] 관련 unit tests 통과
-- [ ] Progress Table 업데이트
+**emergency.py (8 케이스)**:
+1. `test_price_drop_1m_exceeds_threshold_enters_cooldown`
+2. `test_price_drop_5m_exceeds_threshold_enters_cooldown`
+3. `test_price_drop_both_below_threshold_no_action`
+4. `test_balance_anomaly_zero_equity_halts`
+5. `test_balance_anomaly_stale_timestamp_halts`
+6. `test_latency_exceeds_5s_sets_emergency_block`
+7. `test_auto_recovery_after_5_consecutive_minutes`
+8. `test_auto_recovery_sets_30min_cooldown`
+
+**ws_health.py (5 케이스)**:
+1. `test_heartbeat_timeout_10s_enters_degraded`
+2. `test_event_drop_count_3_enters_degraded`
+3. `test_degraded_duration_60s_returns_halt`
+4. `test_ws_recovery_exits_degraded`
+5. `test_ws_recovery_sets_5min_cooldown`
+
+#### DoD (Definition of Done)
+
+**구현**:
+- [ ] MarketDataInterface 정의 완료 (6 메서드)
+- [ ] FakeMarketData 구현 완료 (deterministic injection 4 메서드)
+- [ ] emergency.py 구현: 4 gates (drop_1m/5m, balance, latency) + auto-recovery + 30min cooldown
+- [ ] ws_health.py 구현: heartbeat tracking + event drop tracking + 60s timeout + 5min cooldown
+
+**테스트**:
+- [ ] Unit tests: emergency 8 passed
+- [ ] Unit tests: ws_health 5 passed
+- [ ] Total: 13 passed (기본 재현 경로: pytest tests/unit/test_emergency.py tests/unit/test_ws_health.py -q)
+
+**통합**:
+- [ ] State Machine 통합 검증:
+  - emergency → State.COOLDOWN or State.HALT or emergency_block=True
+  - ws_health → degraded_mode=True or State.HALT
+- [ ] Cooldown 시간 검증: emergency 30분, ws_health 5분
+
+**문서**:
+- [ ] Progress Table 업데이트 (Evidence: pytest 결과 + 함수 목록 + 커밋 해시)
+- [ ] Gate 7 검증 통과 (Section 5.7 커맨드 7개)
+- [ ] Last Updated 갱신
 
 ---
 
