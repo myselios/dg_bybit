@@ -14,11 +14,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Callable, Tuple, Any
 from collections import deque
 import time
-import sys
-from pathlib import Path
 
-# domain.state의 EventType과 ExecutionEvent 사용 (통일)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from domain.state import EventType, ExecutionEvent
 
 

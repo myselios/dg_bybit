@@ -22,11 +22,10 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+where = ["src"]
 
 [tool.setuptools.package-dir]
-"" = "."
+"" = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

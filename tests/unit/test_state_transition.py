@@ -10,11 +10,6 @@ FLOW.md Section 2.5 기반 상태 전환 Oracle Tests
 """
 
 import pytest
-import sys
-from pathlib import Path
-
-src_path = Path(__file__).parent.parent.parent / "src"
-sys.path.insert(0, str(src_path))
 
 from domain.state import (
     State,

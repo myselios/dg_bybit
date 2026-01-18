@@ -10,12 +10,6 @@ Gate 3 통과 조건:
 """
 
 import pytest
-import sys
-from pathlib import Path
-
-# src를 import path에 추가
-src_path = Path(__file__).parent.parent.parent / "src"
-sys.path.insert(0, str(src_path))
 
 from domain.state import (
     State,

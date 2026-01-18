@@ -11,15 +11,9 @@ FLOW.md Section 1/2 기반 상태 전환 기대값(oracle) 검증
 """
 
 import pytest
-import sys
-from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
-
-# src를 import path에 추가
-src_path = Path(__file__).parent.parent.parent / "src"
-sys.path.insert(0, str(src_path))
 
 # ========== Domain Models (src/domain/state.py에서 import) ==========
 from domain.state import (
