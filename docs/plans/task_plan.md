@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.6, Gate-Driven)
-Last Updated: 2026-01-18 23:30 (KST)
-Status: Phase 0/0.5/1 COMPLETE | Gate 1-8 ALL PASS | Migration Complete | Ready for Phase 2
+# Task Plan: Account Builder Implementation (v2.7, Gate-Driven)
+Last Updated: 2026-01-19 00:15 (KST)
+Status: Phase 0/0.5/1 COMPLETE | Gate 1-8 ALL PASS | Repo Map Aligned | Ready for Phase 2
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -71,7 +71,7 @@ Non-goal
 
 ## 2. Repo Map (Single Source of Location)
 
-### 2.1 Implemented (Phase 0 완료, 실제 존재)
+### 2.1 Implemented (Phase 0+1 완료, 실제 존재)
 
 ```
 src/
@@ -82,11 +82,16 @@ src/
 │
 ├── application/
 │   ├── transition.py # ✅ transition(...) -> (state, position, intents) [SSOT]
-│   └── event_router.py # ✅ Stateless thin wrapper (입력 정규화 + transition 호출)
+│   ├── event_router.py # ✅ Stateless thin wrapper (입력 정규화 + transition 호출)
+│   ├── tick_engine.py # ✅ Tick Orchestrator (FLOW Section 2 준수, Emergency-first ordering)
+│   ├── emergency.py # ✅ Phase 1: emergency policy + recovery + cooldown (Policy Section 7.1/7.2/7.3)
+│   └── ws_health.py # ✅ Phase 1: ws health tracker + degraded rules (FLOW Section 2.4)
 │
 └── infrastructure/
     └── exchange/
-        └── fake_exchange.py # ✅ Deterministic test simulator
+        ├── fake_exchange.py # ✅ Deterministic test simulator (Phase 0)
+        ├── market_data_interface.py # ✅ Phase 1: MarketDataInterface Protocol (6 methods)
+        └── fake_market_data.py # ✅ Phase 1: Deterministic test data injection
 
 tests/
 ├── oracles/
@@ -95,14 +100,18 @@ tests/
 └── unit/
     ├── test_state_transition.py # ✅ transition() unit tests (36 cases)
     ├── test_event_router.py # ✅ Gate 3 proof (2 cases)
-    └── test_docs_ssot_paths.py # ✅ Documentation-Code path alignment (4 cases)
+    ├── test_docs_ssot_paths.py # ✅ Documentation-Code path alignment (5 cases)
+    ├── test_flow_minimum_contract.py # ✅ FLOW minimum skeleton proof (5 cases)
+    ├── test_readme_links_exist.py # ✅ README-Docs file alignment (2 cases)
+    ├── test_emergency.py # ✅ Phase 1: Emergency Check tests (8 cases)
+    └── test_ws_health.py # ✅ Phase 1: WS Health tests (5 cases)
 ```
 
-**Phase 0 DONE 증거**: 위 파일들로 62 tests passed (pytest -q), Gate 1-8 ALL PASS, services/ 디렉토리 삭제 완료, 파일명 pytest 수집 규칙 준수 (test_*.py), **문서-코드 경로 일치 검증 통과** (test_docs_ssot_paths.py 4 cases)
+**Phase 0+1 DONE 증거**: 위 파일들로 83 tests passed (pytest -q), Gate 1-8 ALL PASS, services/ 디렉토리 삭제 완료, 파일명 pytest 수집 규칙 준수 (test_*.py), **문서-코드 경로 일치 검증 통과** (test_docs_ssot_paths.py 5 cases), **FLOW 골격 검증 통과** (test_flow_minimum_contract.py 5 cases), **README 링크 정렬** (test_readme_links_exist.py 2 cases)
 
 ---
 
-### 2.2 Planned (Phase 1+ 예정, 아직 미생성)
+### 2.2 Planned (Phase 2+ 예정, 아직 미생성)
 
 ```
 src/
@@ -113,16 +122,12 @@ src/
 │   ├── entry_allowed.py # entry gates (policy-driven)
 │   ├── sizing.py # Bybit inverse sizing (contracts)
 │   ├── liquidation_gate.py # liquidation distance checks + fallback rules
-│   ├── emergency.py # emergency policy + recovery + cooldown
-│   ├── ws_health.py # ws health tracker + degraded rules
 │   ├── order_executor.py # make/submit/cancel/amend intents -> exchange calls
 │   ├── stop_manager.py # stop placement/amend/debounce; stop_status recovery
 │   └── metrics_tracker.py # winrate/streak/multipliers
 │
 ├── infrastructure/
 │   ├── exchange/
-│   │   ├── market_data_interface.py # Phase 1: market data interface (6 methods)
-│   │   ├── fake_market_data.py # Phase 1: deterministic test data injection
 │   │   ├── adapter.py # interface
 │   │   └── bybit_adapter.py # real exchange implementation
 │   └── logging/
@@ -144,8 +149,6 @@ tests/
 ├── unit/ (Phase별 생성)
 │   ├── test_entry_allowed.py
 │   ├── test_sizing.py
-│   ├── test_emergency.py
-│   ├── test_ws_health.py
 │   ├── test_ids.py
 │   └── test_stop_manager.py
 └── integration/
@@ -545,7 +548,7 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 |------:|--------------------------|------------------|------------------|----------------|
 | 0 | ✅ DONE | **Oracle 25케이스** (tests/oracles/test_state_transition_oracle.py): test_entry_pending_to_in_position_on_fill, test_entry_pending_to_flat_on_reject, test_entry_pending_to_in_position_on_partial_fill, test_exit_pending_to_flat_on_fill, test_halt_gate_adl_event, test_cooldown_gate_blocks_entry_before_timeout, test_cooldown_gate_allows_entry_after_timeout, test_one_way_mode_gate_rejects_opposite_direction 등 + Phase 0.5 추가 케이스 포함. **실행 (기본 재현 경로)**: `pytest -q` → **70 passed in 0.06s** (2026-01-18 22:49 검증). **Gate 7 검증 출력**: (1a) Placeholder 0개, (1b) Skip/Xfail 0개, (1c) Assert 157개, (2a) Domain 재정의 없음, (4b) EventRouter State 참조 없음, (5) sys.path hack 없음, (6b) Migration 구 경로 import 0개, (7) pytest 70 passed, (Migration) src/application/services/ 삭제 완료 | src/domain/state.py, src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT + FLOW_REF), src/application/event_router.py (thin wrapper), src/application/tick_engine.py (FLOW 골격), src/application/emergency_gate.py (Emergency Check), **tests/unit/test_docs_ssot_paths.py (문서-코드 경로 일치 검증 5 passed), tests/unit/test_flow_minimum_contract.py (FLOW 골격 5 passed), tests/unit/test_readme_links_exist.py (README 링크 2 passed)**. **Migration 완료**: src/application/services/ 삭제, 패키징 표준 준수 (pip install -e .[dev]) | Phase 0+0.5 완료. **DoD-3/2/1 추가 작업 포함** (commit 9be2b5c). **Phase 1 시작 가능** |
 | 0.5 | ✅ DONE | **Phase 0에 통합됨** (tests/oracles/test_state_transition_oracle.py에 포함). 개별 케이스: test_in_position_additional_partial_fill_increases_qty (Case A), test_in_position_fill_completes_entry_working_false (Case B), test_in_position_liquidation_should_halt (Case C), test_in_position_adl_should_halt (Case C), test_in_position_missing_stop_emits_place_stop_intent, test_in_position_invalid_filled_qty_halts (Case D). **실행**: `pytest -q` → **70 passed in 0.06s** | src/application/transition.py (Phase 0.5 로직: invalid qty 방어, stop_status=MISSING 복구, IN_POSITION 이벤트 처리 A-D) | Phase 0.5 완료. IN_POSITION 이벤트 처리 + stop 복구 intent + invalid qty 방어 구현 |
-| 1 | ✅ DONE | **Emergency 8케이스** (tests/unit/test_emergency.py): test_price_drop_1m_exceeds_threshold_enters_cooldown, test_price_drop_5m_exceeds_threshold_enters_cooldown, test_price_drop_both_below_threshold_no_action, test_balance_anomaly_zero_equity_halts, test_balance_anomaly_stale_timestamp_halts, test_latency_exceeds_5s_sets_emergency_block, test_auto_recovery_after_5_consecutive_minutes, test_auto_recovery_sets_30min_cooldown. **WS Health 5케이스** (tests/unit/test_ws_health.py): test_heartbeat_timeout_10s_enters_degraded, test_event_drop_count_3_enters_degraded, test_degraded_duration_60s_returns_halt, test_ws_recovery_exits_degraded, test_ws_recovery_sets_5min_cooldown. **실행**: `pytest -q` → **83 passed in 0.06s** (2026-01-18 23:30 검증). **Gate 7 검증**: (1a) Placeholder 0개, (1b) Skip/Xfail 0개, (1c) Assert 161개, (7) pytest 83 passed | src/infrastructure/exchange/market_data_interface.py (MarketDataInterface Protocol, 6 메서드), src/infrastructure/exchange/fake_market_data.py (deterministic test injection), src/application/emergency.py (4 gates: price_drop_1m/5m, balance anomaly, latency + auto-recovery + 30min cooldown), src/application/ws_health.py (heartbeat timeout, event drop, 60s degraded timeout, 5min cooldown recovery). **경로 정렬**: emergency_gate.py → emergency.py (Repo Map 일치, tick_engine.py import 수정, Legacy evaluate() 유지) | Phase 1 완료 (commit 4a24116). **DoD 충족**: MarketDataInterface + FakeMarketData + emergency.py (Policy Section 7.1, 7.2, 7.3 준수) + ws_health.py (FLOW Section 2.4 준수). **Phase 2 시작 가능** |
+| 1 | ✅ DONE | **Emergency 8케이스** (tests/unit/test_emergency.py): test_price_drop_1m_exceeds_threshold_enters_cooldown, test_price_drop_5m_exceeds_threshold_enters_cooldown, test_price_drop_both_below_threshold_no_action, test_balance_anomaly_zero_equity_halts, test_balance_anomaly_stale_timestamp_halts, test_latency_exceeds_5s_sets_emergency_block, test_auto_recovery_after_5_consecutive_minutes, test_auto_recovery_sets_30min_cooldown. **WS Health 5케이스** (tests/unit/test_ws_health.py): test_heartbeat_timeout_10s_enters_degraded, test_event_drop_count_3_enters_degraded, test_degraded_duration_60s_returns_halt, test_ws_recovery_exits_degraded, test_ws_recovery_sets_5min_cooldown. **실행**: `pytest -q` → **83 passed in 0.07s** (2026-01-19 00:10 검증). **Gate 7 검증 (실행 결과)**: (1a) Placeholder: `grep -RInE "assert[[:space:]]+True\|pytest\.skip\(\|pass[[:space:]]*#.*TODO\|TODO: implement\|NotImplementedError\|RuntimeError\(.*TODO" tests/ 2>/dev/null \| grep -v "\.pyc"` → (빈 출력, 0개), (1b) Skip/Xfail: `grep -RInE "pytest\.mark\.(skip\|xfail)\|@pytest\.mark\.(skip\|xfail)\|unittest\.SkipTest" tests/ 2>/dev/null \| grep -v "\.pyc"` → (빈 출력, 0개), (1c) Assert: `grep -RIn "assert .*==" tests/ 2>/dev/null \| wc -l` → 161, (4b) EventRouter State.: `grep -n "State\." src/application/event_router.py 2>/dev/null` → (빈 출력, 0개), (6b) Migration: `grep -RInE "from application\.services\|import application\.services" tests/ src/ 2>/dev/null \| wc -l` → 0, (7) pytest: `source venv/bin/activate && pytest -q` → 83 passed in 0.07s. **RED→GREEN 증거 (완화)**: test_emergency.py spot-check (assert status.is_cooldown is True, assert status.is_halt is False 등 실제 assert 확인 ✓), test_ws_health.py spot-check (assert status.is_degraded is True 등 실제 assert 확인 ✓), Placeholder 테스트 아님 검증 완료 (Gate 7-1a/1b/1c 통과) | src/infrastructure/exchange/market_data_interface.py (MarketDataInterface Protocol, 6 메서드), src/infrastructure/exchange/fake_market_data.py (deterministic test injection), src/application/emergency.py (4 gates: price_drop_1m/5m, balance anomaly, latency + auto-recovery + 30min cooldown), src/application/ws_health.py (heartbeat timeout, event drop, 60s degraded timeout, 5min cooldown recovery). **경로 정렬**: emergency_gate.py → emergency.py (Repo Map 일치, tick_engine.py import 수정, Legacy evaluate() 유지) | Phase 1 완료 (commit 4a24116). **DoD 충족**: MarketDataInterface + FakeMarketData + emergency.py (Policy Section 7.1, 7.2, 7.3 준수) + ws_health.py (FLOW Section 2.4 준수). **Phase 2 시작 가능** |
 | 2 | TODO | - | - | - |
 | 3 | TODO | - | - | - |
 | 4 | TODO | - | - | - |
