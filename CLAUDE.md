@@ -352,24 +352,27 @@ grep -R "from application.services" tests/ src/
 ## 9) 개발 커맨드 (Development Commands)
 
 ```bash
-# 의존성 설치
-pip install -r requirements.txt
+# 가상환경 활성화 (필수)
+source venv/bin/activate
 
-# 환경 설정 (중요!)
-export PYTHONPATH=src  # 또는 PYTHONPATH=src를 pytest 명령어 앞에 붙이기
+# 패키지 editable mode 설치 (최초 1회 또는 pyproject.toml 변경 시)
+pip install -e .
 
-# 전체 테스트
-PYTHONPATH=src pytest -q
+# 개발 의존성 설치 (pytest, mypy, ruff 등)
+pip install -e ".[dev]"
+
+# 전체 테스트 (PYTHONPATH 설정 불필요)
+pytest -q
 
 # 단일 테스트 파일
-PYTHONPATH=src pytest -q tests/oracles/state_transition_test.py
-PYTHONPATH=src pytest -q tests/unit/test_example.py -v
+pytest -q tests/oracles/state_transition_test.py
+pytest -q tests/unit/test_example.py -v
 
 # 특정 테스트 함수
-PYTHONPATH=src pytest -q tests/unit/test_example.py::test_function_name -v
+pytest -q tests/unit/test_example.py::test_function_name -v
 
 # 커버리지
-PYTHONPATH=src pytest --cov=src --cov-report=html
+pytest --cov=src --cov-report=html
 
 # 타입 체크
 mypy src/
@@ -377,14 +380,13 @@ mypy src/
 # 린트/포맷
 ruff check src/
 ruff format src/
-최소 품질 게이트 (권장, DoD에 포함)
+## 최소 품질 게이트 (권장, DoD에 포함)
 PR/완료 시 최소:
+- `ruff check src/` 통과
+- `mypy src/` 통과 (도입된 영역 기준)
+- `pytest -q` 또는 관련 타겟 테스트 통과
 
-ruff check src/ 통과
-
-mypy src/ 통과(도입된 영역 기준)
-
-pytest -q 또는 관련 타겟 테스트 통과
+**중요**: 테스트는 `pip install -e .` 이후 **PYTHONPATH 설정 없이** `pytest` 명령어만으로 실행되어야 한다.
 
 10) 레포 구조 (현재/정렬 규칙)
 구조는 docs/plans/task_plan.md의 Repo Map을 기준으로 정렬한다.

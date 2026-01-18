@@ -1194,6 +1194,53 @@ class TestPartialFillOracle:
         assert intents.stop_intent.desired_qty == 20
         assert "first_partial_fill" in intents.stop_intent.reason
 
+    def test_entry_pending_with_none_pending_order_halts(self):
+        """
+        Critical Bug Fix: ENTRY_PENDING + pending_order=None → HALT
+
+        Given: state = ENTRY_PENDING, pending_order = None
+        When: FILL event arrives
+        Then:
+          - state → HALT
+          - halt_intent.reason = "entry_pending_state_without_pending_order"
+          - entry_blocked = True
+
+        치명성: pending_order None은 상태 불일치를 의미한다.
+                더미 값(0.0, "unknown")으로 진행하는 것은 실거래 폭탄.
+                조용히 잘못된 상태로 복구하면 나중에 10시간짜리 디버깅.
+
+        실거래 시나리오:
+          - WS 단절 후 reconcile 오류
+          - 시스템 재시작 후 상태 복구 실패
+          - 이벤트 순서 뒤틀림 (FILL 먼저 도착)
+        """
+        # Given: ENTRY_PENDING인데 pending_order가 None (비정상)
+        initial_state = State.ENTRY_PENDING
+
+        # When: FILL event
+        event = ExecutionEvent(
+            type=EventType.FILL,
+            order_id="order_123",
+            order_link_id="link_123",
+            filled_qty=100,
+            order_qty=100,
+            timestamp=1000.0
+        )
+
+        new_state, new_position, intents = transition(
+            initial_state,
+            None,  # position
+            event,
+            pending_order=None  # ← 비정상: ENTRY_PENDING인데 None
+        )
+
+        # Then: HALT (상태 불일치는 조용히 넘기면 안 됨)
+        assert new_state == State.HALT
+        assert new_position is None
+        assert intents.halt_intent is not None
+        assert "entry_pending_state_without_pending_order" in intents.halt_intent.reason
+        assert intents.entry_blocked == True
+
 
 class TestStopStatusOracle:
     """

@@ -94,14 +94,27 @@ def _handle_entry_pending(
 ) -> Tuple[State, Optional[Position], TransitionIntents]:
     """
     ENTRY_PENDING 상태 처리 (FLOW Section 2.5)
+
+    Critical Safety Rule:
+      - ENTRY_PENDING인데 pending_order=None → HALT
+      - 더미 값으로 진행 금지 (실거래 폭탄)
+      - 상태 불일치는 조용히 넘기면 안 됨
     """
+    # Safety Gate: pending_order 필수 확인
+    if pending_order is None:
+        intents.halt_intent = HaltIntent(
+            reason="entry_pending_state_without_pending_order"
+        )
+        intents.entry_blocked = True
+        return State.HALT, None, intents
+
     if event.type == EventType.FILL:
         # 완전 체결 → IN_POSITION
         position = Position(
             qty=event.filled_qty,
-            entry_price=pending_order.price if pending_order else 0.0,
-            direction=_determine_direction(pending_order.side if pending_order else "Buy"),
-            signal_id=pending_order.signal_id if pending_order else "unknown",
+            entry_price=pending_order.price,
+            direction=_determine_direction(pending_order.side),
+            signal_id=pending_order.signal_id,
             stop_status=StopStatus.PENDING,
             entry_working=False
         )
@@ -119,9 +132,9 @@ def _handle_entry_pending(
         # 부분 체결 → IN_POSITION (치명적 규칙)
         position = Position(
             qty=event.filled_qty,
-            entry_price=pending_order.price if pending_order else 0.0,
-            direction=_determine_direction(pending_order.side if pending_order else "Buy"),
-            signal_id=pending_order.signal_id if pending_order else "unknown",
+            entry_price=pending_order.price,
+            direction=_determine_direction(pending_order.side),
+            signal_id=pending_order.signal_id,
             stop_status=StopStatus.PENDING,
             entry_working=True,  # 잔량 주문 활성
             entry_order_id=event.order_id
@@ -142,9 +155,9 @@ def _handle_entry_pending(
             # 부분체결 후 취소 → IN_POSITION
             position = Position(
                 qty=event.filled_qty,
-                entry_price=pending_order.price if pending_order else 0.0,
-                direction=_determine_direction(pending_order.side if pending_order else "Buy"),
-                signal_id=pending_order.signal_id if pending_order else "unknown",
+                entry_price=pending_order.price,
+                direction=_determine_direction(pending_order.side),
+                signal_id=pending_order.signal_id,
                 stop_status=StopStatus.PENDING,
                 entry_working=False  # 잔량 취소됨
             )
