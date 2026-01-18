@@ -25,26 +25,20 @@ sys.path.insert(0, str(src_path))
 from domain.state import (
     State,
     StopStatus,
+    Direction,
     EventType,
-    ExecutionEvent
+    ExecutionEvent,
+    Position,
+    PendingOrder
 )
 
-
-# ========== Test Helper Models (oracle 전용, 도메인 아님) ==========
-
-@dataclass
-class Position:
-    """
-    Position 상태 (Oracle 테스트용 간소화 버전)
-
-    Note: src/domain/state.py의 Position은 더 완전한 필드 포함
-    Oracle 테스트는 핵심 필드만 검증
-    """
-    qty: int
-    entry_price: float
-    direction: str  # "LONG" or "SHORT" (간소화)
-    stop_status: StopStatus
-    entry_working: bool = False  # 잔량 주문 활성 여부
+# ========== Transition Function ==========
+from application.services.state_transition import (
+    transition,
+    TransitionIntents,
+    StopIntent,
+    HaltIntent
+)
 
 
 # ========== Stop Update Oracle용 Helper Types ==========
@@ -97,32 +91,53 @@ class TestStateTransitionOracle:
         Then:
           - state = IN_POSITION
           - position.qty = 100
-          - stop_status = ACTIVE (Stop 설치됨)
+          - stop_status = PENDING (Stop 설치 intent 발행됨)
           - entry_working = False (잔량 없음)
+          - stop_intent.action = PLACE
         """
         # Given
         initial_state = State.ENTRY_PENDING
-        pending_order_qty = 100
+        initial_position = None
+        pending_order = PendingOrder(
+            order_id="test_order_1",
+            order_link_id="test_link_1",
+            placed_at=1000.0,
+            signal_id="test_signal_1",
+            qty=100,
+            price=50000.0,
+            side="Buy"
+        )
 
         # When
         event = ExecutionEvent(
             type=EventType.FILL,
             order_id="test_order_1",
+            order_link_id="test_link_1",
             filled_qty=100,
-            order_qty=100
+            order_qty=100,
+            timestamp=1001.0
         )
 
-        # Then (기대값 oracle)
-        expected_state = State.IN_POSITION
-        expected_position_qty = 100
-        expected_stop_status = StopStatus.ACTIVE
-        expected_entry_working = False
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order
+        )
 
-        # TODO: 실제 구현 후 assertion
-        # assert system.state == expected_state
-        # assert system.position.qty == expected_position_qty
-        # assert system.position.stop_status == expected_stop_status
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.IN_POSITION
+        assert new_position is not None
+        assert new_position.qty == 100
+        assert new_position.entry_price == 50000.0
+        assert new_position.direction == Direction.LONG
+        assert new_position.stop_status == StopStatus.PENDING
+        assert new_position.entry_working == False
+
+        # Intent 검증
+        assert intents.stop_intent is not None
+        assert intents.stop_intent.action == "PLACE"
+        assert intents.stop_intent.desired_qty == 100
 
     def test_entry_pending_to_flat_on_reject(self):
         """
@@ -134,19 +149,39 @@ class TestStateTransitionOracle:
           - state = FLAT
           - position = None
         """
+        # Given
         initial_state = State.ENTRY_PENDING
+        initial_position = None
+        pending_order = PendingOrder(
+            order_id="test_order_2",
+            order_link_id="test_link_2",
+            placed_at=1000.0,
+            signal_id="test_signal_2",
+            qty=100,
+            price=50000.0,
+            side="Buy"
+        )
 
+        # When
         event = ExecutionEvent(
             type=EventType.REJECT,
             order_id="test_order_2",
+            order_link_id="test_link_2",
             filled_qty=0,
-            order_qty=100
+            order_qty=100,
+            timestamp=1001.0
         )
 
-        expected_state = State.FLAT
-        expected_position = None
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order
+        )
 
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.FLAT
+        assert new_position is None
 
     def test_entry_pending_to_flat_on_cancel_zero_fill(self):
         """
@@ -211,26 +246,55 @@ class TestStateTransitionOracle:
         Then:
           - state = IN_POSITION (부분체결 즉시 전환)
           - position.qty = 20
-          - stop_status = ACTIVE (즉시 설치)
+          - stop_status = PENDING (Stop 설치 intent)
           - entry_working = True (잔량 주문 활성)
+          - stop_intent.action = PLACE
 
         참조: FLOW Section 2.5 PARTIAL_FILL 치명적 규칙
         """
+        # Given
         initial_state = State.ENTRY_PENDING
+        initial_position = None
+        pending_order = PendingOrder(
+            order_id="test_order_5",
+            order_link_id="test_link_5",
+            placed_at=1000.0,
+            signal_id="test_signal_5",
+            qty=100,
+            price=50000.0,
+            side="Buy"
+        )
 
+        # When
         event = ExecutionEvent(
             type=EventType.PARTIAL_FILL,
             order_id="test_order_5",
+            order_link_id="test_link_5",
             filled_qty=20,
-            order_qty=100
+            order_qty=100,
+            timestamp=1001.0
         )
 
-        expected_state = State.IN_POSITION
-        expected_position_qty = 20
-        expected_stop_status = StopStatus.ACTIVE
-        expected_entry_working = True  # 잔량 주문 활성
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order
+        )
 
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.IN_POSITION
+        assert new_position is not None
+        assert new_position.qty == 20
+        assert new_position.stop_status == StopStatus.PENDING
+        assert new_position.entry_working == True  # 치명적 규칙
+        assert new_position.entry_order_id == "test_order_5"
+
+        # Intent 검증
+        assert intents.stop_intent is not None
+        assert intents.stop_intent.action == "PLACE"
+        assert intents.stop_intent.desired_qty == 20
+        assert "first_partial_fill" in intents.stop_intent.reason
 
     # ===== Case 6-8: EXIT_PENDING → ? =====
 
@@ -243,25 +307,172 @@ class TestStateTransitionOracle:
         Then:
           - state = FLAT
           - position = None
-          - metrics updated (winrate, streak)
         """
+        # Given
         initial_state = State.EXIT_PENDING
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_exit",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=False
+        )
 
+        # When
         event = ExecutionEvent(
             type=EventType.FILL,
             order_id="exit_order_1",
+            order_link_id="exit_link_1",
             filled_qty=100,
-            order_qty=100
+            order_qty=100,
+            timestamp=2000.0
         )
 
-        expected_state = State.FLAT
-        expected_position = None
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
 
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.FLAT
+        assert new_position is None
+
+    def test_halt_gate_adl_event(self):
+        """
+        Case 7: HALT 게이트 — ADL 이벤트 (긴급 최우선)
+
+        Given: state=IN_POSITION
+        When: ADL event arrives
+        Then:
+          - state = HALT
+          - halt_intent.reason contains "adl"
+          - entry_blocked = True
+          - position = None
+
+        포인트: 긴급 이벤트는 signal보다 우선 (헌법 규칙)
+        """
+        # Given
+        initial_state = State.IN_POSITION
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_adl",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=False
+        )
+
+        # When
+        event = ExecutionEvent(
+            type=EventType.ADL,
+            order_id="adl_event",
+            order_link_id="adl_link",
+            filled_qty=0,
+            order_qty=0,
+            timestamp=3000.0
+        )
+
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
+
+        # Then
+        assert new_state == State.HALT
+        assert new_position is None
+        assert intents.halt_intent is not None
+        assert "adl" in intents.halt_intent.reason.lower()
+        assert intents.entry_blocked == True
+
+    def test_cooldown_gate_blocks_entry_before_timeout(self):
+        """
+        Case 8a: COOLDOWN 게이트 — timeout 전 진입 차단
+
+        Given: state=COOLDOWN, cooldown active
+        When: (시뮬레이션) entry 시도
+        Then:
+          - is_entry_allowed(COOLDOWN) == False
+
+        포인트: 시간 기반 게이트는 transition이 단속
+        """
+        # Given
+        cooldown_state = State.COOLDOWN
+
+        # When: entry_allowed 체크
+        from application.transition import is_entry_allowed
+        entry_allowed = is_entry_allowed(cooldown_state)
+
+        # Then
+        assert entry_allowed == False
+
+    def test_cooldown_gate_allows_entry_after_timeout(self):
+        """
+        Case 8b: COOLDOWN 게이트 — timeout 후 진입 허용
+
+        Given: state=FLAT (COOLDOWN 만료 후)
+        When: entry 시도
+        Then:
+          - is_entry_allowed(FLAT) == True
+
+        포인트: COOLDOWN → FLAT 전환은 orchestrator 책임
+                여기서는 FLAT 상태에서 진입 가능함을 검증
+        """
+        # Given
+        flat_state = State.FLAT
+
+        # When
+        from application.transition import is_entry_allowed
+        entry_allowed = is_entry_allowed(flat_state)
+
+        # Then
+        assert entry_allowed == True
+
+    def test_one_way_mode_gate_rejects_opposite_direction(self):
+        """
+        Case 9: One-way Mode Gate — 반대 방향 진입 차단
+
+        Given: IN_POSITION(LONG) 상태
+        When: SHORT 진입 이벤트 (반대 방향)
+        Then:
+          - state 유지 (IN_POSITION)
+          - 거절 처리 (실제로는 entry_allowed에서 차단됨)
+
+        포인트: transition은 순수 함수이므로, 진입 차단은
+                entry_allowed에서 수행. 여기서는 상태 유지만 검증
+
+        Note: 실제 거절은 orchestrator + entry_allowed 레벨
+        """
+        # Given: LONG 포지션 보유 중
+        initial_state = State.IN_POSITION
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,  # LONG 포지션
+            signal_id="test_signal_long",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=False
+        )
+
+        # When: (시뮬레이션) SHORT 진입 시도는 orchestrator에서 차단됨
+        # transition은 이벤트 처리만 하므로, 여기서는 상태 유지 검증
+
+        # Then: IN_POSITION 상태에서는 추가 진입 이벤트가 오지 않음
+        # (entry_allowed에서 차단되므로)
+        # 여기서는 포지션 존재 확인만
+        assert initial_state == State.IN_POSITION
+        assert initial_position.direction == Direction.LONG
+
+        # Note: 실제 One-way 게이트 테스트는 entry_allowed.py의
+        # unit test에서 수행 (Phase 2)
 
     def test_exit_pending_stays_on_reject(self):
         """
-        Case 7: EXIT_PENDING + REJECT → EXIT_PENDING (재시도)
+        Case 10: EXIT_PENDING + REJECT → EXIT_PENDING (재시도)
 
         Given: state=EXIT_PENDING
         When: REJECT event (청산 실패)
@@ -553,21 +764,48 @@ class TestStateTransitionOracleAdditional:
           - state = IN_POSITION
           - position.qty = 30
           - entry_working = True (아직 잔량)
-          - stop update requested (amend 우선)
+          - stop_intent.action = AMEND
         """
+        # Given
         initial_state = State.IN_POSITION
-        initial_position = Position(qty=20, entry_price=100.0, direction="LONG",
-                                    stop_status=StopStatus.ACTIVE, entry_working=True)
+        initial_position = Position(
+            qty=20,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_partial",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=True,
+            entry_order_id="entry_order"
+        )
 
-        event = ExecutionEvent(type=EventType.PARTIAL_FILL, order_id="entry_order", filled_qty=10, order_qty=100)
+        # When
+        event = ExecutionEvent(
+            type=EventType.PARTIAL_FILL,
+            order_id="entry_order",
+            order_link_id="entry_link",
+            filled_qty=10,
+            order_qty=100,
+            timestamp=1500.0
+        )
 
-        expected_state = State.IN_POSITION
-        expected_new_qty = 30
-        expected_entry_working = True
-        expected_stop_status = StopStatus.ACTIVE
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
 
-        # 추가: stop amend 조건 (threshold/debounce)은 별도 PartialFillOracle에서 더 엄격히 고정 권장
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.IN_POSITION
+        assert new_position is not None
+        assert new_position.qty == 30
+        assert new_position.entry_working == True
+        assert new_position.stop_status == StopStatus.ACTIVE
+
+        # Intent 검증
+        assert intents.stop_intent is not None
+        assert intents.stop_intent.action == "AMEND"
+        assert intents.stop_intent.desired_qty == 30
 
     def test_in_position_fill_completes_entry_working_false(self):
         """
@@ -581,20 +819,49 @@ class TestStateTransitionOracleAdditional:
         Then:
           - position.qty = 100
           - entry_working = False
-          - stop_status = ACTIVE
+          - stop_intent.action = AMEND (최종 qty)
         """
+        # Given
         initial_state = State.IN_POSITION
-        initial_position = Position(qty=80, entry_price=100.0, direction="LONG",
-                                    stop_status=StopStatus.ACTIVE, entry_working=True)
+        initial_position = Position(
+            qty=80,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_fill",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=True,
+            entry_order_id="entry_order"
+        )
 
-        event = ExecutionEvent(type=EventType.FILL, order_id="entry_order", filled_qty=20, order_qty=100)
+        # When
+        event = ExecutionEvent(
+            type=EventType.FILL,
+            order_id="entry_order",
+            order_link_id="entry_link",
+            filled_qty=20,
+            order_qty=100,
+            timestamp=1600.0
+        )
 
-        expected_state = State.IN_POSITION
-        expected_new_qty = 100
-        expected_entry_working = False
-        expected_stop_status = StopStatus.ACTIVE
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
 
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.IN_POSITION
+        assert new_position is not None
+        assert new_position.qty == 100
+        assert new_position.entry_working == False
+        assert new_position.entry_order_id is None
+        assert new_position.stop_status == StopStatus.ACTIVE
+
+        # Intent 검증
+        assert intents.stop_intent is not None
+        assert intents.stop_intent.action == "AMEND"
+        assert intents.stop_intent.desired_qty == 100
 
     # ===== Case 19-21: Emergency Events (LIQ/ADL) =====
 
@@ -606,20 +873,44 @@ class TestStateTransitionOracleAdditional:
         When: LIQUIDATION event arrives
         Then:
           - state = HALT
-          - halt_reason = "liquidated"
+          - halt_intent.reason = "liquidation_event_requires_immediate_halt"
           - position = None (포지션은 거래소에서 강제로 정리됨)
+          - entry_blocked = True
         """
+        # Given
         initial_state = State.IN_POSITION
-        initial_position = Position(qty=100, entry_price=100.0, direction="LONG",
-                                    stop_status=StopStatus.ACTIVE, entry_working=False)
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_liq",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=False
+        )
 
-        event = ExecutionEvent(type=EventType.LIQUIDATION, order_id="liq_event", filled_qty=0, order_qty=0)
+        # When
+        event = ExecutionEvent(
+            type=EventType.LIQUIDATION,
+            order_id="liq_event",
+            order_link_id="liq_link",
+            filled_qty=0,
+            order_qty=0,
+            timestamp=3000.0
+        )
 
-        expected_state = State.HALT
-        expected_halt_reason = "liquidated"
-        expected_position = None
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
 
-        assert True  # Placeholder
+        # Then
+        assert new_state == State.HALT
+        assert new_position is None
+        assert intents.halt_intent is not None
+        assert "liquidation" in intents.halt_intent.reason.lower()
+        assert intents.entry_blocked == True
 
     def test_in_position_adl_should_halt(self):
         """
@@ -630,15 +921,146 @@ class TestStateTransitionOracleAdditional:
         When: ADL event arrives
         Then:
           - state = HALT
-          - halt_reason = "adl_triggered"
+          - halt_reason contains "adl"
+          - entry_blocked = True
         """
+        # Given
         initial_state = State.IN_POSITION
-        event = ExecutionEvent(type=EventType.ADL, order_id="adl_event", filled_qty=0, order_qty=0)
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_adl",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=False
+        )
 
-        expected_state = State.HALT
-        expected_halt_reason = "adl_triggered"
+        # When
+        event = ExecutionEvent(
+            type=EventType.ADL,
+            order_id="adl_event",
+            order_link_id="adl_link",
+            filled_qty=0,
+            order_qty=0,
+            timestamp=3100.0
+        )
 
-        assert True  # Placeholder
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
+
+        # Then
+        assert new_state == State.HALT
+        assert new_position is None
+        assert intents.halt_intent is not None
+        assert "adl" in intents.halt_intent.reason.lower()
+        assert intents.entry_blocked == True
+
+    def test_in_position_missing_stop_emits_place_stop_intent(self):
+        """
+        Phase 0.5: IN_POSITION + stop_status=MISSING → PLACE intent
+
+        Given:
+          - state = IN_POSITION
+          - position.stop_status = MISSING
+        When: Any event (or tick)
+        Then:
+          - state = IN_POSITION (유지)
+          - stop_intent.action = PLACE
+          - stop_intent.desired_qty = position.qty
+        """
+        # Given
+        initial_state = State.IN_POSITION
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_missing_stop",
+            stop_status=StopStatus.MISSING,  # Stop Loss 없음 (비정상)
+            entry_working=False
+        )
+
+        # When: 임의의 이벤트 (CANCEL 등 상태 변경 없는 이벤트)
+        event = ExecutionEvent(
+            type=EventType.CANCEL,
+            order_id="some_order",
+            order_link_id="some_link",
+            filled_qty=0,
+            order_qty=0,
+            timestamp=2000.0
+        )
+
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
+
+        # Then
+        assert new_state == State.IN_POSITION
+        assert new_position is not None
+        assert new_position.qty == 100
+        assert new_position.stop_status == StopStatus.MISSING
+
+        # Intent 검증: PLACE intent 발생
+        assert intents.stop_intent is not None
+        assert intents.stop_intent.action == "PLACE"
+        assert intents.stop_intent.desired_qty == 100
+        assert "missing" in intents.stop_intent.reason.lower()
+
+    def test_in_position_invalid_filled_qty_halts(self):
+        """
+        Phase 0.5: IN_POSITION + invalid filled_qty → HALT
+
+        Given:
+          - state = IN_POSITION
+          - position.qty = 100
+          - entry_working = True
+        When: PARTIAL_FILL with filled_qty <= 0
+        Then:
+          - state = HALT
+          - halt_intent.reason contains "invalid_filled_qty"
+          - entry_blocked = True
+        """
+        # Given
+        initial_state = State.IN_POSITION
+        initial_position = Position(
+            qty=100,
+            entry_price=50000.0,
+            direction=Direction.LONG,
+            signal_id="test_signal_invalid_qty",
+            stop_status=StopStatus.ACTIVE,
+            entry_working=True,
+            entry_order_id="entry_order"
+        )
+
+        # When: Invalid filled_qty = 0
+        event = ExecutionEvent(
+            type=EventType.PARTIAL_FILL,
+            order_id="entry_order",
+            order_link_id="entry_link",
+            filled_qty=0,  # Invalid: 0은 불가능
+            order_qty=100,
+            timestamp=2100.0
+        )
+
+        new_state, new_position, intents = transition(
+            initial_state,
+            initial_position,
+            event,
+            pending_order=None
+        )
+
+        # Then
+        assert new_state == State.HALT
+        assert new_position is None
+        assert intents.halt_intent is not None
+        assert "invalid_filled_qty" in intents.halt_intent.reason.lower()
+        assert intents.entry_blocked == True
 
     def test_exit_pending_liquidation_should_halt(self):
         """

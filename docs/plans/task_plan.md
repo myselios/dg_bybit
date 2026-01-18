@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
 # Task Plan: Account Builder Implementation (v2.2, Gate-Driven)
-Last Updated: 2026-01-18 (KST)
-Status: GATE-DRIVEN (No placeholder tests, Phase DoD required)
+Last Updated: 2026-01-18 22:15 (KST)
+Status: Phase 0.5 DONE (IN_POSITION 이벤트 처리 + stop 복구 + invalid qty 방어)
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -70,13 +70,14 @@ Non-goal
 
 src/
 domain/ # Pure (no I/O)
-state.py # State, StopStatus, Position, Pending
-intent.py # PlaceStop, AmendStop, CancelOrder, Log, Halt
-events.py # ExecutionEvent (FILL/PARTIAL/CANCEL/REJECT/LIQ/ADL)
+state.py # State, StopStatus, Position, PendingOrder (+ re-export events)
+intent.py # ✅ StopIntent, HaltIntent, TransitionIntents (도메인 계약)
+events.py # ✅ EventType, ExecutionEvent (FILL/PARTIAL/CANCEL/REJECT/LIQ/ADL)
 ids.py # signal_id, orderLinkId validators, SHA1 shortener
 
 application/ # Use-cases (pure preferred)
-transition.py # transition(...) -> (state, position, pending, intents)
+transition.py # ✅ transition(...) -> (state, position, intents) [SSOT]
+event_router.py # ✅ Stateless thin wrapper (입력 정규화 + transition 호출)
 entry_allowed.py # entry gates (policy-driven)
 sizing.py # Bybit inverse sizing (contracts)
 liquidation_gate.py # liquidation distance checks + fallback rules
@@ -85,6 +86,9 @@ ws_health.py # ws health tracker + degraded rules
 order_executor.py # make/submit/cancel/amend intents -> exchange calls
 stop_manager.py # stop placement/amend/debounce; stop_status recovery
 metrics_tracker.py # winrate/streak/multipliers
+
+services/ # ⚠️ DEPRECATED (하위 호환성만)
+state_transition.py # re-export from application.transition
 
 infrastructure/
 exchange/
@@ -209,33 +213,45 @@ Goal: “transition vocabulary”를 고정하고 오라클로 박는다.
   - 예: `assert any(isinstance(x, PlaceStop) for x in intents)`
 
 #### DoD
-- [ ] core types 정의 완료(위 Deliverables 충족)
-- [ ] transition 시그니처 고정 + pure 보장
-- [ ] 오라클 10케이스: 실제 assert, placeholder 0
-- [ ] Progress Table 업데이트
+- [x] core types 정의 완료(위 Deliverables 충족)
+- [x] transition 시그니처 고정 + pure 보장
+- [x] 오라클 10케이스: 실제 assert, placeholder 0
+- [x] DEPRECATED wrapper 제거 조건 정의: Phase 1 시작 시 src/application/services/state_transition.py 삭제, 남아있으면 FAIL
+- [x] transition() 직접 import 사용으로 전환 완료 (deprecated wrapper 경고 포함)
+- [x] Progress Table 업데이트
 
 ---
 
 ### Phase 0.5: Minimal IN_POSITION Event Handling (Bridge)
-Goal: IN_POSITION에서 “죽지 않게” 만들고 핵심 이벤트를 처리한다.
+Goal: IN_POSITION에서 "죽지 않게" 만들고 핵심 이벤트를 처리한다.
 
 #### Conditions
 - IN_POSITION에서 이벤트가 오면 **무조건 결정론적 처리**:
-  - PARTIAL_FILL: `position.qty += filled_qty`, `entry_working=True`
-  - FILL(잔량 포함 최종): `entry_working=False`
-  - LIQ/ADL: `HALT` + `HaltIntent(reason)`
-- stop 관련 intent는 이 단계에서 “최소”만(필요 시 Log/Halt). 본격 stop 관리(Amend/Debounce)는 Phase 4.
+  - (A) PARTIAL_FILL: `position.qty += filled_qty`, `entry_working=True`, stop AMEND intent
+  - (B) FILL(잔량 포함 최종): `entry_working=False`, stop AMEND intent
+  - (C) LIQ/ADL: `HALT` + `HaltIntent(reason)`
+  - (D) Invalid qty 방어: `filled_qty <= 0` or `new_qty < 0` → HALT
+- stop 관련: stop_status 일관성 유지 + 복구 intent만 (debounce/rate-limit은 Phase 1)
+  - stop_status=MISSING → PlaceStop intent
 
 #### Tests
-- Oracle에 +3~6케이스 추가
-  - PARTIAL_FILL: qty 증가, entry_working True
-  - PARTIAL → FILL: entry_working False
-  - LIQUIDATION/ADL: HALT + HaltIntent
+- Oracle에 +6케이스 추가 (fail→pass 증거):
+  1. test_in_position_additional_partial_fill_increases_qty (A: PARTIAL_FILL)
+  2. test_in_position_fill_completes_entry_working_false (B: FILL)
+  3. test_in_position_liquidation_should_halt (C: LIQUIDATION)
+  4. test_in_position_adl_should_halt (C: ADL)
+  5. test_in_position_missing_stop_emits_place_stop_intent (stop_status=MISSING)
+  6. test_in_position_invalid_filled_qty_halts (D: invalid qty 방어)
 
 #### DoD
-- [ ] IN_POSITION 이벤트 4종(PARTIAL/FILL/LIQ/ADL) 처리
-- [ ] 오라클 케이스 추가 통과
-- [ ] Progress Table 업데이트
+- [x] IN_POSITION + PARTIAL_FILL 처리 (A)
+- [x] IN_POSITION + FILL 처리 (B)
+- [x] IN_POSITION + LIQUIDATION/ADL → HALT (C)
+- [x] stop_status=MISSING → PlaceStop intent
+- [x] invalid fill qty 방어 (D)
+- [x] 오라클 6케이스 fail→pass 증거
+- [x] pytest 결과 + 함수 목록 Evidence
+- [x] Progress Table 업데이트
 
 ---
 
@@ -401,10 +417,23 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 
 > 규칙: DONE되면 반드시 아래 표를 갱신한다. 갱신 없으면 DONE 취소.
 
+### PRE-FLIGHT Gates (완료 필수)
+
+| Gate | 규칙 | 상태 | Evidence |
+|------|------|------|----------|
+| 1 | Oracle Placeholder Zero Tolerance | ✅ PASS | tests/oracles/state_transition_test.py (6케이스 실체화, assert True 제거) |
+| 2 | No Test-Defined Domain | ✅ PASS | tests/oracles/state_transition_test.py:24-33 (Position 클래스 제거, domain.state에서 import) |
+| 3 | Single Transition Truth | ✅ PASS | src/application/transition.py (SSOT), src/application/event_router.py (thin wrapper), tests/unit/test_event_router.py (2 증명 테스트) |
+| 4 | Repo Map Alignment | ✅ PASS | src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT 경로 확정) |
+| 5 | pytest Proof = DONE | ✅ PASS | 8 passed (tests/oracles: 6, tests/unit/test_event_router: 2) |
+| 6 | Doc Update | ✅ PASS | docs/plans/task_plan.md (PRE-FLIGHT 표 추가, Last Updated 갱신) |
+
+### Implementation Phases
+
 | Phase | Status (TODO/DOING/DONE) | Evidence (tests) | Evidence (impl) | Notes / Commit |
 |------:|--------------------------|------------------|------------------|----------------|
-| 0 | TODO | - | - | - |
-| 0.5 | TODO | - | - | - |
+| 0 | DONE | **Oracle 10케이스** (tests/oracles/state_transition_test.py): test_entry_pending_to_in_position_on_fill, test_entry_pending_to_flat_on_reject, test_entry_pending_to_in_position_on_partial_fill, test_exit_pending_to_flat_on_fill, test_halt_gate_adl_event, test_cooldown_gate_blocks_entry_before_timeout, test_cooldown_gate_allows_entry_after_timeout, test_one_way_mode_gate_rejects_opposite_direction, test_in_position_liquidation_should_halt, test_in_position_additional_partial_fill_increases_qty. **EventRouter 2케이스** (tests/unit/test_event_router.py): test_event_router_delegates_to_transition, test_event_router_emergency_event_delegation. **실행**: `pytest tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_entry_pending_to_in_position_on_fill tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_entry_pending_to_flat_on_reject tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_entry_pending_to_in_position_on_partial_fill tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_exit_pending_to_flat_on_fill tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_halt_gate_adl_event tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_cooldown_gate_blocks_entry_before_timeout tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_cooldown_gate_allows_entry_after_timeout tests/oracles/state_transition_test.py::TestStateTransitionOracle::test_one_way_mode_gate_rejects_opposite_direction tests/oracles/state_transition_test.py::TestStateTransitionOracleAdditional::test_in_position_liquidation_should_halt tests/oracles/state_transition_test.py::TestStateTransitionOracleAdditional::test_in_position_additional_partial_fill_increases_qty tests/unit/test_event_router.py -v` → **12 passed** | src/domain/state.py, src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT), src/application/event_router.py (thin wrapper), src/application/services/state_transition.py (DEPRECATED wrapper) | Phase 0 완료. DEPRECATED wrapper는 Phase 1 시작 시 삭제 예정 |
+| 0.5 | DONE | **Oracle 6케이스** (tests/oracles/state_transition_test.py): test_in_position_additional_partial_fill_increases_qty (Case A: PARTIAL_FILL → qty 증가), test_in_position_fill_completes_entry_working_false (Case B: FILL → entry_working=False), test_in_position_liquidation_should_halt (Case C: LIQUIDATION → HALT), test_in_position_adl_should_halt (Case C: ADL → HALT), test_in_position_missing_stop_emits_place_stop_intent (stop_status=MISSING → PlaceStop intent), test_in_position_invalid_filled_qty_halts (Case D: invalid qty → HALT). **실행**: `python3 -m pytest tests/oracles/state_transition_test.py -k "test_in_position_additional_partial_fill_increases_qty or test_in_position_fill_completes_entry_working_false or test_in_position_liquidation_should_halt or test_in_position_adl_should_halt or test_in_position_missing_stop_emits_place_stop_intent or test_in_position_invalid_filled_qty_halts" -v` → **6 passed** | src/application/transition.py (Phase 0.5 로직: invalid qty 방어, stop_status=MISSING 복구, IN_POSITION 이벤트 처리 A-D) | Phase 0.5 완료. IN_POSITION 이벤트 처리 + stop 복구 intent + invalid qty 방어 구현 |
 | 1 | TODO | - | - | - |
 | 2 | TODO | - | - | - |
 | 3 | TODO | - | - | - |

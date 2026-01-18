@@ -8,6 +8,19 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
 
+# Re-export events for backward compatibility
+from domain.events import EventType, ExecutionEvent
+
+__all__ = [
+    'State',
+    'StopStatus',
+    'Direction',
+    'Position',
+    'PendingOrder',
+    'EventType',
+    'ExecutionEvent'
+]
+
 
 class State(Enum):
     """
@@ -99,44 +112,3 @@ class PendingOrder:
     qty: int
     price: float
     side: str  # "Buy" or "Sell"
-
-
-class EventType(Enum):
-    """
-    Execution Event 타입 (FLOW Section 2.5)
-
-    상태 전환 트리거:
-    - FILL: 완전 체결 → ENTRY_PENDING → IN_POSITION
-    - PARTIAL_FILL: 부분 체결 → ENTRY_PENDING → IN_POSITION (entry_working=True)
-    - CANCEL: 취소 → filled_qty 확인
-    - REJECT: 거절 → ENTRY_PENDING → FLAT
-    - LIQUIDATION: 강제청산 → IN_POSITION → HALT
-    - ADL: 자동감소 → IN_POSITION → (수량 감소 or FLAT)
-    """
-    FILL = "FILL"
-    PARTIAL_FILL = "PARTIAL_FILL"
-    CANCEL = "CANCEL"
-    REJECT = "REJECT"
-    LIQUIDATION = "LIQUIDATION"
-    ADL = "ADL"
-
-
-@dataclass
-class ExecutionEvent:
-    """
-    Execution Event (FLOW Section 2.5)
-
-    상태 확정 규칙:
-    - 정상 모드: 이벤트가 상태 전이 트리거
-    - DEGRADED 모드: Reconcile로 보조 (확정 아님)
-    """
-    type: EventType
-    order_id: str
-    order_link_id: str
-    filled_qty: int
-    order_qty: int
-    timestamp: float
-
-    # 추가 정보 (optional)
-    exec_price: Optional[float] = None
-    fee_paid: Optional[float] = None

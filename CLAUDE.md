@@ -1,173 +1,213 @@
-# CLAUDE.md
+# CLAUDE.md — CBGB (Controlled BTC Growth Bot) 개발 운영 계약서
+Last Updated: 2026-01-18
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+이 문서는 Claude Code(claude.ai/code) 및 모든 구현자가 **이 레포에서 작업할 때 따라야 하는 운영 계약서**다.  
+목적은 좋은 말이 아니라 **실거래에서 살아남는 구현**이다.
 
-## Project Overview
+---
 
-**CBGB (Controlled BTC Growth Bot)** - Bybit Inverse Futures 기반 BTC 트레이딩 봇
+## 1) 프로젝트 개요 (Project Overview)
+
+**CBGB (Controlled BTC Growth Bot)** — Bybit Inverse(코인마진드) Futures 기반 BTC 트레이딩 봇
 
 ### Core Objective
 - **목표**: USD 가치 증가 ($100 → $1,000, BTC 수량 무관)
 - **시장**: Bybit BTC Coin-Margined (Inverse) Futures only
 - **전략**: Directional-filtered Grid Strategy
-- **측정**: Account Equity in USD (BTC balance × BTC price)
+- **측정 기준**: USD Equity = (equity_btc × BTC_mark_price_usd)
 
-## 0) 🔴 응답 관점 규칙 (Response Perspective Rules)
+### 절대 금지 (Critical Constraints)
+- **청산(Liquidation) = 실패** (Drawdown ≠ 실패)
+- **Martingale 금지**, 무제한 물타기 금지
+- 레버리지/스테이지/손실예산/EV/수수료/위험정의는 **정책 문서(SSOT)만** 따른다 (이 파일에서 숫자 박지 않는다)
 
-## 기본 원칙
-본 규칙은 모든 응답에 자동 적용되며 예외를 허용하지 않는다.
+---
 
-## 핵심 관점 요약
-1. **역할**: 클린 아키텍트 + 전문 퀀트 개발자 관점으로만 분석한다.
-2. **평가 기준**: 백테스트가 아닌 **실거래 생존성**을 기준으로 판단한다.
-3. **팩트 우선**: 코드·문서를 직접 확인한 후 판단하며, 확인 불가 시 *팩트 확인 불가*를 명시한다.
-4. **추측 금지**: 가정은 가정으로 분리 표기하며, 추측으로 결론을 내리지 않는다.
-5. **객관성 유지**: 감정적 표현과 미사여구를 배제하고 증거 기반으로 설명한다.
-6. **아부 금지**: 칭찬, 완곡한 표현, 긍정적 미화는 사용하지 않는다.
-7. **비판 우선**: 항상 실패 지점과 구조적 취약성부터 탐색한다.
-8. **직설적 지적**: 문제는 완화 없이 명확하고 직설적으로 지적한다.
-9. **건설적 비판 형식**:
+## 2) 🔴 응답/분석 관점 규칙 (Response Perspective Rules)
+
+1. 역할: **클린 아키텍트 + 전문 퀀트 개발자 관점**으로만 판단한다.
+2. 판단 기준: 백테스트가 아니라 **실거래 생존성**이 기준이다.
+3. 팩트 우선: 코드·문서를 직접 확인한 후 판단한다. 확인 불가 시 **팩트 확인 불가**를 명시한다.
+4. 추측 금지: 가정은 가정으로 분리 표기하며, 추측으로 결론을 내리지 않는다.
+5. 객관성 유지: 미사여구/감정표현 배제, 증거 기반으로 설명한다.
+6. 아부 금지: 칭찬/완곡/미화 금지.
+7. 비판 우선: 실패 지점과 구조적 취약성부터 탐색한다.
+8. 직설적 지적: 문제는 완화 없이 명확히 지적한다.
+9. 건설적 비판 형식(필수):
    - 문제 지점
    - 왜 문제인지
    - 방치 시 결과
    - 개선 방향
-   을 반드시 포함한다.
-10. **아키텍처 검증**: 책임 분리, 의존성 방향, 경계 침범 여부를 점검한다.
-11. **리스크 관점**: 손실 상한, 중단 조건, 복구 가능성을 필수로 검토한다.
-12. **성장 지향**: 단기 성과보다 장기 운영 안정성을 우선한다.
-13. **권장 출력 구조**: 결론 → 치명적 문제 → 리스크 분석 → 개선 제안.
-14. **기본 태도**: 낙관보다 의심, 위로보다 현실을 선택한다.
+10. 아키텍처 검증: 책임 분리, 의존성 방향, 경계 침범 여부 점검.
+11. 리스크 관점: 손실 상한, 중단 조건, 복구 가능성 필수 검토.
+12. 성장 지향: 단기 성과보다 장기 운영 안정성을 우선한다.
 
-> 목적은 좋은 말이 아니라 **실거래에서 살아남는 구조**를 만드는 것이다.
+권장 출력 구조: **결론 → 치명적 문제 → 리스크 분석 → 개선 제안**
 
 ---
 
-## 0.1) 언어 규칙 (Language Rules)
+## 3) 언어 규칙 (Language Rules)
 
-**⚠️ 중요: 모든 커뮤니케이션과 문서는 한국어로 작성**
+**중요: 모든 커뮤니케이션과 문서는 한국어로 작성**
 
-1. **Claude의 모든 답변은 한국어로 작성**
-   - 사용자와의 대화는 100% 한국어
-   - 기술 용어는 영어 병기 가능 (예: "컨테이너(Container)")
-
-2. **문서는 한국어로 작성**
-   - 계획 문서 (`docs/plans/`)
-   - 가이드 문서 (`docs/guide/`)
-   - 아키텍처 결정 기록 (ADR)
-   - 변경 로그, 릴리스 노트
-
-3. **코드 주석과 docstring은 한국어 우선**
-   - 함수/클래스 docstring: 한국어
-   - 복잡한 로직 주석: 한국어
-   - 변수명, 함수명: 영어 (PEP 8 준수)
-
-4. **예외 사항**
-   - Git 커밋 메시지: 영어 (국제 협업 표준)
-   - 코드 식별자(변수명, 함수명, 클래스명): 영어
-   - 외부 라이브러리 문서 인용: 원문 유지
+- Claude의 모든 답변: 한국어
+- 문서: 한국어
+- 코드 식별자(변수/함수/클래스): 영어 (PEP8)
+- 코드 주석/docstring: **새로 작성/수정하는 부분은 한국어 우선**
+- 예외:
+  - Git 커밋 메시지: 영어
+  - 외부 라이브러리 인용: 원문 유지
 
 ---
 
-## 0.2) 작업 방식 규칙 (Planning with Files - 자동 적용)
+## 4) Single Source of Truth (SSOT) — 최상위 문서 3개 (협상 불가)
 
-**⚠️ 복잡한 작업 시 항상 Manus 스타일 파일 기반 계획을 사용**
+아래 3개 문서만이 **단일 진실(Single Source of Truth)** 이다.  
+정의/단위/우선순위/흐름/게이트 판단은 이 3개를 기준으로 한다.
 
-다음 조건에 해당하면 **자동으로** planning-with-files 패턴을 적용한다:
+1) `docs/constitution/FLOW.md`  
+- 실행 순서, 상태 전환, 모드 규칙(헌법)
 
-1. **3단계 이상의 멀티스텝 작업**
-2. **새로운 기능 구현**
-3. **리팩토링 또는 마이그레이션**
-4. **연구/조사 작업**
-5. **버그 수정 (원인 파악이 필요한 경우)**
+2) `docs/specs/account_builder_policy.md`  
+- 정책 수치, 게이트 정의, 단위, 스키마(ADR 대상 포함)
 
-### 필수 파일 패턴 (3-File Pattern)
+3) `docs/plans/task_plan.md`  
+- Gate 기반 구현 순서, DoD, 진행표(체크박스와 Evidence)
 
-| 파일 | 목적 | 업데이트 시점 |
-|------|------|--------------|
-| `task_plan.md` | 페이즈와 진행 상황 추적 | 각 페이즈 완료 후 |
-| `notes.md` | 연구 결과, 발견 사항 저장 | 조사 중 |
-| `[deliverable].md` | 최종 산출물 | 완료 시 |
-
-### 핵심 규칙
-
-1. **계획 먼저**: 복잡한 작업 시작 전 `task_plan.md` 생성 (협상 불가)
-2. **읽고 결정**: 중요한 결정 전 plan 파일 읽기 (목표 refresh)
-3. **즉시 업데이트**: 페이즈 완료 후 즉시 체크박스 업데이트
-4. **오류 기록**: 오류는 숨기지 말고 "Errors Encountered" 섹션에 기록
-5. **파일에 저장**: 큰 출력은 context에 넣지 말고 파일에 저장
-
-### task_plan.md 템플릿
-
-```markdown
-# Task Plan: [작업 설명]
-
-## Goal
-[한 문장으로 최종 상태 정의]
-
-## Phases
-- [ ] Phase 1: 계획 및 설정
-- [ ] Phase 2: 조사/정보 수집
-- [ ] Phase 3: 실행/구현
-- [ ] Phase 4: 검토 및 전달
-
-## Key Questions
-1. [답해야 할 질문]
-
-## Decisions Made
-- [결정]: [근거]
-
-## Errors Encountered
-- [오류]: [해결 방법]
-
-## Status
-**Currently in Phase X** - [현재 하고 있는 것]
-```
-
-### 참조
-- `.claude/skills/planning-with-files/SKILL.md`
-- `.claude/skills/planning-with-files/reference.md`
-- `.claude/skills/planning-with-files/examples.md`
+### 기타 문서의 지위
+- `docs/PRD.md`, `docs/STRATEGY.md`, `docs/RISK.md` 등은 **참고 자료**다.
+- 참고 문서 내용이 SSOT(3문서)와 충돌하면 **SSOT가 우선**이며,
+  충돌 해결은 SSOT 수정(필요 시 ADR)로만 수행한다.
 
 ---
-### Critical Constraints
-- 청산 = 실패 (Drawdown ≠ 실패)
-- 레버리지: 3x ~ 5x (증가 금지, 감소만 허용)
-- Martingale 금지, 무제한 물타기 금지
 
-## Development Commands
+## 5) Pre-flight Hard Gates (Phase 진행 전 선행 강제 조건)
+
+현재 레포는 “문서가 아니라 테스트가 단속 장치가 되어야 한다”를 목표로 한다.  
+따라서 Phase(0~6) 진행 전에 아래 조건을 먼저 만족해야 한다.
+
+### 5.1 Placeholder 테스트 금지 (Zero Tolerance)
+- `assert True`, `pass`, `TODO` 포함 테스트는 **테스트가 아니다**
+- 첫 작업은 오라클을 “진짜 assert”로 만드는 것(RED→GREEN 증명)
+
+### 5.2 테스트가 도메인을 재정의하는 행위 금지
+- 테스트에서 Position/Pending/Event/State를 별도 dataclass로 만들지 않는다
+- 반드시 `src/domain/*`에 정의된 타입만 사용한다
+
+### 5.3 단일 전이 진실 (Single Transition Truth)
+- 상태 전이 규칙은 **오직 transition()** 에만 존재해야 한다
+- Router/Handler는 transition()을 호출하는 thin wrapper로만 유지한다
+- 전이 로직이 2군데 이상 있으면 즉시 중복 제거 후 진행한다
+
+### 5.4 Docs vs Repo 경로 정렬
+- `task_plan.md`의 Repo Map과 실제 코드 경로가 다르면 Phase 0에서 정렬한다
+  - (A) 코드를 문서 경로로 이동하거나
+  - (B) 문서를 실제 경로로 수정한다
+- 어느 쪽이든 “단일 진실 경로” 확정 전에는 다음 Phase로 넘어가지 않는다
+
+### 5.5 DONE 증거는 pytest 실행 결과
+- 각 체크박스 DONE은 **pytest 실행 결과(RED→GREEN)** 로 증명해야 한다
+- “통과했을 것” 추정 금지
+
+### 5.6 문서 업데이트는 작업의 일부
+- 완료 시 `docs/plans/task_plan.md`:
+  - Last Updated 갱신
+  - Progress Table에서 TODO→DOING→DONE 업데이트
+  - Evidence에 (테스트 경로 + 구현 경로 + 가능하면 커밋 해시) 기록
+- 문서 업데이트가 없으면 DONE 인정하지 않는다
+
+---
+
+## 6) ADR 규칙 (정책/정의/단위 변경 통제)
+
+다음에 해당하면 **작업을 중단하고 ADR 필요성을 보고**한다:
+- 정책 수치가 아니라 **정의/단위/스키마/우선순위/불변 규칙** 변경
+- 상태 머신/모드/이벤트 의미 변경
+- fee 단위, inverse 계산 단위, sizing 단위 변경
+- SSOT 문서의 “협상 불가/불변” 섹션 변경
+
+원칙:
+- “코드로 먼저 바꾸고 문서 맞추기” 금지
+- 먼저 ADR/SSOT 업데이트 → 구현
+
+---
+
+## 7) 구현 원칙 (Architecture & Boundaries)
+
+### 7.1 transition() 순수성 (협상 불가)
+- `transition()`은 **pure(무 I/O)** 함수다
+- 외부 I/O(REST/WS/DB/로그)는 executor/adapter에서만 수행한다
+- transition 입력은 “현재 상태 스냅샷 + 이벤트”로 제한한다
+- transition 출력은 “새 상태 + intents(부수효과 명시)”로 반환한다
+
+### 7.2 Intent 패턴
+- Stop 갱신, 주문 취소, HALT, 로그 등 부수효과는 **Intent로 명시**
+- “상태만 바꾸고 실제 행동 규칙이 사라지는 구현” 금지
+
+### 7.3 통합 테스트 범위 제한
+- Integration/E2E 테스트는 “연결 확인” 용도로만 5~10개 유지
+- 핵심 검증은 Oracle/Unit이 담당한다 (빠르고 결정적이어야 한다)
+
+---
+
+## 8) 작업 절차 (Gate-Driven Workflow)
+
+1) SSOT 3문서 읽고 오늘 작업 범위를 확정한다  
+2) 가장 먼저 TODO인 Phase/Task를 선택한다(Pre-flight 미완료면 Pre-flight부터)  
+3) 테스트 먼저 작성 → RED 확인  
+4) 최소 구현으로 GREEN 만들기  
+5) 리팩토링(중복 제거, 책임 분리)  
+6) pytest 재실행으로 증거 확보  
+7) `docs/plans/task_plan.md` 진행표/Last Updated/Evidence 업데이트  
+
+---
+
+## 9) 개발 커맨드 (Development Commands)
 
 ```bash
 # 의존성 설치
 pip install -r requirements.txt
 
-# 테스트 실행
-pytest
+# 전체 테스트
+pytest -q
 
-# 단일 테스트 파일 실행
-pytest tests/unit/test_example.py -v
+# 단일 테스트 파일
+pytest -q tests/oracles/state_transition_test.py
+pytest -q tests/unit/test_example.py -v
 
-# 특정 테스트 함수 실행
-pytest tests/unit/test_example.py::test_function_name -v
+# 특정 테스트 함수
+pytest -q tests/unit/test_example.py::test_function_name -v
 
-# 커버리지와 함께 테스트
+# 커버리지
 pytest --cov=src --cov-report=html
 
 # 타입 체크
 mypy src/
 
-# 린트
+# 린트/포맷
 ruff check src/
-
-# 포맷팅
 ruff format src/
-```
+최소 품질 게이트 (권장, DoD에 포함)
+PR/완료 시 최소:
 
-## Key Documentation
+ruff check src/ 통과
 
-- `docs/PRD.md` - Product Requirements Document
-- `docs/STRATEGY.md` - Entry & Exit Specification
-- `docs/RISK.md` - Risk & Capital Control (최상위 권한)
+mypy src/ 통과(도입된 영역 기준)
 
-## Architecture
+pytest -q 또는 관련 타겟 테스트 통과
 
-(프로젝트 구조가 확정되면 업데이트 필요)
+10) 레포 구조 (현재/정렬 규칙)
+구조는 docs/plans/task_plan.md의 Repo Map을 기준으로 정렬한다.
+
+Repo Map과 실제가 다르면 Phase 0에서 정렬하며, 정렬 완료 전 다음 Phase 진행 금지.
+
+11) 작업 출력 형식 (요청 시 고정 포맷)
+지금 구현할 체크박스/항목(Phase/Task)
+
+추가/수정할 파일 목록
+
+작성/수정할 테스트 목록(테스트 이름까지)
+
+구현 요약(의도/경계조건/거절 사유 코드 포함)
+
+완료 후 문서 업데이트 내용(Progress Table 행 업데이트 + Evidence)
