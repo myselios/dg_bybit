@@ -52,6 +52,13 @@ CBGB는 작은 시드로 시작해 계좌의 절대 규모를 "점프"시키는 
 - **[docs/base/EXECUTION_MODEL.md](docs/base/EXECUTION_MODEL.md)**: 체결 처리
 - **[docs/base/TASK_BREAKDOWN.md](docs/base/TASK_BREAKDOWN.md)**: 구현 우선순위 (Risk Priority)
 
+#### 구현 계획 (Implementation Plans)
+- **[docs/plans/roadmap.md](docs/plans/roadmap.md)**: 전체 로드맵 (v2.1 → v3.0)
+- **[docs/plans/P0_critical_fixes.md](docs/plans/P0_critical_fixes.md)**: 청산 방지 (1주차)
+- **[docs/plans/P1_core_completion.md](docs/plans/P1_core_completion.md)**: 핵심 기능 (2~3주차)
+- **[docs/plans/P2_learning_system.md](docs/plans/P2_learning_system.md)**: 학습 시스템 (6~8주차)
+- **[docs/plans/P3_meta_system.md](docs/plans/P3_meta_system.md)**: 메타 시스템 (선택)
+
 ## 개발 명령어
 
 ```bash
