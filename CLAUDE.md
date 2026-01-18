@@ -116,6 +116,83 @@ Last Updated: 2026-01-18
   - Evidence에 (테스트 경로 + 구현 경로 + 가능하면 커밋 해시) 기록
 - 문서 업데이트가 없으면 DONE 인정하지 않는다
 
+### 5.7 Self-Verification Before DONE (완료 보고 전 필수 검증)
+**"DONE" 체크 / 완료 보고 전 반드시 아래 검증을 통과해야 한다.**
+
+검증 실패 시: DONE 보고 금지 → 즉시 수정.
+
+#### (1) Placeholder 테스트 0개 (Gate 1)
+아래 패턴이 1개라도 검출되면 FAIL:
+- `assert True`
+- `pytest.skip(` (정당한 사유 없이)
+- `pass  # TODO`
+- `TODO: implement`
+- `raise NotImplementedError`
+
+```bash
+grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError" tests/ 2>/dev/null | grep -v "\.pyc"
+# → 출력: 비어있음
+```
+
+#### (2) 테스트에서 "도메인 타입 이름" 재정의 금지 (Gate 2)
+금지: Position, PendingOrder, ExecutionEvent, State 등 domain과 동일 이름 재정의.
+허용: helper는 Dummy*, Fake*, Test* 접두어를 강제.
+
+```bash
+grep -RInE "^class[[:space:]]+(Position|PendingOrder|ExecutionEvent|State)\b" tests/ 2>/dev/null | grep -v "\.pyc"
+# → 출력: 비어있음
+```
+
+#### (3) transition SSOT 파일 존재 (Gate 3)
+```bash
+test -f src/application/transition.py && echo "OK: transition.py exists" || (echo "FAIL: missing transition.py" && exit 1)
+# → 출력: OK: transition.py exists
+```
+
+#### (4) EventRouter/Handler에 상태 분기 로직 금지 (Gate 3)
+EventRouter는 thin wrapper여야 한다. `if state ==` / `elif state ==` 존재하면 FAIL.
+
+```bash
+grep -RInE "if[[:space:]]+.*state[[:space:]]*==|elif[[:space:]]+.*state[[:space:]]*==" src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+# → 출력: 비어있음
+```
+
+#### (5) sys.path hack 금지 (구조 위반)
+```bash
+grep -RIn "sys\.path\.insert" src/ tests/ 2>/dev/null
+# → 출력: 비어있음
+```
+
+#### (6) Deprecated wrapper import 사용 금지 (예외: 삭제 전 임시 단계만 허용)
+Phase 1 시작 시점부터는 아래 import가 0이어야 한다:
+- `application.services.state_transition`
+- `application.services.event_router`
+
+```bash
+grep -RInE "application\.services\.(state_transition|event_router)" tests/ src/ 2>/dev/null
+# → Phase 0/0.5: 허용 (단, 신규 추가 금지)
+# → Phase 1+: 출력 비어있어야 함
+```
+
+#### (7) pytest 증거 + 문서 업데이트 (Gate 5/6)
+```bash
+pytest -q
+# → PASS 결과를 Evidence에 기록 (명령어 + 결과 라인)
+
+git status
+git diff --stat
+# → 의도한 파일만 변경되었는지 확인
+```
+
+---
+
+**검증 성공 시 DONE 절차**:
+1. pytest PASS 결과를 task_plan.md Evidence에 기록
+2. Progress Table 업데이트 (체크박스 + Evidence 경로)
+3. Last Updated 갱신
+4. **5.7 커맨드 출력 결과 (붙여넣기) 또는 스크린샷을 DONE 보고에 필수 포함**
+5. DONE 보고
+
 ---
 
 ## 6) ADR 규칙 (정책/정의/단위 변경 통제)
@@ -152,13 +229,84 @@ Last Updated: 2026-01-18
 
 ## 8) 작업 절차 (Gate-Driven Workflow)
 
-1) SSOT 3문서 읽고 오늘 작업 범위를 확정한다  
-2) 가장 먼저 TODO인 Phase/Task를 선택한다(Pre-flight 미완료면 Pre-flight부터)  
-3) 테스트 먼저 작성 → RED 확인  
-4) 최소 구현으로 GREEN 만들기  
-5) 리팩토링(중복 제거, 책임 분리)  
-6) pytest 재실행으로 증거 확보  
-7) `docs/plans/task_plan.md` 진행표/Last Updated/Evidence 업데이트  
+1) SSOT 3문서 읽고 오늘 작업 범위를 확정한다
+2) 가장 먼저 TODO인 Phase/Task를 선택한다(Pre-flight 미완료면 Pre-flight부터)
+3) 테스트 먼저 작성 → RED 확인
+4) 최소 구현으로 GREEN 만들기
+5) 리팩토링(중복 제거, 책임 분리)
+6) pytest 재실행으로 증거 확보
+7) `docs/plans/task_plan.md` 진행표/Last Updated/Evidence 업데이트
+
+### 8.1 Migration Protocol (구조 변경 시 필수 절차)
+
+**파일 이동/삭제/경로 변경 시 반드시 아래 순서를 따른다**
+
+#### Phase 1: 현재 상태 확인
+```bash
+# 1) 대상 파일 존재 확인
+ls -la src/path/to/old_file.py
+
+# 2) 누가 이 파일을 import하는가? (의존성 파악)
+grep -R "from .* import\|import .*old_file" src/ tests/ 2>/dev/null
+
+# 3) 구 경로와 신 경로 명확히 정의
+# 구: src/application/services/event_router.py
+# 신: src/application/event_router.py
+```
+
+#### Phase 2: 새 구조 생성
+```bash
+# 4) 새 파일 생성 (thin wrapper 등)
+# 5) 새 파일이 SSOT transition()을 올바르게 호출하는지 확인
+```
+
+#### Phase 3: Import Path 전환 (Critical!)
+```bash
+# 6) 테스트 import path 변경
+# Before: from application.services.state_transition import ...
+# After:  from application.transition import ...
+
+# 7) 모든 참조 검색 후 변경
+grep -R "from application.services" tests/ src/
+
+# 8) 변경 후 grep 재실행 → 남은 참조 0개 확인
+```
+
+#### Phase 4: 구 파일 처리
+```bash
+# 9) 구 파일을 삭제하거나 deprecated wrapper로 전환
+# Deprecated wrapper 예시:
+# """⚠️ DEPRECATED: Use src/application/transition.py instead"""
+# from application.transition import transition  # Re-export
+
+# 10) 삭제 시 git rm, wrapper 전환 시 명확히 표기
+```
+
+#### Phase 5: 검증
+```bash
+# 11) Section 5.7 Self-Verification 커맨드 전체 실행
+# 12) pytest 실행 → 모든 테스트 통과 확인
+# 13) git diff --stat → 의도한 파일만 변경되었는가?
+```
+
+#### Phase 6: 문서화
+```bash
+# 14) Repo Map 업데이트 (task_plan.md)
+# 15) Evidence에 "구→신 경로 변경" 명시
+# 16) Deprecated wrapper 삭제 조건 DoD에 명시
+```
+
+**금지 사항**:
+- 새 파일 생성 후 구 파일 방치 → **전이 진실 2개 공존**
+- Import path 변경 없이 새 파일만 생성 → **테스트가 구 구조 참조**
+- "나중에 정리하겠다" → **늪 영구화**
+
+**Migration 완료 기준**:
+1. 구 경로 import 0개 (deprecated wrapper 제외)
+2. 새 경로가 SSOT로 동작
+3. 테스트가 새 경로 사용
+4. pytest 통과
+5. Repo Map 일치
 
 ---
 

@@ -31,6 +31,9 @@ Non-goal
 1) **관련 테스트 최소 1개 이상 존재** (`tests/` 아래)
 2) 테스트가 **구현 전 실패했고(RED)** 구현 후 통과했음(GREEN)
 3) 코드가 **Flow/Policy 정의와 충돌하지 않음** (아래 1.3~1.5 Gate)
+4) **CLAUDE.md Section 5.7 Self-Verification 통과 필수** (완료 보고 전)
+   - 7개 검증 커맨드 실행 → 모든 출력 정상
+   - **5.7 커맨드 출력 결과 (붙여넣기) 또는 스크린샷을 DONE 보고에 필수 포함**
 
 ### 1.3 Oracle First
 - Primary truth: `tests/oracles/state_transition_test.py`
@@ -219,6 +222,7 @@ Goal: “transition vocabulary”를 고정하고 오라클로 박는다.
 - [x] DEPRECATED wrapper 제거 조건 정의: Phase 1 시작 시 src/application/services/state_transition.py 삭제, 남아있으면 FAIL
 - [x] transition() 직접 import 사용으로 전환 완료 (deprecated wrapper 경고 포함)
 - [x] Progress Table 업데이트
+- [x] **Gate 7: CLAUDE.md Section 5.7 검증 통과 (7개 커맨드)**
 
 ---
 
@@ -252,6 +256,7 @@ Goal: IN_POSITION에서 "죽지 않게" 만들고 핵심 이벤트를 처리한�
 - [x] 오라클 6케이스 fail→pass 증거
 - [x] pytest 결과 + 함수 목록 Evidence
 - [x] Progress Table 업데이트
+- [x] **Gate 7: CLAUDE.md Section 5.7 검증 통과 (7개 커맨드)**
 
 ---
 
@@ -427,6 +432,8 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 | 4 | Repo Map Alignment | ✅ PASS | src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT 경로 확정) |
 | 5 | pytest Proof = DONE | ✅ PASS | 8 passed (tests/oracles: 6, tests/unit/test_event_router: 2) |
 | 6 | Doc Update | ✅ PASS | docs/plans/task_plan.md (PRE-FLIGHT 표 추가, Last Updated 갱신) |
+| 7 | Self-Verification Before DONE | ⚠️ MANDATORY | CLAUDE.md Section 5.7: 7개 검증 커맨드 실행 → 모든 출력 정상 + **출력 결과 붙여넣기 필수** (완료 보고 시) |
+| 8 | Migration Protocol Compliance | ⚠️ MANDATORY | CLAUDE.md Section 8.1: 파일 이동/삭제/경로 변경 시 6단계 절차 준수 (Phase 1~3 Import Path 전환 필수) |
 
 ### Implementation Phases
 
