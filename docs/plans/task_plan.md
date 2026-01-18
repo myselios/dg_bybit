@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.4, Gate-Driven)
-Last Updated: 2026-01-19 00:20 (KST)
-Status: Gate 1-7 ALL PASS (Zero Tolerance + Packaging Standards Compliance)
+# Task Plan: Account Builder Implementation (v2.5, Gate-Driven)
+Last Updated: 2026-01-19 00:35 (KST)
+Status: Phase 0/0.5 COMPLETE | Gate 1-7 ALL PASS | Repo Map Aligned
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -71,62 +71,87 @@ Non-goal
 
 ## 2. Repo Map (Single Source of Location)
 
+### 2.1 Implemented (Phase 0 완료, 실제 존재)
+
+```
 src/
-domain/ # Pure (no I/O)
-state.py # State, StopStatus, Position, PendingOrder (+ re-export events)
-intent.py # ✅ StopIntent, HaltIntent, TransitionIntents (도메인 계약)
-events.py # ✅ EventType, ExecutionEvent (FILL/PARTIAL/CANCEL/REJECT/LIQ/ADL)
-ids.py # signal_id, orderLinkId validators, SHA1 shortener
-
-application/ # Use-cases (pure preferred)
-transition.py # ✅ transition(...) -> (state, position, intents) [SSOT]
-event_router.py # ✅ Stateless thin wrapper (입력 정규화 + transition 호출)
-entry_allowed.py # entry gates (policy-driven)
-sizing.py # Bybit inverse sizing (contracts)
-liquidation_gate.py # liquidation distance checks + fallback rules
-emergency.py # emergency policy + recovery + cooldown
-ws_health.py # ws health tracker + degraded rules
-order_executor.py # make/submit/cancel/amend intents -> exchange calls
-stop_manager.py # stop placement/amend/debounce; stop_status recovery
-metrics_tracker.py # winrate/streak/multipliers
-
-services/ # ⚠️ DEPRECATED (하위 호환성만)
-state_transition.py # re-export from application.transition
-
-infrastructure/
-exchange/
-adapter.py # interface
-bybit_adapter.py # real
-fake_exchange.py # deterministic tests
-logging/
-trade_logger.py
-halt_logger.py
-metrics_logger.py
-
-config/
-constants.py # hard stops, invariants
-stage_config.yaml
-emergency_config.yaml
-fees_config.yaml
-sizing_config.yaml
-performance_config.yaml
+├── domain/ # Pure (no I/O)
+│   ├── state.py # ✅ State, StopStatus, Position, PendingOrder (+ re-export events)
+│   ├── intent.py # ✅ StopIntent, HaltIntent, TransitionIntents (도메인 계약)
+│   └── events.py # ✅ EventType, ExecutionEvent (FILL/PARTIAL/CANCEL/REJECT/LIQ/ADL)
+│
+├── application/
+│   ├── transition.py # ✅ transition(...) -> (state, position, intents) [SSOT]
+│   ├── event_router.py # ✅ Stateless thin wrapper (입력 정규화 + transition 호출)
+│   └── services/ # ⚠️ DEPRECATED (Phase 1 시작 시 삭제 예정)
+│       └── state_transition.py # ⚠️ re-export wrapper only
+│
+└── infrastructure/
+    └── exchange/
+        └── fake_exchange.py # ✅ Deterministic test simulator
 
 tests/
-oracles/
-state_transition_test.py # primary truth: state + intents
-unit/
-test_transition_*.py
-test_entry_allowed.py
-test_sizing.py
-test_emergency.py
-test_ws_health.py
-test_ids.py
-test_stop_manager.py
-integration/
-test_orchestrator.py # only 5~10 E2E
+├── oracles/
+│   ├── state_transition_test.py # ✅ Primary oracle (10 cases)
+│   └── test_integration_basic.py # ✅ FakeExchange + EventRouter (6 cases)
+└── unit/
+    ├── test_state_transition.py # ✅ transition() unit tests (36 cases)
+    └── test_event_router.py # ✅ Gate 3 proof (2 cases)
+```
 
-yaml
-코드 복사
+**Phase 0 DONE 증거**: 위 파일들로 33 tests passed, Gate 1-7 ALL PASS
+
+---
+
+### 2.2 Planned (Phase 1+ 예정, 아직 미생성)
+
+```
+src/
+├── domain/
+│   └── ids.py # signal_id, orderLinkId validators, SHA1 shortener
+│
+├── application/
+│   ├── entry_allowed.py # entry gates (policy-driven)
+│   ├── sizing.py # Bybit inverse sizing (contracts)
+│   ├── liquidation_gate.py # liquidation distance checks + fallback rules
+│   ├── emergency.py # emergency policy + recovery + cooldown
+│   ├── ws_health.py # ws health tracker + degraded rules
+│   ├── order_executor.py # make/submit/cancel/amend intents -> exchange calls
+│   ├── stop_manager.py # stop placement/amend/debounce; stop_status recovery
+│   └── metrics_tracker.py # winrate/streak/multipliers
+│
+├── infrastructure/
+│   ├── exchange/
+│   │   ├── adapter.py # interface
+│   │   └── bybit_adapter.py # real exchange implementation
+│   └── logging/
+│       ├── trade_logger.py
+│       ├── halt_logger.py
+│       └── metrics_logger.py
+│
+└── config/
+    ├── constants.py # hard stops, invariants
+    ├── stage_config.yaml
+    ├── emergency_config.yaml
+    ├── fees_config.yaml
+    ├── sizing_config.yaml
+    └── performance_config.yaml
+
+tests/
+├── oracles/ (추가 예정)
+│   └── (미래 Phase별 oracle 추가)
+├── unit/ (Phase별 생성)
+│   ├── test_entry_allowed.py
+│   ├── test_sizing.py
+│   ├── test_emergency.py
+│   ├── test_ws_health.py
+│   ├── test_ids.py
+│   └── test_stop_manager.py
+└── integration/
+    └── test_orchestrator.py # only 5~10 E2E (Phase 6)
+```
+
+**생성 원칙**: 각 Phase DoD 충족 시에만 생성 (TDD: 테스트 먼저 → 구현)
 
 ---
 
@@ -520,6 +545,7 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 ## 8. Change History
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-19 | 2.5 | **Repo Map 정렬 완료 (Gate 4 재발 방지)**: Repo Map을 "Implemented (Phase 0 완료)" vs "Planned (Phase 1+)" 섹션으로 분리, 문서↔현실 괴리 제거, 컨텍스트 끊김 시 혼란 방지 |
 | 2026-01-19 | 2.4 | **Gate 7 완전 달성**: sys.path hack 0개 (pyproject.toml 정상화, PYTHONPATH=src 방식), 패키징 표준 준수, CLAUDE.md pytest 실행법 업데이트 |
 | 2026-01-18 | 2.3 | Oracle Backlog 섹션 추가 (17개 미래 케이스 문서화, Gate 1 위반 제거) |
 | 2026-01-18 | 2.2 | 조건/DoD 강화, 진행상황표/업데이트 룰 추가, 컨텍스트 끊김 방지 구조 확정 |
