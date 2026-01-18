@@ -355,18 +355,21 @@ grep -R "from application.services" tests/ src/
 # 의존성 설치
 pip install -r requirements.txt
 
+# 환경 설정 (중요!)
+export PYTHONPATH=src  # 또는 PYTHONPATH=src를 pytest 명령어 앞에 붙이기
+
 # 전체 테스트
-pytest -q
+PYTHONPATH=src pytest -q
 
 # 단일 테스트 파일
-pytest -q tests/oracles/state_transition_test.py
-pytest -q tests/unit/test_example.py -v
+PYTHONPATH=src pytest -q tests/oracles/state_transition_test.py
+PYTHONPATH=src pytest -q tests/unit/test_example.py -v
 
 # 특정 테스트 함수
-pytest -q tests/unit/test_example.py::test_function_name -v
+PYTHONPATH=src pytest -q tests/unit/test_example.py::test_function_name -v
 
 # 커버리지
-pytest --cov=src --cov-report=html
+PYTHONPATH=src pytest --cov=src --cov-report=html
 
 # 타입 체크
 mypy src/
