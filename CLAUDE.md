@@ -130,17 +130,35 @@ Last Updated: 2026-01-18
 - `raise NotImplementedError`
 
 ```bash
-grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError" tests/ 2>/dev/null | grep -v "\.pyc"
+# (1a) Placeholder 표현 감지
+grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError|RuntimeError\(.*TODO" tests/ 2>/dev/null | grep -v "\.pyc"
 # → 출력: 비어있음
+
+# (1b) Skip/Xfail decorator 금지 (정당한 사유 없으면 FAIL)
+grep -RInE "pytest\.mark\.(skip|xfail)|@pytest\.mark\.(skip|xfail)|unittest\.SkipTest" tests/ 2>/dev/null | grep -v "\.pyc"
+# → 출력: 비어있음 (또는 특정 allowlist 경로만)
+
+# (1c) 의미있는 assert 존재 여부 (거친 체크)
+# 각 test_ 함수에 최소 1개 이상의 도메인 값 비교 assert 필요
+# 예: assert new_state == State.IN_POSITION
+grep -RIn "assert .*==" tests/ 2>/dev/null | wc -l
+# → 출력: 0이 아님 (테스트가 있으면 반드시 비교 assert 존재)
 ```
 
 #### (2) 테스트에서 "도메인 타입 이름" 재정의 금지 (Gate 2)
 금지: Position, PendingOrder, ExecutionEvent, State 등 domain과 동일 이름 재정의.
 허용: helper는 Dummy*, Fake*, Test* 접두어를 강제.
+**절대 금지: tests/ 내에서 domain을 모사하는 파일 생성 (domain_state.py 등)**
 
 ```bash
+# (2a) 도메인 타입 이름 재정의 금지
 grep -RInE "^class[[:space:]]+(Position|PendingOrder|ExecutionEvent|State)\b" tests/ 2>/dev/null | grep -v "\.pyc"
 # → 출력: 비어있음
+
+# (2b) tests/ 내에 domain 모사 파일 생성 금지
+find tests -type f -maxdepth 3 -name "*.py" 2>/dev/null | grep -E "(domain|state|intent|events)\.py"
+# → 출력: 비어있음 (또는 allowlist만)
+# 허용 예외: tests/fixtures/test_helpers.py 같은 명백한 helper만
 ```
 
 #### (3) transition SSOT 파일 존재 (Gate 3)
@@ -151,10 +169,17 @@ test -f src/application/transition.py && echo "OK: transition.py exists" || (ech
 
 #### (4) EventRouter/Handler에 상태 분기 로직 금지 (Gate 3)
 EventRouter는 thin wrapper여야 한다. `if state ==` / `elif state ==` 존재하면 FAIL.
+**더 강한 규칙: EventRouter에서 `State.` 참조 자체를 금지 (dict dispatch, match/case 우회 차단)**
 
 ```bash
+# (4a) 상태 분기문 감지 (if/elif state ==)
 grep -RInE "if[[:space:]]+.*state[[:space:]]*==|elif[[:space:]]+.*state[[:space:]]*==" src/application/event_router.py src/application/services/event_router.py 2>/dev/null
 # → 출력: 비어있음
+
+# (4b) EventRouter에서 State enum 참조 자체 금지 (thin wrapper 강제)
+grep -n "State\." src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+# → 출력: 비어있음
+# 이 규칙으로 dict dispatch, match/case, 함수 이름 분기 전부 차단
 ```
 
 #### (5) sys.path hack 금지 (구조 위반)
@@ -168,10 +193,17 @@ Phase 1 시작 시점부터는 아래 import가 0이어야 한다:
 - `application.services.state_transition`
 - `application.services.event_router`
 
+**Migration Protocol (Section 8.1) 준수 증거: 구 경로 import 0개**
+
 ```bash
+# (6a) Deprecated wrapper import 추적
 grep -RInE "application\.services\.(state_transition|event_router)" tests/ src/ 2>/dev/null
 # → Phase 0/0.5: 허용 (단, 신규 추가 금지)
 # → Phase 1+: 출력 비어있어야 함
+
+# (6b) Migration 완료 증거 (구 경로 import 0개, Phase 1+ 필수)
+grep -RInE "from application\.services|import application\.services" tests/ src/ 2>/dev/null | wc -l
+# → Phase 1+: 출력 0 (Migration 완료)
 ```
 
 #### (7) pytest 증거 + 문서 업데이트 (Gate 5/6)
@@ -192,6 +224,13 @@ git diff --stat
 3. Last Updated 갱신
 4. **5.7 커맨드 출력 결과 (붙여넣기) 또는 스크린샷을 DONE 보고에 필수 포함**
 5. DONE 보고
+
+---
+
+**DONE 무효 조건 (자동 거부)**:
+- Gate 7 커맨드 출력이 DONE 보고에 없으면 → **DONE 보고는 자동 무효**
+- 출력 증거 없이 "검증 완료했습니다" 말만 하면 → **DONE 인정 불가**
+- Placeholder 테스트(1a~1c), 도메인 재정의(2a~2b), 전이 분기(4a~4b) 중 1개라도 검출되면 → **즉시 수정 후 재보고**
 
 ---
 

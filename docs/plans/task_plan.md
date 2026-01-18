@@ -432,8 +432,8 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 | 4 | Repo Map Alignment | ✅ PASS | src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT 경로 확정) |
 | 5 | pytest Proof = DONE | ✅ PASS | 8 passed (tests/oracles: 6, tests/unit/test_event_router: 2) |
 | 6 | Doc Update | ✅ PASS | docs/plans/task_plan.md (PRE-FLIGHT 표 추가, Last Updated 갱신) |
-| 7 | Self-Verification Before DONE | ⚠️ MANDATORY | CLAUDE.md Section 5.7: 7개 검증 커맨드 실행 → 모든 출력 정상 + **출력 결과 붙여넣기 필수** (완료 보고 시) |
-| 8 | Migration Protocol Compliance | ⚠️ MANDATORY | CLAUDE.md Section 8.1: 파일 이동/삭제/경로 변경 시 6단계 절차 준수 (Phase 1~3 Import Path 전환 필수) |
+| 7 | Self-Verification Before DONE | ⚠️ MANDATORY | CLAUDE.md Section 5.7: **10개 검증 커맨드** 실행 (1a~1c, 2a~2b, 3, 4a~4b, 5, 6a~6b, 7) → 모든 출력 정상 + **출력 결과 붙여넣기 필수** (완료 보고 시). **출력 증거 없으면 DONE 자동 무효** |
+| 8 | Migration Protocol Compliance | ⚠️ MANDATORY | CLAUDE.md Section 8.1: 파일 이동/삭제/경로 변경 시 6단계 절차 준수 (Phase 1~3 Import Path 전환 필수) + **구 경로 import 0개 증거 (6b)** |
 
 ### Implementation Phases
 
