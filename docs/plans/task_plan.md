@@ -1,6 +1,6 @@
 # docs/plans/task_plan.md
 # Task Plan: Account Builder Implementation (v2.5, Gate-Driven)
-Last Updated: 2026-01-19 03:00 (KST)
+Last Updated: 2026-01-19 04:00 (KST)
 Status: Phase 0/0.5 COMPLETE | Gate 1-8 ALL PASS | Migration Complete | Ready for Phase 1
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
@@ -36,7 +36,7 @@ Non-goal
    - **5.7 커맨드 출력 결과 (붙여넣기) 또는 스크린샷을 DONE 보고에 필수 포함**
 
 ### 1.3 Oracle First
-- Primary truth: `tests/oracles/state_transition_test.py`
+- Primary truth: `tests/oracles/test_state_transition_oracle.py`
   - 상태 전이 + intents를 동시에 검증한다
   - 오라클은 “문서 흉내”가 아니라 “실제 assert”여야 한다
 - Integration tests는 연결 확인용(5~10개)으로 제한한다
@@ -94,10 +94,11 @@ tests/
 │   └── test_integration_basic.py # ✅ FakeExchange + EventRouter (9 cases)
 └── unit/
     ├── test_state_transition.py # ✅ transition() unit tests (36 cases)
-    └── test_event_router.py # ✅ Gate 3 proof (2 cases)
+    ├── test_event_router.py # ✅ Gate 3 proof (2 cases)
+    └── test_docs_ssot_paths.py # ✅ Documentation-Code path alignment (4 cases)
 ```
 
-**Phase 0 DONE 증거**: 위 파일들로 58 tests passed (pytest -q), Gate 1-8 ALL PASS, services/ 디렉토리 삭제 완료, 파일명 pytest 수집 규칙 준수 (test_*.py)
+**Phase 0 DONE 증거**: 위 파일들로 62 tests passed (pytest -q), Gate 1-8 ALL PASS, services/ 디렉토리 삭제 완료, 파일명 pytest 수집 규칙 준수 (test_*.py), **문서-코드 경로 일치 검증 통과** (test_docs_ssot_paths.py 4 cases)
 
 ---
 
@@ -236,7 +237,7 @@ Goal: “transition vocabulary”를 고정하고 오라클로 박는다.
 - 모든 side/direction/qty 단위가 문서상 정의와 일치해야 함(혼용 금지)
 
 #### Tests (must)
-- `tests/oracles/state_transition_test.py` 최소 10케이스, 모두 “상태+intent” assert
+- `tests/oracles/test_state_transition_oracle.py` 최소 10케이스, 모두 "상태+intent" assert
   - 예: `assert new_state == State.ENTRY_PENDING`
   - 예: `assert any(isinstance(x, PlaceStop) for x in intents)`
 
@@ -530,20 +531,20 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 | Gate | 규칙 | 상태 | Evidence |
 |------|------|------|----------|
 | 1 | Oracle Placeholder Zero Tolerance | ✅ PASS (COMPLETE) | **17개 placeholder 테스트 삭제** → docs/plans/task_plan.md Oracle Backlog 섹션으로 이동. **Gate 7 검증 결과**: (1a) placeholder 표현 0개, (1b) skip/xfail 0개, (1c) 의미있는 assert 155개, (5) oracle tests 24 passed, (전체) 33 passed. **Solution D 완료** (2026-01-18 23:45) |
-| 2 | No Test-Defined Domain | ✅ PASS | tests/oracles/state_transition_test.py:24-33 (Position 클래스 제거, domain.state에서 import) |
+| 2 | No Test-Defined Domain | ✅ PASS | tests/oracles/test_state_transition_oracle.py:24-33 (Position 클래스 제거, domain.state에서 import) |
 | 3 | Single Transition Truth | ✅ PASS | src/application/transition.py (SSOT), src/application/event_router.py (thin wrapper), tests/unit/test_event_router.py (2 증명 테스트) |
 | 4 | Repo Map Alignment | ✅ PASS | src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT 경로 확정) |
 | 5 | pytest Proof = DONE | ✅ PASS | 8 passed (tests/oracles: 6, tests/unit/test_event_router: 2) |
 | 6 | Doc Update | ✅ PASS | docs/plans/task_plan.md (PRE-FLIGHT 표 추가, Last Updated 갱신) |
-| 7 | Self-Verification Before DONE | ✅ PASS (COMPLETE) | **Gate 7 검증 최종** (2026-01-19 02:00): (1a) Placeholder 0개, (1b) Skip/Xfail 0개, (1c) Assert 155개, (4b) EventRouter State 참조 0개, (5) sys.path hack 0개, (6a) Deprecated import 0개, **(6b) 구 경로 import 0개 ✅**, (7) **58 passed (pip install -e .[dev] 후 PYTHONPATH 없이 동작)** |
-| 8 | Migration Protocol Compliance | ✅ PASS (COMPLETE) | **Migration 완료** (2026-01-19 02:00): src/application/services/ 디렉토리 전체 삭제, 구 경로 import 0개 검증, pytest 58 passed. **패키징 표준 준수**: pyproject.toml 설정, pip install -e .[dev] 후 pytest 정상 동작 (PYTHONPATH 불필요). **파일명 규칙 준수**: tests/oracles/test_state_transition_oracle.py (pytest 자동 수집). **Phase 1 시작 조건 충족** |
+| 7 | Self-Verification Before DONE | ✅ PASS (COMPLETE) | **Gate 7 검증 최종** (2026-01-19 04:00): (1a) Placeholder 0개, (1b) Skip/Xfail 0개, (1c) Assert 155개, (4b) EventRouter State 참조 0개, (5) sys.path hack 0개, (6a) Deprecated import 0개, **(6b) 구 경로 import 0개 ✅**, (7) **62 passed (pip install -e .[dev] 후 PYTHONPATH 없이 동작)**, **(8) 문서-코드 경로 일치 검증 4 passed (test_docs_ssot_paths.py)** |
+| 8 | Migration Protocol Compliance | ✅ PASS (COMPLETE) | **Migration 완료** (2026-01-19 04:00): src/application/services/ 디렉토리 전체 삭제, 구 경로 import 0개 검증, pytest 62 passed. **패키징 표준 준수**: pyproject.toml 설정, pip install -e .[dev] 후 pytest 정상 동작 (PYTHONPATH 불필요). **파일명 규칙 준수**: tests/oracles/test_state_transition_oracle.py (pytest 자동 수집). **문서-코드 경로 일치**: test_docs_ssot_paths.py 4 passed (SSOT 내부 일관성 보장). **Phase 1 시작 조건 충족** |
 
 ### Implementation Phases
 
 | Phase | Status (TODO/DOING/DONE) | Evidence (tests) | Evidence (impl) | Notes / Commit |
 |------:|--------------------------|------------------|------------------|----------------|
-| 0 | ✅ DONE | **Oracle 25케이스** (tests/oracles/test_state_transition_oracle.py): test_entry_pending_to_in_position_on_fill, test_entry_pending_to_flat_on_reject, test_entry_pending_to_in_position_on_partial_fill, test_exit_pending_to_flat_on_fill, test_halt_gate_adl_event, test_cooldown_gate_blocks_entry_before_timeout, test_cooldown_gate_allows_entry_after_timeout, test_one_way_mode_gate_rejects_opposite_direction 등 + Phase 0.5 추가 케이스 포함. **실행 (기본 재현 경로)**: `pytest -q` → **58 passed** (oracle 25 + unit 33) | src/domain/state.py, src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT), src/application/event_router.py (thin wrapper). **Migration 완료**: src/application/services/ 삭제, 패키징 표준 준수 (pip install -e .[dev]) | Phase 0+0.5 완료. **Phase 1 시작 가능** |
-| 0.5 | ✅ DONE | **Phase 0에 통합됨** (tests/oracles/test_state_transition_oracle.py에 포함). 개별 케이스: test_in_position_additional_partial_fill_increases_qty (Case A), test_in_position_fill_completes_entry_working_false (Case B), test_in_position_liquidation_should_halt (Case C), test_in_position_adl_should_halt (Case C), test_in_position_missing_stop_emits_place_stop_intent, test_in_position_invalid_filled_qty_halts (Case D). **실행**: `pytest -q` → **58 passed** | src/application/transition.py (Phase 0.5 로직: invalid qty 방어, stop_status=MISSING 복구, IN_POSITION 이벤트 처리 A-D) | Phase 0.5 완료. IN_POSITION 이벤트 처리 + stop 복구 intent + invalid qty 방어 구현 |
+| 0 | ✅ DONE | **Oracle 25케이스** (tests/oracles/test_state_transition_oracle.py): test_entry_pending_to_in_position_on_fill, test_entry_pending_to_flat_on_reject, test_entry_pending_to_in_position_on_partial_fill, test_exit_pending_to_flat_on_fill, test_halt_gate_adl_event, test_cooldown_gate_blocks_entry_before_timeout, test_cooldown_gate_allows_entry_after_timeout, test_one_way_mode_gate_rejects_opposite_direction 등 + Phase 0.5 추가 케이스 포함. **실행 (기본 재현 경로)**: `pytest -q` → **62 passed** (oracle 25 + unit 37 + docs SSOT 4) | src/domain/state.py, src/domain/intent.py, src/domain/events.py, src/application/transition.py (SSOT), src/application/event_router.py (thin wrapper), **tests/unit/test_docs_ssot_paths.py (문서-코드 경로 일치 검증)**. **Migration 완료**: src/application/services/ 삭제, 패키징 표준 준수 (pip install -e .[dev]) | Phase 0+0.5 완료. **Phase 1 시작 가능** |
+| 0.5 | ✅ DONE | **Phase 0에 통합됨** (tests/oracles/test_state_transition_oracle.py에 포함). 개별 케이스: test_in_position_additional_partial_fill_increases_qty (Case A), test_in_position_fill_completes_entry_working_false (Case B), test_in_position_liquidation_should_halt (Case C), test_in_position_adl_should_halt (Case C), test_in_position_missing_stop_emits_place_stop_intent, test_in_position_invalid_filled_qty_halts (Case D). **실행**: `pytest -q` → **62 passed** | src/application/transition.py (Phase 0.5 로직: invalid qty 방어, stop_status=MISSING 복구, IN_POSITION 이벤트 처리 A-D) | Phase 0.5 완료. IN_POSITION 이벤트 처리 + stop 복구 intent + invalid qty 방어 구현 |
 | 1 | TODO | - | - | - |
 | 2 | TODO | - | - | - |
 | 3 | TODO | - | - | - |
