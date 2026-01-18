@@ -54,10 +54,10 @@ def test_tick_engine_module_exists():
 
 def test_emergency_gate_module_exists():
     """
-    emergency_gate 모듈이 존재해야 한다.
+    emergency 모듈이 존재해야 한다.
 
     Given: FLOW.md Section 1.5 "Emergency Check (최우선, 항상)" 요구사항
-    When: src/application/emergency_gate.py import 시도
+    When: src/application/emergency.py import 시도
     Then: 모듈 import 성공, evaluate() 함수 호출 가능
 
     치명성: Emergency Check 골격 없으면
@@ -66,12 +66,12 @@ def test_emergency_gate_module_exists():
     """
     # Import 가능 여부 검증
     try:
-        from application.emergency_gate import evaluate
+        from application.emergency import evaluate
     except ImportError as e:
         raise AssertionError(
-            f"emergency_gate module not found: {e}\n"
+            f"emergency module not found: {e}\n"
             "FLOW.md Section 1.5 requires Emergency Check (Priority 0). "
-            "Create src/application/emergency_gate.py with evaluate() function."
+            "Create src/application/emergency.py with evaluate() function."
         )
 
     # evaluate() 함수가 호출 가능한지 검증
@@ -96,7 +96,7 @@ def test_emergency_evaluated_before_transition():
     source = inspect.getsource(tick_engine.tick)
 
     # "Emergency" 위치 검색
-    emergency_keywords = ["Emergency", "emergency_gate", "evaluate"]
+    emergency_keywords = ["Emergency", "emergency", "evaluate"]
     emergency_positions = [source.find(kw) for kw in emergency_keywords if source.find(kw) > 0]
 
     # "transition" 위치 검색
@@ -106,7 +106,7 @@ def test_emergency_evaluated_before_transition():
     # 둘 다 존재해야 함
     assert len(emergency_positions) > 0, (
         "tick() must contain Emergency Check. "
-        "Add emergency_gate.evaluate() call or 'Emergency Check' comment."
+        "Add emergency.evaluate() call or 'Emergency Check' comment."
     )
 
     assert len(transition_positions) > 0, (
@@ -152,21 +152,21 @@ def test_tick_engine_file_has_flow_reference():
 
 def test_emergency_gate_file_has_flow_reference():
     """
-    emergency_gate.py가 FLOW.md를 참조해야 한다.
+    emergency.py가 FLOW.md를 참조해야 한다.
 
-    Given: emergency_gate.py 존재
+    Given: emergency.py 존재
     When: 파일 헤더 읽기
     Then: "FLOW.md" 또는 "FLOW_REF" 문자열 존재
 
     치명성: FLOW 참조 없으면
            - Emergency Check 구현이 헌법 어느 섹션을 따르는지 불명
     """
-    emergency_gate_path = Path("src/application/emergency_gate.py")
-    assert emergency_gate_path.exists(), "emergency_gate.py must exist"
+    emergency_path = Path("src/application/emergency.py")
+    assert emergency_path.exists(), "emergency.py must exist"
 
-    content = emergency_gate_path.read_text()
+    content = emergency_path.read_text()
 
     assert "FLOW.md" in content or "FLOW_REF" in content, (
-        "emergency_gate.py must reference FLOW.md as the constitutional source. "
+        "emergency.py must reference FLOW.md as the constitutional source. "
         "Add 'FLOW_REF: docs/constitution/FLOW.md#1.5' to the docstring."
     )
