@@ -1,0 +1,64 @@
+# Phase 0 File Tree Snapshot
+# Date: 2026-01-19 00:35 (KST)
+# Command: ls -laR src/
+
+src/:
+total 28
+drwxr-xr-x  7 selios selios 4096 Jan 18 21:43 .
+drwxr-xr-x 10 selios selios 4096 Jan 18 22:39 ..
+drwxr-xr-x  2 selios selios 4096 Jan 18 18:14 __pycache__
+drwxr-xr-x  3 selios selios 4096 Jan 18 23:27 application
+drwxr-xr-x  2 selios selios 4096 Jan 18 22:35 cbgb.egg-info
+drwxr-xr-x  3 selios selios 4096 Jan 18 23:23 domain
+drwxr-xr-x  5 selios selios 4096 Jan 18 18:14 infrastructure
+
+src/application:
+total 52
+drwxr-xr-x 3 selios selios  4096 Jan 18 23:27 .
+drwxr-xr-x 7 selios selios  4096 Jan 18 21:43 ..
+-rw-r--r-- 1 selios selios     0 Jan 18 18:13 __init__.py
+drwxr-xr-x 2 selios selios  4096 Jan 18 23:28 __pycache__
+-rw-r--r-- 1 selios selios  6373 Jan 18 23:27 emergency.py
+-rw-r--r-- 1 selios selios  2124 Jan 18 19:30 event_router.py
+-rw-r--r-- 1 selios selios  2361 Jan 18 22:53 tick_engine.py
+-rw-r--r-- 1 selios selios 14317 Jan 18 23:24 transition.py
+-rw-r--r-- 1 selios selios  4454 Jan 18 22:59 ws_health.py
+
+src/domain:
+total 24
+drwxr-xr-x 3 selios selios 4096 Jan 18 23:23 .
+drwxr-xr-x 7 selios selios 4096 Jan 18 21:43 ..
+-rw-r--r-- 1 selios selios    0 Jan 18 18:13 __init__.py
+drwxr-xr-x 2 selios selios 4096 Jan 18 23:25 __pycache__
+-rw-r--r-- 1 selios selios 1381 Jan 18 23:23 events.py
+-rw-r--r-- 1 selios selios 1535 Jan 18 19:29 intent.py
+-rw-r--r-- 1 selios selios 2605 Jan 18 19:32 state.py
+
+src/infrastructure/exchange:
+total 40
+drwxr-xr-x 3 selios selios  4096 Jan 18 22:55 .
+drwxr-xr-x 5 selios selios  4096 Jan 18 18:14 ..
+-rw-r--r-- 1 selios selios     0 Jan 18 18:13 __init__.py
+drwxr-xr-x 2 selios selios  4096 Jan 18 22:56 __pycache__
+-rw-r--r-- 1 selios selios 14784 Jan 18 21:21 fake_exchange.py
+-rw-r--r-- 1 selios selios  5969 Jan 18 22:55 fake_market_data.py
+-rw-r--r-- 1 selios selios  3198 Jan 18 22:54 market_data_interface.py
+
+# Repo Map Alignment Verification:
+# ✅ src/domain/state.py (State, StopStatus, Position, PendingOrder)
+# ✅ src/domain/intent.py (Intent base classes)
+# ✅ src/domain/events.py (ExecutionEvent, EventType)
+# ✅ src/application/transition.py (SSOT transition function)
+# ✅ src/application/event_router.py (thin wrapper)
+# ✅ src/application/tick_engine.py (FLOW Section 2 orchestrator)
+# ✅ src/application/emergency.py (Phase 1: emergency policy)
+# ✅ src/application/ws_health.py (Phase 1: ws health tracker)
+# ✅ src/infrastructure/exchange/fake_exchange.py (Phase 0 test simulator)
+# ✅ src/infrastructure/exchange/market_data_interface.py (Phase 1 interface)
+# ✅ src/infrastructure/exchange/fake_market_data.py (Phase 1 test injection)
+
+# Migration Protocol Compliance:
+# ✅ src/application/services/ 디렉토리 삭제 완료 (Gate 8 통과)
+# ✅ 구 경로 import 0개 검증 완료
+
+# File tree와 docs/plans/task_plan.md Section 2.1 (Repo Map) 일치 확인 완료.

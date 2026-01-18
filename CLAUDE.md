@@ -219,18 +219,36 @@ git diff --stat
 ---
 
 **검증 성공 시 DONE 절차**:
-1. pytest PASS 결과를 task_plan.md Evidence에 기록
-2. Progress Table 업데이트 (체크박스 + Evidence 경로)
-3. Last Updated 갱신
-4. **5.7 커맨드 출력 결과 (붙여넣기) 또는 스크린샷을 DONE 보고에 필수 포함**
-5. DONE 보고
+1. **Evidence Artifacts 생성** (필수, 새 세션 검증 가능하도록)
+   - `docs/evidence/phase_N/` 디렉토리 생성
+   - `gate7_verification.txt` (Section 5.7 커맨드 7개 출력 전문 저장)
+   - `pytest_output.txt` (pytest -q 실행 결과 저장)
+   - `red_green_proof.md` (RED→GREEN 재현 증거 작성)
+   - `completion_checklist.md` (DoD 자체 검증 체크리스트 작성)
+   - 위 파일들을 git commit
+
+2. task_plan.md 업데이트
+   - Progress Table에 Evidence Artifacts 링크 추가
+   - Last Updated 갱신
+
+3. 검증 스크립트 실행 (선택, 권장)
+   ```bash
+   ./scripts/verify_phase_completion.sh N
+   # → ✅ PASS 확인
+   ```
+
+4. DONE 보고 (Evidence 링크 포함)
 
 ---
 
 **DONE 무효 조건 (자동 거부)**:
+- **Evidence Artifacts 파일이 없으면** → **DONE 자동 무효** (Progress Table [x]가 있어도 무시)
 - Gate 7 커맨드 출력이 DONE 보고에 없으면 → **DONE 보고는 자동 무효**
 - 출력 증거 없이 "검증 완료했습니다" 말만 하면 → **DONE 인정 불가**
 - Placeholder 테스트(1a~1c), 도메인 재정의(2a~2b), 전이 분기(4a~4b) 중 1개라도 검출되면 → **즉시 수정 후 재보고**
+- **새 세션에서 `./scripts/verify_phase_completion.sh N`이 FAIL**이면 → **재작업 필요**
+
+**자세한 내용**: [docs/evidence/README.md](docs/evidence/README.md)
 
 ---
 
