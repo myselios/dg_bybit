@@ -405,7 +405,265 @@ class EVFullValidator:
 
 ---
 
-## 14. 이 문서의 최종 선언
+## 14. 동적 EV 임계값 (v2.1 추가)
+
+### 14.1 문제: 정적 임계값의 한계
+
+**현재 구조**:
+```python
+MIN_R_WIN = 3.0  # +300% (고정)
+MIN_WIN_PROB = 0.10  # 10% (고정)
+MIN_TAIL_PROFIT = 5.0  # +500% (고정)
+```
+
+**실전 문제**:
+- 변동성 수축 국면: +300% 도달 불가능 → 진입 기회 0
+- 변동성 확장 국면: +300%는 쉬움 → 기준 너무 낮음
+- Drawdown 상태: -50% 손실 후 +300%로는 복구 불가
+
+**결과**:
+> **시장 환경 변화 시
+> EV 조건이 현실과 괴리되어
+> 기회 상실 또는 리스크 과다 발생**
+
+### 14.2 동적 임계값 계산
+
+#### 14.2.1 변동성 Regime 기반 조정
+
+```python
+@dataclass
+class VolatilityRegime:
+    """변동성 상태"""
+
+    type: str  # "expanding", "contracting", "stable"
+    atr_percentile: float  # 0.0 ~ 1.0 (최근 60일 대비)
+    atr_trend: float  # ATR 변화율
+
+def calculate_volatility_multiplier(regime: VolatilityRegime) -> float:
+    """변동성 기반 임계값 배율 계산"""
+
+    if regime.type == "expanding":
+        # 변동성 확장 → 엄격한 기준
+        return 1.0  # +300% 유지
+
+    elif regime.type == "contracting":
+        # 변동성 수축 → 완화된 기준
+        # +300% → +210% 완화
+        return 0.7
+
+    elif regime.type == "stable":
+        # 안정 구간 → 중간 기준
+        return 0.85  # +255%
+
+    return 1.0
+```
+
+**논리**:
+- Contracting 구간: BTC 횡보 시 +300% 불가능 → +210%로 완화
+- Expanding 구간: 큰 움직임 가능 → +300% 엄격 유지
+- Stable 구간: 중간값 적용
+
+#### 14.2.2 최근 트레이드 분포 기반 조정
+
+```python
+def calculate_distribution_multiplier(
+    recent_trades: List[TradeResult],
+    lookback_count: int = 20,
+) -> float:
+    """실제 트레이드 결과 기반 임계값 조정"""
+
+    if len(recent_trades) < 10:
+        # 데이터 부족 → 기본값
+        return 1.0
+
+    # 최근 20개 트레이드의 R 분포
+    wins = [t.r_multiple for t in recent_trades if t.r_multiple > 0]
+
+    if not wins:
+        # 승리 없음 → 완화
+        return 0.8
+
+    # 상위 10% 실제 R
+    top_10_pct = sorted(wins, reverse=True)[:max(1, len(wins) // 10)]
+    actual_tail_avg = sum(top_10_pct) / len(top_10_pct)
+
+    if actual_tail_avg < 2.0:
+        # 실제로 +200%도 못 만듦 → 대폭 완화
+        return 0.6
+    elif actual_tail_avg < 3.0:
+        # +300% 미달 → 소폭 완화
+        return 0.8
+    elif actual_tail_avg > 5.0:
+        # +500% 이상 달성 → 엄격 강화
+        return 1.2
+
+    return 1.0
+```
+
+**논리**:
+- 실제로 +300% 만들고 있으면 → 기준 유지/강화
+- 실제로 +200%도 못 만들면 → 기준 완화 (진입 기회 확보)
+
+#### 14.2.3 Drawdown 상태 기반 조정
+
+```python
+def calculate_drawdown_multiplier(
+    current_balance: float,
+    starting_balance: float,
+    drawdown_pct: float,
+) -> float:
+    """Drawdown 상태에 따른 임계값 조정"""
+
+    if drawdown_pct < 0.10:
+        # 경미한 DD (-10% 미만) → 기본값
+        return 1.0
+
+    elif drawdown_pct < 0.30:
+        # 중간 DD (-30% 미만) → 소폭 완화
+        # 복구 위해 기회 필요
+        return 0.9
+
+    elif drawdown_pct < 0.50:
+        # 심각한 DD (-50% 미만) → 대폭 완화
+        # -50% → 복구 위해 +100% 필요
+        # 하지만 +300% 기준 유지 시 진입 불가
+        return 0.7
+
+    else:
+        # 치명적 DD (-50% 이상) → 최대 완화
+        # 청산 직전 → 어떻게든 기회 필요
+        return 0.5
+```
+
+**논리**:
+- DD 클수록 복구 절박 → 임계값 완화
+- 하지만 **최소 품질은 유지** (0.5 = +150% 최소)
+
+#### 14.2.4 최종 임계값 계산
+
+```python
+def calculate_dynamic_threshold(
+    base_r_win: float,
+    volatility_regime: VolatilityRegime,
+    recent_trades: List[TradeResult],
+    drawdown_pct: float,
+) -> float:
+    """
+    동적 EV 임계값 계산
+
+    Returns:
+        조정된 R_win 임계값
+    """
+
+    vol_mult = calculate_volatility_multiplier(volatility_regime)
+    dist_mult = calculate_distribution_multiplier(recent_trades)
+    dd_mult = calculate_drawdown_multiplier(current_balance, starting_balance, drawdown_pct)
+
+    # 최종 배율 (최소 0.5, 최대 1.5)
+    final_mult = max(0.5, min(1.5, vol_mult * dist_mult * dd_mult))
+
+    # 조정된 임계값
+    adjusted_r_win = base_r_win * final_mult
+
+    return adjusted_r_win
+```
+
+**예시**:
+```python
+# 시나리오 1: 정상 상태
+vol_mult = 1.0  # Expanding
+dist_mult = 1.0  # 최근 +300% 달성
+dd_mult = 1.0   # DD < 10%
+→ R_win = 3.0 * 1.0 = +300% (기본값 유지)
+
+# 시나리오 2: 변동성 수축 + 깊은 DD
+vol_mult = 0.7  # Contracting
+dist_mult = 0.8  # 최근 +250% 수준
+dd_mult = 0.7   # DD -40%
+→ R_win = 3.0 * 0.39 = +117% (대폭 완화)
+
+# 시나리오 3: 변동성 확장 + 높은 실제 성과
+vol_mult = 1.0  # Expanding
+dist_mult = 1.2  # 최근 +500% 달성
+dd_mult = 1.0   # DD < 10%
+→ R_win = 3.0 * 1.2 = +360% (엄격 강화)
+```
+
+### 14.3 EVFullValidator에 적용
+
+```python
+class EVFullValidator:
+    BASE_R_WIN = 3.0  # 기본 +300%
+    BASE_WIN_PROB = 0.10
+    BASE_TAIL_PROFIT = 5.0
+
+    def validate(
+        self,
+        intent: TradeIntent,
+        risk_permission: RiskPermission,
+        account: AccountMetrics,
+        market_regime: MarketRegime,  # 추가
+        recent_trades: List[TradeResult],  # 추가
+    ) -> EVFullResult:
+        # 동적 임계값 계산
+        dynamic_r_win = calculate_dynamic_threshold(
+            base_r_win=self.BASE_R_WIN,
+            volatility_regime=market_regime.volatility,
+            recent_trades=recent_trades,
+            drawdown_pct=account.drawdown_pct,
+        )
+
+        # 시뮬레이션
+        outcomes = self._simulate_outcomes(intent, risk_permission, account)
+
+        # 동적 기준 적용
+        wins = [o for o in outcomes if o.pnl > 0]
+        R_win = mean([w.pnl_pct for w in wins])
+
+        if R_win < dynamic_r_win:
+            return FAIL(
+                reason=f"r_insufficient: {R_win:.1f} < {dynamic_r_win:.1f}",
+                threshold_used=dynamic_r_win,
+            )
+
+        # ... 나머지 검증
+```
+
+### 14.4 Threshold 로깅 및 추적
+
+```python
+@dataclass
+class EVDecisionLog:
+    # 기존 필드 + 동적 임계값 추가
+    threshold_r_win: float  # 사용된 R_win 임계값
+    threshold_multiplier: float  # 적용된 배율
+    volatility_regime: str
+    recent_trade_count: int
+    drawdown_pct: float
+```
+
+**이유**:
+- 임계값이 동적으로 변하므로 **어떤 기준이 사용되었는지 기록 필수**
+- 사후 분석 시 "왜 이 트레이드가 PASS/FAIL 됐는가" 판단 가능
+
+### 14.5 동적 임계값의 철학
+
+**정적 임계값**:
+> "+300%는 절대 기준이다."
+
+**동적 임계값**:
+> "+300%는 '정상 시장'의 기준이다.
+> 시장이 비정상이면 기준도 변한다.
+> 하지만 최소 품질은 유지한다."
+
+**핵심 원칙**:
+1. **환경 적응**: 시장 변화에 기준 조정
+2. **최소 품질 보장**: 아무리 완화해도 +150% 이상
+3. **사후 검증 가능**: 모든 임계값 로깅
+
+---
+
+## 15. 이 문서의 최종 선언
 
 ### v1 선언 (유지)
 > **이 시스템은

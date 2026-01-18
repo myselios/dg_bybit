@@ -389,7 +389,116 @@ class TradingStateMachine:
 
 ---
 
-## 9. 구현 우선순위
+## 9. Decision Outcome (의미 압축)
+
+### 9.1 문제: 로그만으로는 학습 불가
+
+**현재 상태**:
+- Tick 단위 기록
+- Event 단위 기록
+
+❌ **부족한 것**:
+- "이 결정이 계좌 성장에 어떤 의미였는가?"
+- Hindsight 기준 regret score
+
+### 9.2 DecisionOutcome (사후 평가)
+
+```python
+@dataclass
+class DecisionOutcome:
+    """결정의 사후 평가"""
+
+    # 연결
+    decision_id: str  # StateDecisionLog.id
+    decision_type: str  # "ev_full", "expansion", "exit"
+    decision_timestamp: datetime
+
+    # Horizon별 평가
+    short_term_r: float  # 24시간 후 R
+    mid_term_r: float    # 7일 후 R
+    long_term_r: float   # 30일 후 R
+
+    # Hindsight 평가
+    regret_score: float  # 0.0 ~ 1.0 (높을수록 후회)
+    optimal_action: str  # "should_have_expanded", "should_have_exited"
+
+    # 맥락
+    market_regime_at_decision: str
+    market_regime_after: str
+
+    # 학습 태그
+    learning_tag: str  # "good_denial", "missed_opportunity", "lucky_pass"
+```
+
+### 9.3 Regret Score 계산
+
+```python
+def calculate_regret_score(
+    decision: EVFullResult,
+    actual_outcome: float,
+    optimal_outcome: float,
+) -> float:
+    """사후적 후회 점수 계산"""
+
+    if decision.passed and actual_outcome < 0:
+        # EV 통과했지만 손실
+        regret = abs(actual_outcome) / decision.expected_r
+        return min(regret, 1.0)
+
+    elif not decision.passed and optimal_outcome > decision.expected_r:
+        # EV 차단했지만 실제로는 큰 기회
+        regret = (optimal_outcome - decision.expected_r) / optimal_outcome
+        return min(regret, 1.0)
+
+    else:
+        # 좋은 결정
+        return 0.0
+```
+
+### 9.4 학습 태그 분류
+
+| Tag | 의미 | 액션 |
+|-----|------|------|
+| good_denial | EV 차단 정확 | 기준 유지 |
+| missed_opportunity | EV 차단했지만 기회 | 임계값 완화 검토 |
+| lucky_pass | EV 통과했지만 손실 | 임계값 강화 검토 |
+| good_pass | EV 통과하고 수익 | 기준 유지 |
+
+### 9.5 Outcome 기반 EV 조정
+
+```python
+class EVThresholdAdjuster:
+    """Outcome 기반 EV 임계값 동적 조정"""
+
+    def adjust_threshold(
+        self,
+        recent_outcomes: List[DecisionOutcome],
+        current_threshold: float,
+    ) -> float:
+        """
+        최근 100개 결정의 Outcome 기반 조정
+
+        missed_opportunity 많으면 → 임계값 완화
+        lucky_pass 많으면 → 임계값 강화
+        """
+
+        missed = len([o for o in recent_outcomes if o.learning_tag == "missed_opportunity"])
+        lucky = len([o for o in recent_outcomes if o.learning_tag == "lucky_pass"])
+
+        if missed > 30:
+            # 기회 놓침 과다 → 완화
+            return current_threshold * 0.95
+
+        elif lucky > 30:
+            # 손실 과다 → 강화
+            return current_threshold * 1.05
+
+        return current_threshold
+```
+
+---
+
+## 10. 구현 우선순위 (수정)
 
 ### Phase 0 (필수)
 - StateDecisionLog
@@ -399,10 +508,12 @@ class TradingStateMachine:
 ### Phase 1 (확장)
 - RiskDecisionLog
 - ExpansionDecisionLog
+- **DecisionOutcome** (신규 추가)
 
-### Phase 2 (분석)
+### Phase 2 (학습)
 - DecisionLogQuery
+- **EVThresholdAdjuster** (신규 추가)
 - 로그 기반 전략 개선
 
 **이 문서는 BASE_ARCHITECTURE.md의
-생존 능력을 30% 향상시킨다.**
+생존 능력을 30% → 학습 능력을 50% 향상시킨다.**

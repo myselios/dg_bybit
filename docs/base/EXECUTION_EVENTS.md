@@ -111,57 +111,162 @@ class ExecutionResult:
 
 ## 3. Event → State 전환 규칙
 
-### 3.1 정상 흐름
+### 3.1 명시적 전환 테이블 (Explicit Transition Table)
 
+**목적**: 모든 (State, Event) 조합에 대한 전환 규칙을 명확히 정의
+
+#### 3.1.1 IDLE State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| FILLED | - | N/A | - | - | IDLE에서 실행 없음 |
+| PARTIAL_FILL | - | N/A | - | - | 불가능 |
+| SLIPPAGE_BREACH | - | N/A | - | - | 불가능 |
+| TIMEOUT | - | N/A | - | - | 불가능 |
+| EXCHANGE_ERROR | COOLDOWN | No | 즉시 | 1시간 | 거래소 장애 감지 |
+| ORDER_REJECTED | - | N/A | - | - | 불가능 |
+| INSUFFICIENT_MARGIN | TERMINATED | No | 즉시 | 영구 | 계좌 심각 |
+| LIQUIDATION_WARNING | - | N/A | - | - | 포지션 없음 |
+| POSITION_FORCE_CLOSED | - | N/A | - | - | 불가능 |
+
+#### 3.1.2 MONITORING State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| FILLED | - | N/A | - | - | 진입 전 |
+| PARTIAL_FILL | - | N/A | - | - | 진입 전 |
+| SLIPPAGE_BREACH | - | N/A | - | - | 진입 전 |
+| TIMEOUT | - | N/A | - | - | 진입 전 |
+| EXCHANGE_ERROR | COOLDOWN | No | 즉시 | 1시간 | 거래소 장애 |
+| ORDER_REJECTED | - | N/A | - | - | 진입 전 |
+| INSUFFICIENT_MARGIN | TERMINATED | No | 즉시 | 영구 | 계좌 심각 |
+| LIQUIDATION_WARNING | - | N/A | - | - | 포지션 없음 |
+| POSITION_FORCE_CLOSED | - | N/A | - | - | 불가능 |
+
+#### 3.1.3 ENTRY_PENDING State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| **FILLED** | **ENTRY** | No | 즉시 | - | **정상 진입 성공** |
+| PARTIAL_FILL | ENTRY_PENDING | Yes | 1~2회 | - | 재시도 후 ENTRY |
+| PARTIAL_FILL | EXIT_FAILURE | No | 3회 반복 | - | 유동성 부족 |
+| SLIPPAGE_BREACH | COOLDOWN | No | 즉시 | 24시간 | 슬리피지 과다 |
+| TIMEOUT | ENTRY_PENDING | Yes | 1회 | - | 재시도 |
+| TIMEOUT | COOLDOWN | No | 2회 반복 | 1시간 | 레이턴시 과다 |
+| EXCHANGE_ERROR | COOLDOWN | No | 즉시 | 1시간 | 거래소 장애 |
+| ORDER_REJECTED | MONITORING | No | 즉시 | - | 진입 취소 |
+| INSUFFICIENT_MARGIN | TERMINATED | No | 즉시 | 영구 | 계좌 심각 |
+| LIQUIDATION_WARNING | - | N/A | - | - | 진입 전 불가능 |
+| POSITION_FORCE_CLOSED | - | N/A | - | - | 진입 전 불가능 |
+
+#### 3.1.4 ENTRY State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| FILLED | - | N/A | - | - | 이미 진입 완료 |
+| PARTIAL_FILL | - | N/A | - | - | Exit 주문만 가능 |
+| SLIPPAGE_BREACH | - | N/A | - | - | Exit 주문만 가능 |
+| TIMEOUT | - | N/A | - | - | Exit 주문만 가능 |
+| EXCHANGE_ERROR | COOLDOWN | No | 즉시 | 1시간 | 거래소 장애 시 |
+| ORDER_REJECTED | ENTRY | No | - | - | Exit 거부 시 유지 |
+| INSUFFICIENT_MARGIN | EXIT_FAILURE | No | 즉시 | - | 긴급 청산 시도 |
+| **LIQUIDATION_WARNING** | **EXIT_FAILURE** | No | 즉시 | - | **긴급 청산** |
+| POSITION_FORCE_CLOSED | TERMINATED | No | 즉시 | 영구 | 강제 청산됨 |
+
+#### 3.1.5 EXPANSION State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| FILLED | EXPANSION | No | - | - | Layer 추가 성공 |
+| PARTIAL_FILL | EXPANSION | Yes | 1~2회 | - | 재시도 |
+| PARTIAL_FILL | EXIT_SUCCESS | No | 3회 반복 | - | 확장 포기, 수익 확정 |
+| SLIPPAGE_BREACH | EXIT_SUCCESS | No | 즉시 | - | 확장 포기, 수익 확정 |
+| TIMEOUT | EXPANSION | Yes | 1회 | - | 재시도 |
+| TIMEOUT | EXIT_SUCCESS | No | 2회 반복 | - | 확장 포기 |
+| EXCHANGE_ERROR | COOLDOWN | No | 즉시 | 1시간 | 거래소 장애 |
+| ORDER_REJECTED | EXPANSION | No | - | - | 확장 실패, 기존 유지 |
+| INSUFFICIENT_MARGIN | EXIT_FAILURE | No | 즉시 | - | 긴급 청산 |
+| **LIQUIDATION_WARNING** | **EXIT_FAILURE** | No | 즉시 | - | **긴급 청산** |
+| POSITION_FORCE_CLOSED | TERMINATED | No | 즉시 | 영구 | 강제 청산됨 |
+
+#### 3.1.6 EXIT_PENDING State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| **FILLED** | **EXIT_SUCCESS** | No | PnL > 0 | - | **수익 청산** |
+| **FILLED** | **EXIT_FAILURE** | No | PnL ≤ 0 | - | **손실 청산** |
+| PARTIAL_FILL | EXIT_PENDING | Yes | 1~3회 | - | 재시도 (긴급) |
+| PARTIAL_FILL | EXIT_FAILURE | No | 4회 반복 | - | 일부만 청산됨 |
+| SLIPPAGE_BREACH | EXIT_PENDING | No | - | - | 허용 (청산 우선) |
+| TIMEOUT | EXIT_PENDING | Yes | 1~2회 | - | 재시도 (긴급) |
+| TIMEOUT | EXIT_FAILURE | No | 3회 반복 | - | 청산 실패 |
+| EXCHANGE_ERROR | EXIT_PENDING | Yes | 1회 | - | 재시도 (긴급) |
+| EXCHANGE_ERROR | TERMINATED | No | 2회 반복 | 영구 | 청산 불가 |
+| ORDER_REJECTED | EXIT_PENDING | Yes | 1회 | - | 재시도 |
+| INSUFFICIENT_MARGIN | EXIT_FAILURE | No | 즉시 | - | 강제 청산 대기 |
+| LIQUIDATION_WARNING | EXIT_FAILURE | No | 즉시 | - | Market 전환 |
+| **POSITION_FORCE_CLOSED** | **TERMINATED** | No | 즉시 | 영구 | **강제 청산됨** |
+
+#### 3.1.7 COOLDOWN State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| 모든 Event | COOLDOWN | No | - | - | Cooldown 중 실행 금지 |
+| POSITION_FORCE_CLOSED | TERMINATED | No | 즉시 | 영구 | 기존 포지션 청산 |
+
+#### 3.1.8 EXIT_SUCCESS / EXIT_FAILURE State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| 모든 Event | - | N/A | - | - | 최종 상태 |
+
+#### 3.1.9 TERMINATED State
+
+| ExecutionEvent | 다음 State | Retry | 조건 | Duration | 비고 |
+|---------------|-----------|-------|------|----------|------|
+| 모든 Event | - | N/A | - | - | 영구 종료 |
+
+### 3.2 핵심 전환 패턴
+
+#### 3.2.1 정상 흐름
 ```python
-# FILLED
-ExecutionEvent.FILLED → State.ENTRY (정상 진입)
-ExecutionEvent.FILLED → State.EXPANSION (확장 성공)
+ENTRY_PENDING + FILLED → ENTRY (정상 진입)
+EXPANSION + FILLED → EXPANSION (확장 성공)
+EXIT_PENDING + FILLED (PnL > 0) → EXIT_SUCCESS (수익 청산)
 ```
 
-### 3.2 경고 흐름 (복구 가능)
-
+#### 3.2.2 경고 흐름 (복구 가능)
 ```python
-# PARTIAL_FILL
-ExecutionEvent.PARTIAL_FILL (1회) → 재시도
-ExecutionEvent.PARTIAL_FILL (3회 반복) → State.EXIT_FAILURE
-    reason: "repeated_partial_fill"
-
-# TIMEOUT
-ExecutionEvent.TIMEOUT (1회) → 재시도
-ExecutionEvent.TIMEOUT (2회 반복) → State.COOLDOWN
-    reason: "execution_timeout"
+PARTIAL_FILL (1~2회) → 재시도 → 성공
+TIMEOUT (1회) → 재시도 → 성공
 ```
 
-### 3.3 즉시 차단 (복구 불가)
-
+#### 3.2.3 즉시 차단 (복구 불가)
 ```python
-# SLIPPAGE_BREACH
-ExecutionEvent.SLIPPAGE_BREACH → State.COOLDOWN
-    reason: "slippage_unacceptable"
-    duration: 24시간
-
-# EXCHANGE_ERROR
-ExecutionEvent.EXCHANGE_ERROR → State.COOLDOWN
-    reason: "exchange_instability"
-    duration: 1시간
-
-# INSUFFICIENT_MARGIN
-ExecutionEvent.INSUFFICIENT_MARGIN → State.TERMINATED
-    reason: "account_critical"
+SLIPPAGE_BREACH (진입 시) → COOLDOWN (24시간)
+EXCHANGE_ERROR → COOLDOWN (1시간)
+INSUFFICIENT_MARGIN → TERMINATED (영구)
 ```
 
-### 3.4 긴급 대응
-
+#### 3.2.4 긴급 대응
 ```python
-# LIQUIDATION_WARNING
-ExecutionEvent.LIQUIDATION_WARNING → State.EXIT_FAILURE (즉시 청산)
-    reason: "emergency_liquidation_risk"
-
-# POSITION_FORCE_CLOSED
-ExecutionEvent.POSITION_FORCE_CLOSED → State.TERMINATED
-    reason: "liquidated"
+LIQUIDATION_WARNING → EXIT_FAILURE (즉시 청산)
+POSITION_FORCE_CLOSED → TERMINATED (영구)
 ```
+
+### 3.3 State별 허용 Event (화이트리스트)
+
+| State | 허용 Event | 비고 |
+|-------|-----------|------|
+| IDLE | EXCHANGE_ERROR, INSUFFICIENT_MARGIN | 포지션 없음 |
+| MONITORING | EXCHANGE_ERROR, INSUFFICIENT_MARGIN | 진입 전 |
+| ENTRY_PENDING | 모든 Event | 주문 실행 중 |
+| ENTRY | LIQUIDATION_WARNING, POSITION_FORCE_CLOSED, EXCHANGE_ERROR | 포지션 보유 |
+| EXPANSION | 모든 Event | 확장 주문 가능 |
+| EXIT_PENDING | 모든 Event | 청산 주문 실행 중 |
+| COOLDOWN | POSITION_FORCE_CLOSED만 | 휴식 중 |
+| EXIT_SUCCESS/FAILURE | 없음 | 최종 상태 |
+| TERMINATED | 없음 | 영구 종료 |
 
 ---
 

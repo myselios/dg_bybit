@@ -156,46 +156,208 @@ def _check_structure_intact(self, features: Features) -> bool:
     return True
 ```
 
-### 4.2 EV 재검증 (경량)
+### 4.2 EV 재검증 (Marginal EV 계산)
 
-**목적**: Unrealized PnL로 진입해도 여전히 EV > 0인가?
+**목적**: Expansion은 "두 번째 진입"이므로 Marginal EV를 계산해야 함
 
+#### 4.2.1 Marginal EV란?
+
+**정의**:
+> **Layer 2 추가로 인한 '증분 기대값'**
+
+**왜 필요한가?**:
+```text
+Layer 1: Entry $100, Size 10 BTC
+Layer 2: Entry $108 (+8%), Size 5 BTC
+
+잘못된 계산:
+- "Layer 2도 +300% 가능하면 OK"
+
+올바른 계산:
+- Layer 2 추가 시 전체 포지션 EV 증가하는가?
+- Layer 2 단독 EV vs Layer 2가 전체에 미치는 영향
+```
+
+**핵심 차이**:
+- Layer 1 EV: 단독 진입의 기대값
+- **Layer 2 Marginal EV**: Layer 1 존재 상태에서 Layer 2 추가의 증분 가치
+
+#### 4.2.2 Marginal EV 계산식
+
+```python
+def calculate_marginal_ev(
+    self,
+    current_position: Position,
+    expansion_layer: int,
+    features: Features,
+) -> MarginalEVResult:
+    """Expansion의 Marginal EV 계산"""
+
+    # 1. 현재 포지션 EV (Layer 1만)
+    ev_current = self._calculate_position_ev(
+        entry_price=current_position.avg_price,
+        current_price=features.price,
+        size=current_position.total_size,
+        volatility=features.atr14,
+    )
+
+    # 2. Expansion 후 포지션 EV (Layer 1 + Layer 2)
+    expansion_size = self._calculate_expansion_size(expansion_layer)
+    new_total_size = current_position.total_size + expansion_size
+
+    # Expansion 진입가 = 현재가 (unrealized PnL로 진입)
+    expansion_entry = features.price
+
+    # 가중평균 진입가
+    weighted_avg_entry = (
+        (current_position.avg_price * current_position.total_size) +
+        (expansion_entry * expansion_size)
+    ) / new_total_size
+
+    ev_after_expansion = self._calculate_position_ev(
+        entry_price=weighted_avg_entry,
+        current_price=features.price,
+        size=new_total_size,
+        volatility=features.atr14,
+    )
+
+    # 3. Marginal EV = 증분
+    marginal_ev = ev_after_expansion - ev_current
+
+    # 4. Marginal EV가 양수여야 허가
+    if marginal_ev <= 0:
+        return MarginalEVResult(
+            passed=False,
+            reason="negative_marginal_ev",
+            marginal_ev=marginal_ev,
+            ev_current=ev_current,
+            ev_after=ev_after_expansion,
+        )
+
+    return MarginalEVResult(
+        passed=True,
+        marginal_ev=marginal_ev,
+        ev_current=ev_current,
+        ev_after=ev_after_expansion,
+    )
+```
+
+#### 4.2.3 Position EV 계산 (내부 로직)
+
+```python
+def _calculate_position_ev(
+    self,
+    entry_price: float,
+    current_price: float,
+    size: int,
+    volatility: float,
+) -> float:
+    """포지션의 기대값 계산 (간소화)"""
+
+    # Monte Carlo 시뮬레이션 (100회, 경량)
+    outcomes = []
+    for _ in range(100):
+        # 시뮬레이션: 진입 → Exit
+        pnl = self._simulate_single_path(
+            entry=entry_price,
+            current=current_price,
+            volatility=volatility,
+            size=size,
+        )
+        outcomes.append(pnl)
+
+    # EV = 평균 결과
+    ev = sum(outcomes) / len(outcomes)
+    return ev
+```
+
+**간소화 이유**:
+- Expansion 재검증은 Tick마다 발생 가능 → 빠른 계산 필요
+- Full EV Validator처럼 1000회 시뮬레이션 불가
+- 100회 경량 시뮬레이션으로 충분
+
+#### 4.2.4 Marginal EV 예시
+
+**시나리오 1: Marginal EV 양(+) → 허가**
+```text
+Layer 1:
+  Entry: $100, Size: 10 BTC
+  Current: $108 (+8%)
+  EV_current: +0.35 (35% 기대 수익)
+
+Layer 2 추가 시:
+  Entry: $108, Size: 5 BTC
+  Weighted Avg Entry: $103.3
+  EV_after: +0.50 (50% 기대 수익)
+
+Marginal EV = +0.50 - 0.35 = +0.15
+→ PASS (Expansion 허가)
+```
+
+**시나리오 2: Marginal EV 음(-) → 차단**
+```text
+Layer 1:
+  Entry: $100, Size: 10 BTC
+  Current: $108 (+8%)
+  EV_current: +0.35
+
+Layer 2 추가 시:
+  Entry: $108, Size: 5 BTC
+  하지만 추세 약화 감지 (변동성 축소)
+  EV_after: +0.28 (오히려 감소)
+
+Marginal EV = +0.28 - 0.35 = -0.07
+→ FAIL (Expansion 차단)
+→ 이유: Layer 2 추가 시 전체 EV 악화
+```
+
+**논리**:
+- Marginal EV < 0 = Layer 2가 전체 포지션의 질을 떨어뜨림
+- 이 경우 Layer 2 추가 금지, Layer 1 수익 확정 고려
+
+#### 4.2.5 _revalidate_ev_lightweight 수정
+
+**Before** (단순 여유 체크):
+```python
+def _revalidate_ev_lightweight(...) -> bool:
+    upside_remaining = (price - effective_entry) / effective_entry
+    return upside_remaining >= MIN_UPSIDE_REMAINING
+```
+
+**After** (Marginal EV 계산):
 ```python
 def _revalidate_ev_lightweight(
     self,
     current_position: Position,
     features: Features,
+    expansion_layer: int,
 ) -> bool:
-    """EV 경량 재검증 (시뮬레이션 생략)"""
+    """EV 재검증 (Marginal EV 기반)"""
 
-    # Unrealized PnL 기반 진입 가격
-    effective_entry = current_position.avg_price * (
-        1 + current_position.unrealized_pnl_pct
+    # Marginal EV 계산
+    result = self.calculate_marginal_ev(
+        current_position,
+        expansion_layer,
+        features,
     )
 
-    # 현재 가격 대비 여유
-    upside_remaining = (features.price - effective_entry) / effective_entry
+    if not result.passed:
+        self._log_marginal_ev_denial(result)
+        return False
 
-    # 최소 +100% 여유 필요
-    MIN_UPSIDE_REMAINING = 1.0
+    # 추가 안전장치: 최소 여유 체크
+    effective_entry = features.price
+    upside_remaining = self._calculate_upside_potential(
+        effective_entry,
+        features,
+    )
+
+    MIN_UPSIDE_REMAINING = 1.0  # +100% 최소
 
     if upside_remaining < MIN_UPSIDE_REMAINING:
         return False
 
     return True
-```
-
-**논리**:
-```text
-Entry: $100
-Current: $108 (+8%)
-Effective Entry (Layer 2): $108
-
-필요 수익: +300%
-→ Target: $108 * 4 = $432
-
-현재 여유: ($432 - $108) / $108 = 300%
-→ OK, 충분한 여유
 ```
 
 ### 4.3 Risk 재확인
