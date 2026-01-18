@@ -365,7 +365,7 @@ pip install -e ".[dev]"
 pytest -q
 
 # 단일 테스트 파일
-pytest -q tests/oracles/state_transition_test.py
+pytest -q tests/oracles/test_state_transition_oracle.py
 pytest -q tests/unit/test_example.py -v
 
 # 특정 테스트 함수
@@ -386,7 +386,12 @@ PR/완료 시 최소:
 - `mypy src/` 통과 (도입된 영역 기준)
 - `pytest -q` 또는 관련 타겟 테스트 통과
 
-**중요**: 테스트는 `pip install -e .` 이후 **PYTHONPATH 설정 없이** `pytest` 명령어만으로 실행되어야 한다.
+**중요**: 테스트는 `pip install -e .[dev]` 이후 **PYTHONPATH 설정 없이** `pytest` 명령어만으로 실행되어야 한다.
+
+**패키징 표준 (SSOT)**:
+- 최초 설정: `pip install -e .[dev]` (pytest, mypy, ruff 등 개발 도구 포함)
+- 테스트 실행: `pytest -q` (PYTHONPATH 불필요)
+- CI/자동화: 항상 `pip install -e .[dev]` 후 pytest 실행
 
 10) 레포 구조 (현재/정렬 규칙)
 구조는 docs/plans/task_plan.md의 Repo Map을 기준으로 정렬한다.
