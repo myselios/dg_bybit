@@ -1,0 +1,202 @@
+# Phase 1 Emergency & WS Health Thresholds Verification
+# Date: 2026-01-21 05:25 (KST)
+# Purpose: Policy 문서와 구현 임계값 일치 검증
+
+========================================
+1. emergency.py Thresholds
+========================================
+
+## 1.1 Price Drop Thresholds
+
+### Policy (docs/specs/account_builder_policy.md Section 7.1):
+- price_drop_1m <= -10% → State.HALT
+- price_drop_5m <= -20% → State.HALT
+
+### Implementation (src/application/emergency.py:99, 106):
+```python
+if price_drop_1m <= -0.10:  # Line 99
+    return EmergencyStatus(is_halt=True, ...)
+
+if price_drop_5m <= -0.20:  # Line 106
+    return EmergencyStatus(is_halt=True, ...)
+```
+
+✅ **MATCH**: -0.10 (10%), -0.20 (20%)
+
+---
+
+## 1.2 Balance Anomaly Thresholds
+
+### Policy (docs/specs/account_builder_policy.md Section 7.1):
+- equity <= 0 → State.HALT
+- stale timestamp > 30s → State.HALT
+
+### Implementation (src/application/emergency.py:70, 81):
+```python
+if equity_btc <= 0.0:  # Line 70
+    return EmergencyStatus(is_halt=True, ...)
+
+if staleness > 30.0:  # Line 81
+    return EmergencyStatus(is_halt=True, ...)
+```
+
+✅ **MATCH**: 0.0, 30.0s
+
+---
+
+## 1.3 Latency Threshold
+
+### Policy (docs/specs/account_builder_policy.md Section 7.1):
+- latency_rest_p95 >= 5.0s → emergency_block=True
+
+### Implementation (src/application/emergency.py:115):
+```python
+if latency_rest_p95 >= 5.0:  # Line 115
+    return EmergencyStatus(is_halt=False, is_blocked=True, ...)
+```
+
+✅ **MATCH**: 5.0s
+
+---
+
+## 1.4 Auto-Recovery Thresholds
+
+### Policy (docs/specs/account_builder_policy.md Section 7.3):
+- drop_1m > -5% AND drop_5m > -10%
+- 5분간 연속 유지 (Orchestrator에서 추적)
+- Recovery 후 30분 cooldown
+
+### Implementation (src/application/emergency.py:151-163):
+```python
+if price_drop_1m <= -0.05:  # Line 151
+    return RecoveryStatus(can_recover=False, cooldown_minutes=0)
+
+if price_drop_5m <= -0.10:  # Line 155
+    return RecoveryStatus(can_recover=False, cooldown_minutes=0)
+
+# Can recover
+return RecoveryStatus(
+    can_recover=True,
+    cooldown_minutes=30  # Line 161
+)
+```
+
+✅ **MATCH**: -5%, -10%, 30 minutes
+
+---
+
+========================================
+2. ws_health.py Thresholds
+========================================
+
+## 2.1 Heartbeat Timeout
+
+### Policy (docs/specs/account_builder_policy.md Section 7.2):
+- heartbeat timeout > 10s → degraded_mode=True
+
+### Implementation (src/application/ws_health.py:73):
+```python
+if heartbeat_timeout_s > 10.0:  # Line 73
+    return WSHealthStatus(is_degraded=True, ...)
+```
+
+✅ **MATCH**: 10.0s
+
+---
+
+## 2.2 Event Drop Count
+
+### Policy (docs/specs/account_builder_policy.md Section 7.2):
+- event drop count >= 3 → degraded_mode=True
+
+### Implementation (src/application/ws_health.py:83):
+```python
+if event_drop_count >= 3:  # Line 83
+    return WSHealthStatus(is_degraded=True, ...)
+```
+
+✅ **MATCH**: 3
+
+---
+
+## 2.3 Degraded Timeout
+
+### Policy (docs/specs/account_builder_policy.md Section 7.2):
+- degraded duration >= 60s → State.HALT
+
+### Implementation (src/application/ws_health.py:111):
+```python
+def check_degraded_timeout(market_data, degraded_started_at: float) -> bool:
+    current_ts = market_data.get_timestamp()
+    duration_s = current_ts - degraded_started_at
+    return duration_s >= 60.0  # Line 111
+```
+
+✅ **MATCH**: 60.0s
+
+---
+
+## 2.4 WS Recovery Cooldown
+
+### Policy (docs/specs/account_builder_policy.md Section 7.3):
+- WS recovery 후 5분 cooldown
+
+### Implementation (src/application/ws_health.py:132):
+```python
+def check_ws_recovery(market_data) -> WSRecoveryStatus:
+    # ...
+    return WSRecoveryStatus(
+        can_recover=True,
+        cooldown_minutes=5  # Line 132
+    )
+```
+
+✅ **MATCH**: 5 minutes
+
+---
+
+========================================
+3. 종합 검증 결과
+========================================
+
+**✅ ALL THRESHOLDS MATCH**
+
+| Category | Threshold | Policy | Implementation | Status |
+|----------|-----------|--------|----------------|--------|
+| Price Drop 1m | -10% | ✅ | -0.10 (Line 99) | MATCH |
+| Price Drop 5m | -20% | ✅ | -0.20 (Line 106) | MATCH |
+| Balance Equity | <= 0 | ✅ | 0.0 (Line 70) | MATCH |
+| Balance Stale | > 30s | ✅ | 30.0 (Line 81) | MATCH |
+| Latency REST | >= 5.0s | ✅ | 5.0 (Line 115) | MATCH |
+| Recovery 1m | > -5% | ✅ | -0.05 (Line 151) | MATCH |
+| Recovery 5m | > -10% | ✅ | -0.10 (Line 155) | MATCH |
+| Recovery Cooldown | 30 min | ✅ | 30 (Line 161) | MATCH |
+| WS Heartbeat | > 10s | ✅ | 10.0 (Line 73) | MATCH |
+| WS Event Drop | >= 3 | ✅ | 3 (Line 83) | MATCH |
+| WS Degraded Timeout | >= 60s | ✅ | 60.0 (Line 111) | MATCH |
+| WS Recovery Cooldown | 5 min | ✅ | 5 (Line 132) | MATCH |
+
+**12 / 12 thresholds verified** ✅
+
+---
+
+## Verification Commands
+
+```bash
+# emergency.py 임계값 검증
+grep -n "\-0\.10\|\-0\.20\|30\.0\|5\.0\|\-0\.05\|cooldown_minutes=30" src/application/emergency.py
+
+# ws_health.py 임계값 검증
+grep -n "10\.0\|>= 3\|60\.0\|cooldown_minutes=5" src/application/ws_health.py
+
+# 테스트에서 임계값 사용 확인
+grep -n "\-0\.10\|\-0\.20\|10\.0" tests/unit/test_emergency.py tests/unit/test_ws_health.py
+```
+
+---
+
+## Conclusion
+
+Phase 1 구현의 모든 임계값이 Policy 문서 (docs/specs/account_builder_policy.md Section 7)과 일치합니다.
+
+**SSOT 준수 확인 완료.**
