@@ -1,6 +1,7 @@
-# Phase 1 Emergency & WS Health Thresholds Verification
-# Date: 2026-01-21 05:25 (KST)
+# Phase 1 Emergency & WS Health Thresholds Verification (ADR-0007 적용 후)
+# Date: 2026-01-21 05:45 (KST)
 # Purpose: Policy 문서와 구현 임계값 일치 검증
+# Context: COOLDOWN semantic 적용 (price_drop → HALT에서 COOLDOWN으로 변경)
 
 ========================================
 1. emergency.py Thresholds
@@ -8,51 +9,80 @@
 
 ## 1.1 Price Drop Thresholds
 
-### Policy (docs/specs/account_builder_policy.md Section 7.1):
-- price_drop_1m <= -10% → State.HALT
-- price_drop_5m <= -20% → State.HALT
+### Policy (docs/specs/account_builder_policy.md Section 7.2, v2.2):
+- price_drop_1m <= -10% → COOLDOWN (auto-recovery 가능) ⭐ UPDATED
+- price_drop_5m <= -20% → COOLDOWN (auto-recovery 가능) ⭐ UPDATED
 
-### Implementation (src/application/emergency.py:99, 106):
+### FLOW (docs/constitution/FLOW.md Section 5, v1.8):
+- price_drop_1m <= -10% → COOLDOWN (auto-recovery 가능)
+- price_drop_5m <= -20% → COOLDOWN (auto-recovery 가능)
+
+### Implementation (src/application/emergency.py:103, 111):
 ```python
-if price_drop_1m <= -0.10:  # Line 99
-    return EmergencyStatus(is_halt=True, ...)
+if price_drop_1m <= -0.10:  # Line 103
+    return EmergencyStatus(
+        is_halt=False,
+        is_cooldown=True,  # ⭐ COOLDOWN (not HALT)
+        is_blocked=False,
+        reason=f"price_drop_1m_{price_drop_1m*100:.1f}pct_exceeds_-10pct"
+    )
 
-if price_drop_5m <= -0.20:  # Line 106
-    return EmergencyStatus(is_halt=True, ...)
+if price_drop_5m <= -0.20:  # Line 111
+    return EmergencyStatus(
+        is_halt=False,
+        is_cooldown=True,  # ⭐ COOLDOWN (not HALT)
+        is_blocked=False,
+        reason=f"price_drop_5m_{price_drop_5m*100:.1f}pct_exceeds_-20pct"
+    )
 ```
 
-✅ **MATCH**: -0.10 (10%), -0.20 (20%)
+✅ **MATCH**: -0.10 (10%), -0.20 (20%), COOLDOWN semantic 적용
 
 ---
 
 ## 1.2 Balance Anomaly Thresholds
 
 ### Policy (docs/specs/account_builder_policy.md Section 7.1):
-- equity <= 0 → State.HALT
-- stale timestamp > 30s → State.HALT
+- equity <= 0 → State.HALT (Manual reset only)
+- stale timestamp > 30s → State.HALT (Manual reset only)
 
-### Implementation (src/application/emergency.py:70, 81):
+### Implementation (src/application/emergency.py:72, 84):
 ```python
-if equity_btc <= 0.0:  # Line 70
-    return EmergencyStatus(is_halt=True, ...)
+if equity_btc <= 0.0:  # Line 72
+    return EmergencyStatus(
+        is_halt=True,
+        is_cooldown=False,
+        is_blocked=False,
+        reason="balance_anomaly_equity_zero_or_negative"
+    )
 
-if staleness > 30.0:  # Line 81
-    return EmergencyStatus(is_halt=True, ...)
+if staleness > 30.0:  # Line 84
+    return EmergencyStatus(
+        is_halt=True,
+        is_cooldown=False,
+        is_blocked=False,
+        reason=f"balance_anomaly_stale_timestamp_{staleness:.1f}s"
+    )
 ```
 
-✅ **MATCH**: 0.0, 30.0s
+✅ **MATCH**: 0.0, 30.0s, HALT semantic (Manual-only)
 
 ---
 
 ## 1.3 Latency Threshold
 
-### Policy (docs/specs/account_builder_policy.md Section 7.1):
-- latency_rest_p95 >= 5.0s → emergency_block=True
+### Policy (docs/specs/account_builder_policy.md Section 7.2):
+- latency_rest_p95 >= 5.0s → emergency_block=True (State 변경 없음)
 
-### Implementation (src/application/emergency.py:115):
+### Implementation (src/application/emergency.py:121):
 ```python
-if latency_rest_p95 >= 5.0:  # Line 115
-    return EmergencyStatus(is_halt=False, is_blocked=True, ...)
+if latency_rest_p95 >= 5.0:  # Line 121
+    return EmergencyStatus(
+        is_halt=False,
+        is_cooldown=False,
+        is_blocked=True,
+        reason=f"latency_rest_p95_{latency_rest_p95:.1f}s_exceeds_5.0s"
+    )
 ```
 
 ✅ **MATCH**: 5.0s
@@ -61,24 +91,24 @@ if latency_rest_p95 >= 5.0:  # Line 115
 
 ## 1.4 Auto-Recovery Thresholds
 
-### Policy (docs/specs/account_builder_policy.md Section 7.3):
-- drop_1m > -5% AND drop_5m > -10%
+### Policy (docs/specs/account_builder_policy.md Section 7.3, v2.2):
+- drop_1m > -5% AND drop_5m > -10% (COOLDOWN only) ⭐ UPDATED
 - 5분간 연속 유지 (Orchestrator에서 추적)
 - Recovery 후 30분 cooldown
 
-### Implementation (src/application/emergency.py:151-163):
+### Implementation (src/application/emergency.py:171, 174, 182):
 ```python
-if price_drop_1m <= -0.05:  # Line 151
-    return RecoveryStatus(can_recover=False, cooldown_minutes=0)
+recovery_threshold_1m = -0.05  # Line 171
+recovery_threshold_5m = -0.10  # Line 172
 
-if price_drop_5m <= -0.10:  # Line 155
-    return RecoveryStatus(can_recover=False, cooldown_minutes=0)
+if price_drop_1m > recovery_threshold_1m and price_drop_5m > recovery_threshold_5m:
+    elapsed_minutes = (market_data.get_timestamp() - cooldown_started_at) / 60.0
 
-# Can recover
-return RecoveryStatus(
-    can_recover=True,
-    cooldown_minutes=30  # Line 161
-)
+    if elapsed_minutes >= 5.0:
+        return RecoveryStatus(
+            can_recover=True,
+            cooldown_minutes=30  # Line 182
+        )
 ```
 
 ✅ **MATCH**: -5%, -10%, 30 minutes
@@ -156,27 +186,42 @@ def check_ws_recovery(market_data) -> WSRecoveryStatus:
 ---
 
 ========================================
-3. 종합 검증 결과
+3. 종합 검증 결과 (ADR-0007 적용)
 ========================================
 
 **✅ ALL THRESHOLDS MATCH**
 
-| Category | Threshold | Policy | Implementation | Status |
-|----------|-----------|--------|----------------|--------|
-| Price Drop 1m | -10% | ✅ | -0.10 (Line 99) | MATCH |
-| Price Drop 5m | -20% | ✅ | -0.20 (Line 106) | MATCH |
-| Balance Equity | <= 0 | ✅ | 0.0 (Line 70) | MATCH |
-| Balance Stale | > 30s | ✅ | 30.0 (Line 81) | MATCH |
-| Latency REST | >= 5.0s | ✅ | 5.0 (Line 115) | MATCH |
-| Recovery 1m | > -5% | ✅ | -0.05 (Line 151) | MATCH |
-| Recovery 5m | > -10% | ✅ | -0.10 (Line 155) | MATCH |
-| Recovery Cooldown | 30 min | ✅ | 30 (Line 161) | MATCH |
-| WS Heartbeat | > 10s | ✅ | 10.0 (Line 73) | MATCH |
-| WS Event Drop | >= 3 | ✅ | 3 (Line 83) | MATCH |
-| WS Degraded Timeout | >= 60s | ✅ | 60.0 (Line 111) | MATCH |
-| WS Recovery Cooldown | 5 min | ✅ | 5 (Line 132) | MATCH |
+| Category | Threshold | Policy | Implementation | Status | Semantic |
+|----------|-----------|--------|----------------|--------|----------|
+| Price Drop 1m | -10% | ✅ | -0.10 (Line 103) | MATCH | COOLDOWN ⭐ |
+| Price Drop 5m | -20% | ✅ | -0.20 (Line 111) | MATCH | COOLDOWN ⭐ |
+| Balance Equity | <= 0 | ✅ | 0.0 (Line 72) | MATCH | HALT |
+| Balance Stale | > 30s | ✅ | 30.0 (Line 84) | MATCH | HALT |
+| Latency REST | >= 5.0s | ✅ | 5.0 (Line 121) | MATCH | Block |
+| Recovery 1m | > -5% | ✅ | -0.05 (Line 171) | MATCH | COOLDOWN |
+| Recovery 5m | > -10% | ✅ | -0.10 (Line 172) | MATCH | COOLDOWN |
+| Recovery Cooldown | 30 min | ✅ | 30 (Line 182) | MATCH | COOLDOWN |
+| WS Heartbeat | > 10s | ✅ | 10.0 (Line 73) | MATCH | Degraded |
+| WS Event Drop | >= 3 | ✅ | 3 (Line 83) | MATCH | Degraded |
+| WS Degraded Timeout | >= 60s | ✅ | 60.0 (Line 111) | MATCH | HALT |
+| WS Recovery Cooldown | 5 min | ✅ | 5 (Line 132) | MATCH | Recovery |
 
 **12 / 12 thresholds verified** ✅
+
+---
+
+## ADR-0007 Semantic Verification
+
+### HALT (Manual-only) - 2 cases:
+- ✅ Balance Equity <= 0 → is_halt=True, is_cooldown=False
+- ✅ Balance Stale > 30s → is_halt=True, is_cooldown=False
+
+### COOLDOWN (Auto-recovery) - 2 cases:
+- ✅ Price Drop 1m <= -10% → is_halt=False, is_cooldown=True ⭐
+- ✅ Price Drop 5m <= -20% → is_halt=False, is_cooldown=True ⭐
+
+### Block (진입 차단, State 변경 없음) - 1 case:
+- ✅ Latency REST >= 5.0s → is_halt=False, is_cooldown=False, is_blocked=True
 
 ---
 
@@ -186,17 +231,30 @@ def check_ws_recovery(market_data) -> WSRecoveryStatus:
 # emergency.py 임계값 검증
 grep -n "\-0\.10\|\-0\.20\|30\.0\|5\.0\|\-0\.05\|cooldown_minutes=30" src/application/emergency.py
 
+# emergency.py COOLDOWN semantic 검증 (ADR-0007)
+grep -A 3 "price_drop_1m <= -0.10" src/application/emergency.py | grep "is_cooldown=True"
+grep -A 3 "price_drop_5m <= -0.20" src/application/emergency.py | grep "is_cooldown=True"
+
 # ws_health.py 임계값 검증
 grep -n "10\.0\|>= 3\|60\.0\|cooldown_minutes=5" src/application/ws_health.py
 
 # 테스트에서 임계값 사용 확인
 grep -n "\-0\.10\|\-0\.20\|10\.0" tests/unit/test_emergency.py tests/unit/test_ws_health.py
+
+# 테스트에서 COOLDOWN semantic 검증 (ADR-0007)
+grep -n "is_cooldown is True" tests/unit/test_emergency.py
 ```
 
 ---
 
 ## Conclusion
 
-Phase 1 구현의 모든 임계값이 Policy 문서 (docs/specs/account_builder_policy.md Section 7)과 일치합니다.
+Phase 1 구현의 모든 임계값이 Policy 문서 (docs/specs/account_builder_policy.md Section 7, v2.2)과 일치합니다.
+
+**ADR-0007 적용 확인**:
+- ✅ price_drop → COOLDOWN (auto-recovery 가능)
+- ✅ balance anomaly → HALT (manual reset only)
+- ✅ EmergencyStatus.is_cooldown 필드 추가
+- ✅ FLOW.md Section 1 State Machine 정의와 완전 일치
 
 **SSOT 준수 확인 완료.**

@@ -1427,22 +1427,24 @@ Emergency Check는 **Signal보다 먼저**.
 **순서**:
 ```
 1. Snapshot Update
-2. Emergency Check ← 여기서 HALT 판단
+2. Emergency Check ← 여기서 HALT/COOLDOWN 판단
 3. Execution Events
 4. Signal Decision ← Emergency 통과한 경우만
 ```
 
 **Emergency 조건**:
-- `price_drop_1m <= -10%` → HALT
-- `price_drop_5m <= -20%` → HALT
+- `price_drop_1m <= -10%` → COOLDOWN (auto-recovery 가능)
+- `price_drop_5m <= -20%` → COOLDOWN (auto-recovery 가능)
 - `exchange_latency >= 5.0s` → Cancel + Block
-- `equity_usd < $80` → HALT (Manual reset)
-- Liquidation warning → HALT (Manual reset)
+- `equity_usd < $80` → HALT (Manual reset only)
+- Liquidation warning → HALT (Manual reset only)
 
-**HALT 시 동작**:
+**HALT/COOLDOWN 시 동작**:
 1. 모든 pending orders 취소
 2. 신규 진입 차단
 3. 기존 포지션: Stop Loss 유지 (강제 청산 안 함)
+4. COOLDOWN: auto-recovery 조건 충족 시 자동 해제 (5분 연속 + 30분 cooldown)
+5. HALT: Manual reset만 가능
 
 ---
 
@@ -2025,9 +2027,16 @@ def on_position_closed(position, pnl_btc):
 
 ## 문서 버전 및 변경 이력
 
-**현재 버전**: FLOW v1.7 (2026-01-18)
+**현재 버전**: FLOW v1.8 (2026-01-21)
 
 **변경 이력**:
+- v1.8 (2026-01-21): HALT vs COOLDOWN 정의 정렬 (SSOT 충돌 수정)
+  - **Section 5 Emergency 조건 수정**: price_drop → HALT → **COOLDOWN** (auto-recovery 가능)
+  - **Section 1 State Machine 정의 우선**: HALT = Manual-only, COOLDOWN = Auto 해제
+  - SSOT 일관성 확보: Section 1 (헌법) = Section 5 (정책)
+  - 실거래 영향: price_drop 시 자동 복구 → 기회 손실 방지
+  - 참조: ADR-0007
+
 - v1.7 (2026-01-18): Stop Loss API 파라미터 정정 (triggerPrice 기반)
   - **Section 4.5 triggerPrice 기반 계약**: `stopLoss` 파라미터 제거, `triggerPrice` + `triggerDirection` + `triggerBy` 로 교체
   - Bybit v5 Conditional Order API 계약 준수 (API 거절 리스크 제거)

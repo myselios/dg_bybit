@@ -1,7 +1,7 @@
 # docs/specs/account_builder_policy.md
 # Account Builder Policy Specification (Stable Defaults + Tunables)
-Last Updated: 2026-01-18 (KST)
-Version: 2.1
+Last Updated: 2026-01-21 (KST)
+Version: 2.2
 
 ## 목적 (Purpose)
 
@@ -253,19 +253,20 @@ Liquidation warning definition:
 - If not available, define a conservative internal warning in ADR (do not guess in code).
 
 ### 7.2 Thresholds (Tunables)
-- price_drop_1m <= -10% => HALT
-- price_drop_5m <= -20% => HALT
-- exchange_latency_rest_s >= 5.0s => cancel pending orders + block new entries (DEGRADED or temporary block)
-- balance anomaly => HALT
+- price_drop_1m <= -10% => COOLDOWN (auto-recovery 가능)
+- price_drop_5m <= -20% => COOLDOWN (auto-recovery 가능)
+- exchange_latency_rest_s >= 5.0s => cancel pending orders + block new entries (emergency_block=True)
+- balance anomaly => HALT (Manual reset only)
 
 ### 7.3 Recovery Rules (ADR Required for categories, tunable for time)
-Manual-only recovery:
+Manual-only recovery (HALT):
 - liquidation warning/event
 - equity_usd < 80
+- balance anomaly (equity <= 0 OR stale > 30s)
 
-Auto-recovery (temporary HALT only):
+Auto-recovery (COOLDOWN only):
 - price_drop_1m > -5% AND price_drop_5m > -10% for 5 consecutive minutes
-- then lift temporary HALT and enforce cooldown: no entries for 30 minutes
+- then lift COOLDOWN and enforce cooldown: no entries for 30 minutes
 
 ---
 
@@ -401,4 +402,5 @@ REVIEW TRIGGER:
 
 | Date | Version | Change | ADR |
 |------|---------|--------|-----|
-| 2026-01-18 | 2.1 | 정책 스펙을 “불변/튜닝 분리 + 데이터모델 스키마”로 정리 | - |
+| 2026-01-21 | 2.2 | HALT vs COOLDOWN 정의 정렬 (SSOT 충돌 수정) | ADR-0007 |
+| 2026-01-18 | 2.1 | 정책 스펙을 "불변/튜닝 분리 + 데이터모델 스키마"로 정리 | - |

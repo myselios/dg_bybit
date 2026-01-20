@@ -1,6 +1,7 @@
-# Phase 1 Gate 7 Self-Verification Results
-# Date: 2026-01-21 05:20 (KST)
+# Phase 1 Gate 7 Self-Verification Results (ADR-0007 적용 후)
+# Date: 2026-01-21 05:45 (KST)
 # Verification Command Set: CLAUDE.md Section 5.7
+# Context: emergency.py is_cooldown 필드 추가 후 재검증
 
 ========================================
 (1a) Placeholder 표현 감지
@@ -20,8 +21,8 @@ Status: ✅ PASS (Skip/Xfail 0개)
 (1c) 의미있는 assert 존재 여부
 ========================================
 Command: grep -RIn "assert .*==" tests/ 2>/dev/null | wc -l
-Result: 163
-Status: ✅ PASS (Assert 163개 존재)
+Result: 166
+Status: ✅ PASS (Assert 166개 존재 - 이전 163개에서 증가)
 
 ========================================
 (2a) 도메인 타입 이름 재정의 금지
@@ -31,11 +32,47 @@ Result: (빈 출력)
 Status: ✅ PASS (도메인 재정의 0개)
 
 ========================================
+(2b) tests/ 내 domain 모사 파일 생성 금지
+========================================
+Command: find tests -type f -maxdepth 3 -name "*.py" 2>/dev/null | grep -E "(domain|state|intent|events)\.py"
+Result: (빈 출력)
+Status: ✅ PASS (domain 모사 파일 0개)
+
+========================================
+(3) transition SSOT 파일 존재
+========================================
+Command: test -f src/application/transition.py && echo "OK: transition.py exists" || echo "FAIL: missing transition.py"
+Result: OK: transition.py exists
+Status: ✅ PASS
+
+========================================
+(4a) EventRouter 상태 분기문 감지
+========================================
+Command: grep -RInE "if[[:space:]]+.*state[[:space:]]*==|elif[[:space:]]+.*state[[:space:]]*==" src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+Result: src/application/event_router.py:10:- 상태 전환 분기 (if state == ...) — transition()에만 존재해야 함
+       (This is a comment line, not actual code)
+Status: ✅ PASS (EventRouter 코드에 상태 분기 없음)
+
+========================================
 (4b) EventRouter State 참조 금지
 ========================================
-Command: grep -n "State\." src/application/event_router.py 2>/dev/null
+Command: grep -n "State\." src/application/event_router.py src/application/services/event_router.py 2>/dev/null
 Result: (빈 출력)
 Status: ✅ PASS (EventRouter State 참조 0개)
+
+========================================
+(5) sys.path hack 금지
+========================================
+Command: grep -RIn "sys\.path\.insert" src/ tests/ 2>/dev/null
+Result: (빈 출력)
+Status: ✅ PASS (sys.path hack 0개)
+
+========================================
+(6a) Deprecated wrapper import 추적
+========================================
+Command: grep -RInE "application\.services\.(state_transition|event_router)" tests/ src/ 2>/dev/null
+Result: (빈 출력)
+Status: ✅ PASS (deprecated wrapper import 0개)
 
 ========================================
 (6b) Migration 구 경로 import 0개
@@ -51,42 +88,60 @@ Command: source venv/bin/activate && pytest -q
 Result:
 ........................................................................ [ 86%]
 ...........                                                              [100%]
-83 passed in 0.06s
+83 passed in 0.07s
 Status: ✅ PASS (83 테스트 통과)
 
 ========================================
-Phase 1 특화 검증
+Phase 1 특화 검증 (ADR-0007 적용)
 ========================================
 
-(8) Phase 1 테스트 실행
-Command: pytest tests/unit/test_emergency.py tests/unit/test_ws_health.py -v
-Result: 13 passed in 0.02s
-  - test_emergency.py: 8 passed
-  - test_ws_health.py: 5 passed
-Status: ✅ PASS
-
-(9) emergency.py / ws_health.py 파일 존재
-Command: ls -la src/application/ | grep -E "emergency|ws_health"
+(8) Phase 1 테스트 실행 (is_cooldown 검증)
+Command: pytest tests/unit/test_emergency.py -v
 Result:
-  - emergency.py (6394 bytes)
-  - ws_health.py (4454 bytes)
-Status: ✅ PASS
+  - test_price_drop_1m_exceeds_threshold_enters_cooldown: PASSED ⭐ (HALT→COOLDOWN)
+  - test_price_drop_5m_exceeds_threshold_enters_cooldown: PASSED ⭐ (HALT→COOLDOWN)
+  - test_price_drop_both_below_threshold_no_action: PASSED
+  - test_balance_anomaly_zero_equity_halts: PASSED
+  - test_balance_anomaly_stale_timestamp_halts: PASSED
+  - test_latency_exceeds_5s_sets_emergency_block: PASSED
+  - test_auto_recovery_after_5_consecutive_minutes: PASSED
+  - test_auto_recovery_sets_30min_cooldown: PASSED
+Status: ✅ PASS (8 테스트 통과, COOLDOWN semantic 적용 확인)
 
-(10) MarketDataInterface 파일 존재
-Command: ls -la src/infrastructure/exchange/ | grep -E "market_data"
+(9) emergency.py EmergencyStatus.is_cooldown 필드 존재
+Command: grep -n "is_cooldown" src/application/emergency.py
 Result:
-  - market_data_interface.py
-  - fake_market_data.py
-Status: ✅ PASS
+  - Line 29: is_cooldown: True이면 State.COOLDOWN (auto-recovery - price drop)
+  - Line 30: is_cooldown: bool
+  - Line 74: is_cooldown=False,
+  - Line 87: is_cooldown=False,
+  - Line 106: is_cooldown=True,  # ⭐ price_drop_1m → COOLDOWN
+  - Line 114: is_cooldown=True,  # ⭐ price_drop_5m → COOLDOWN
+  - Line 124: is_cooldown=False,
+  - Line 132: is_cooldown=False,
+  - Line 214: is_cooldown=False,
+Status: ✅ PASS (is_cooldown 필드 존재, price_drop → COOLDOWN 구현 확인)
+
+(10) test_emergency.py is_cooldown assertion 존재
+Command: grep -n "assert.*is_cooldown" tests/unit/test_emergency.py
+Result:
+  - Line 44: assert status.is_cooldown is True
+  - Line 45: assert status.is_halt is False
+  - Line 66: assert status.is_cooldown is True
+  - Line 67: assert status.is_halt is False
+Status: ✅ PASS (COOLDOWN assertion 존재, HALT assertion 반전 확인)
 
 ========================================
-종합 판정: ✅ ALL PASS
+종합 판정: ✅ ALL PASS (ADR-0007 완전 적용)
 ========================================
 - Gate 1 (Placeholder Zero Tolerance): PASS
 - Gate 2 (No Test-Defined Domain): PASS
 - Gate 3 (Single Transition Truth): PASS (EventRouter thin wrapper)
+- Gate 5 (sys.path hack 금지): PASS
 - Gate 8 (Migration Protocol): PASS (구 경로 완전 제거)
 - Phase 1 Deliverables: PASS (emergency.py, ws_health.py, market_data_interface.py, fake_market_data.py)
 - Phase 1 Tests: PASS (13 passed)
+- ADR-0007 Implementation: PASS (is_cooldown 필드 추가, price_drop → COOLDOWN)
 
 Phase 1 DoD (Definition of Done) 충족 확인 완료.
+ADR-0007 (HALT vs COOLDOWN Semantic Fix) 구현 검증 완료.

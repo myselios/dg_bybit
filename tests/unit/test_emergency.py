@@ -6,9 +6,9 @@ Gate: Emergency Check 구현 검증 (Phase 1)
 Purpose:
   Policy Section 7 기반 emergency 판단이 올바르게 동작하는지 검증한다.
 
-  - price_drop_1m <= -10% → COOLDOWN
-  - price_drop_5m <= -20% → COOLDOWN
-  - balance anomaly (equity <= 0 OR stale > 30s) → HALT
+  - price_drop_1m <= -10% → COOLDOWN (auto-recovery 가능)
+  - price_drop_5m <= -20% → COOLDOWN (auto-recovery 가능)
+  - balance anomaly (equity <= 0 OR stale > 30s) → HALT (Manual-only)
   - latency_rest >= 5.0s → emergency_block=True
 
 Failure Impact:
@@ -25,43 +25,47 @@ from infrastructure.exchange.fake_market_data import FakeMarketData
 from application.emergency import check_emergency, check_recovery
 
 
-def test_price_drop_1m_exceeds_threshold_enters_halt():
+def test_price_drop_1m_exceeds_threshold_enters_cooldown():
     """
-    price_drop_1m <= -10%이면 HALT 진입 (FLOW Section 5 준수).
+    price_drop_1m <= -10%이면 COOLDOWN 진입 (FLOW v1.8 준수).
 
     Given: price_drop_1m = -12% (threshold 초과)
     When: check_emergency 호출
-    Then: is_halt=True, is_blocked=False
+    Then: is_cooldown=True, is_halt=False, is_blocked=False
 
-    FLOW: docs/constitution/FLOW.md Section 5 (Emergency Priority)
+    FLOW: docs/constitution/FLOW.md Section 5 v1.8 (Emergency Priority)
+    ADR: ADR-0007 (HALT vs COOLDOWN semantic fix)
     """
     fake_data = FakeMarketData()
     fake_data.inject_price_drop(pct_1m=-0.12, pct_5m=-0.05)
 
     status = check_emergency(fake_data)
 
-    assert status.is_halt is True, "price_drop_1m <= -10% should trigger HALT"
-    assert status.is_blocked is False, "price drop triggers HALT, not block"
+    assert status.is_cooldown is True, "price_drop_1m <= -10% should trigger COOLDOWN"
+    assert status.is_halt is False, "price drop triggers COOLDOWN, not HALT"
+    assert status.is_blocked is False, "price drop triggers COOLDOWN, not block"
     assert "price_drop_1m" in status.reason.lower()
 
 
-def test_price_drop_5m_exceeds_threshold_enters_halt():
+def test_price_drop_5m_exceeds_threshold_enters_cooldown():
     """
-    price_drop_5m <= -20%이면 HALT 진입 (FLOW Section 5 준수).
+    price_drop_5m <= -20%이면 COOLDOWN 진입 (FLOW v1.8 준수).
 
     Given: price_drop_5m = -22% (threshold 초과)
     When: check_emergency 호출
-    Then: is_halt=True
+    Then: is_cooldown=True, is_halt=False, is_blocked=False
 
-    FLOW: docs/constitution/FLOW.md Section 5 (Emergency Priority)
+    FLOW: docs/constitution/FLOW.md Section 5 v1.8 (Emergency Priority)
+    ADR: ADR-0007 (HALT vs COOLDOWN semantic fix)
     """
     fake_data = FakeMarketData()
     fake_data.inject_price_drop(pct_1m=-0.05, pct_5m=-0.22)
 
     status = check_emergency(fake_data)
 
-    assert status.is_halt is True, "price_drop_5m <= -20% should trigger HALT"
-    assert status.is_blocked is False
+    assert status.is_cooldown is True, "price_drop_5m <= -20% should trigger COOLDOWN"
+    assert status.is_halt is False, "price drop triggers COOLDOWN, not HALT"
+    assert status.is_blocked is False, "price drop triggers COOLDOWN, not block"
     assert "price_drop_5m" in status.reason.lower()
 
 
