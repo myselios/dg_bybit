@@ -1,0 +1,141 @@
+# Gate 7: CLAUDE.md Section 5.7 Self-Verification (Phase 11)
+# Date: 2026-01-24
+# Phase: 11 (Signal Generation + Exit Manager + Orchestrator Integration)
+
+## (1a) Placeholder 표현 감지
+$ grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError|RuntimeError\(.*TODO" tests/ 2>/dev/null | grep -v "\.pyc"
+
+(출력: 비어있음 - PASS)
+
+## (1b) Skip/Xfail decorator 금지
+$ grep -RInE "pytest\.mark\.(skip|xfail)|@pytest\.mark\.(skip|xfail)|unittest\.SkipTest" tests/ 2>/dev/null | grep -v "\.pyc"
+
+(출력: 비어있음 - PASS)
+
+## (1c) 의미있는 assert 존재 여부
+$ grep -RIn "assert .*==" tests/ 2>/dev/null | wc -l
+
+380
+
+(출력: 0이 아님 - PASS)
+
+## (2a) 도메인 타입 이름 재정의 금지
+$ grep -RInE "^class[[:space:]]+(Position|PendingOrder|ExecutionEvent|State)\b" tests/ 2>/dev/null | grep -v "\.pyc"
+
+(출력: 비어있음 - PASS)
+
+## (2b) tests/ 내에 domain 모사 파일 생성 금지
+$ find tests -type f -maxdepth 3 -name "*.py" 2>/dev/null | grep -E "(domain|state|intent|events)\.py"
+
+(출력: 비어있음 - PASS)
+
+## (3) transition SSOT 파일 존재
+$ test -f src/application/transition.py && echo "OK: transition.py exists" || (echo "FAIL: missing transition.py" && exit 1)
+
+OK: transition.py exists
+
+## (4a) 상태 분기문 감지 (EventRouter)
+$ grep -RInE "if[[:space:]]+.*state[[:space:]]*==|elif[[:space:]]+.*state[[:space:]]*==" src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+
+(출력: 비어있음 - PASS)
+
+## (4b) EventRouter에서 State enum 참조 자체 금지
+$ grep -n "State\." src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+
+(출력: 비어있음 - PASS)
+
+## (5) sys.path hack 금지
+$ grep -RIn "sys\.path\.insert" src/ tests/ 2>/dev/null
+
+(출력: 비어있음 - PASS)
+
+## (6a) Deprecated wrapper import 추적
+$ grep -RInE "application\.services\.(state_transition|event_router)" tests/ src/ 2>/dev/null
+
+(출력: 비어있음 - PASS, Migration 완료)
+
+## (6b) Migration 완료 증거 (구 경로 import 0개)
+$ grep -RInE "from application\.services|import application\.services" tests/ src/ 2>/dev/null | wc -l
+
+0
+
+(출력: 0 - PASS, Migration 완료)
+
+## (7a) pytest 증거
+$ pytest -q
+
+........................................................................ [ 29%]
+........................................................................ [ 58%]
+........................................................................ [ 88%]
+.............................                                            [100%]
+245 passed, 15 deselected in 0.36s
+
+## (7b) git status (의도한 파일만 변경되었는지 확인)
+$ git status
+
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   CLAUDE.md
+	modified:   docs/constitution/FLOW.md
+	modified:   docs/plans/task_plan.md
+	modified:   pyproject.toml
+	modified:   src/application/orchestrator.py
+	modified:   src/application/session_risk.py
+	modified:   src/domain/intent.py
+	modified:   src/infrastructure/exchange/bybit_rest_client.py
+	modified:   src/infrastructure/exchange/bybit_ws_client.py
+	modified:   src/infrastructure/exchange/fake_market_data.py
+	modified:   src/infrastructure/exchange/market_data_interface.py
+	modified:   tests/integration/test_orchestrator_session_risk.py
+	modified:   tests/unit/test_entry_allowed.py
+	modified:   tests/unit/test_session_risk.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	docs/evidence/phase_11/
+	docs/evidence/phase_8/
+	docs/evidence/phase_9_revision/
+	docs/plans/ml_trade_analysis_plan.md
+	src/application/exit_manager.py
+	src/application/signal_generator.py
+	tests/integration_real/
+	tests/unit/test_exit_manager.py
+	tests/unit/test_signal_generator.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+## (7c) git diff --stat (변경 통계)
+$ git diff --stat
+
+ CLAUDE.md                                          |   58 +-
+ docs/constitution/FLOW.md                          | 3040 +++++++++++++++++++-
+ docs/plans/task_plan.md                            |    2 +-
+ pyproject.toml                                     |    5 +
+ src/application/orchestrator.py                    |   65 +-
+ src/application/session_risk.py                    |   12 +-
+ src/domain/intent.py                               |   12 +
+ src/infrastructure/exchange/bybit_rest_client.py   |   12 +-
+ src/infrastructure/exchange/bybit_ws_client.py     |  277 +-
+ src/infrastructure/exchange/fake_market_data.py    |   34 +
+ .../exchange/market_data_interface.py              |  113 +-
+ .../integration/test_orchestrator_session_risk.py  |   34 +
+ tests/unit/test_entry_allowed.py                   |    4 +-
+ tests/unit/test_session_risk.py                    |   88 +-
+ 14 files changed, 3714 insertions(+), 42 deletions(-)
+
+## 검증 결과
+
+✅ **모든 Gate 통과**
+- Gate 1 (Placeholder 테스트 0개): PASS
+- Gate 2 (도메인 타입 재정의 금지): PASS
+- Gate 3 (transition SSOT 존재): PASS
+- Gate 4 (EventRouter 상태 분기 금지): PASS
+- Gate 5 (sys.path hack 금지): PASS
+- Gate 6 (Deprecated import 0개): PASS
+- Gate 7 (pytest + git status): PASS (245 tests)
+
+✅ **Phase 11 Self-Verification 완료**

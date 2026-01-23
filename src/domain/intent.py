@@ -56,6 +56,17 @@ class LogIntent:
 
 
 @dataclass
+class ExitIntent:
+    """
+    Exit 주문 의도 (강제 청산)
+    """
+    qty: int  # Exit 수량 (contracts)
+    reason: str  # Exit 이유 (stop_loss_hit, manual_exit, etc.)
+    order_type: str = "Market"  # Market order로 강제 청산
+    stop_price: Optional[float] = None  # Stop price (for logging)
+
+
+@dataclass
 class TransitionIntents:
     """
     State Transition 결과로 발생하는 행동 의도들
@@ -66,4 +77,5 @@ class TransitionIntents:
     halt_intent: Optional[HaltIntent] = None
     cancel_intent: Optional[CancelOrderIntent] = None
     log_intent: Optional[LogIntent] = None
+    exit_intent: Optional[ExitIntent] = None
     entry_blocked: bool = False  # HALT/COOLDOWN → 진입 차단

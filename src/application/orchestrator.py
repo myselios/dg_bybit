@@ -28,6 +28,8 @@ from application.session_risk import (
     check_fee_anomaly,
     check_slippage_anomaly,
 )
+from application.exit_manager import check_stop_hit, create_exit_intent
+from domain.intent import ExitIntent
 
 
 @dataclass
@@ -39,6 +41,7 @@ class TickResult:
     halt_reason: Optional[str] = None
     entry_blocked: bool = False
     entry_block_reason: Optional[str] = None
+    exit_intent: Optional[ExitIntent] = None  # Exit 주문 의도 (Phase 11)
 
 
 class Orchestrator:
@@ -107,9 +110,9 @@ class Orchestrator:
         execution_order.append("events")
         self._process_events()
 
-        # (3) Position management
+        # (3) Position management + Exit decision
         execution_order.append("position")
-        self._manage_position()
+        exit_intent = self._manage_position()
 
         # (4) Entry decision
         execution_order.append("entry")
@@ -124,6 +127,7 @@ class Orchestrator:
             halt_reason=halt_reason,
             entry_blocked=entry_blocked,
             entry_block_reason=entry_block_reason,
+            exit_intent=exit_intent,  # Phase 11: Exit intent
         )
 
     def get_state(self) -> State:
@@ -157,18 +161,15 @@ class Orchestrator:
             return {"status": "HALT", "reason": "degraded_mode_timeout"}
 
         # Session Risk Policy 체크 (Phase 9c)
-        # get_btc_mark_price_usd() 지원 확인
-        if not hasattr(self.market_data, "get_btc_mark_price_usd"):
-            # Session Risk 미지원 (FakeMarketData 등)
-            return {"status": "PASS", "reason": None}
-
-        equity_usd = equity_btc * self.market_data.get_btc_mark_price_usd()
+        btc_mark_price_usd = self.market_data.get_btc_mark_price_usd()
+        equity_usd = equity_btc * btc_mark_price_usd
 
         # (1) Daily Loss Cap
-        if hasattr(self.market_data, "daily_realized_pnl_usd"):
+        daily_pnl = self.market_data.get_daily_realized_pnl_usd()
+        if daily_pnl is not None:
             daily_status = check_daily_loss_cap(
                 equity_usd=equity_usd,
-                daily_realized_pnl_usd=self.market_data.daily_realized_pnl_usd,
+                daily_realized_pnl_usd=daily_pnl,
                 daily_loss_cap_pct=self.daily_loss_cap_pct,
                 current_timestamp=self.current_timestamp,
             )
@@ -176,10 +177,11 @@ class Orchestrator:
                 return {"status": "HALT", "reason": daily_status.halt_reason}
 
         # (2) Weekly Loss Cap
-        if hasattr(self.market_data, "weekly_realized_pnl_usd"):
+        weekly_pnl = self.market_data.get_weekly_realized_pnl_usd()
+        if weekly_pnl is not None:
             weekly_status = check_weekly_loss_cap(
                 equity_usd=equity_usd,
-                weekly_realized_pnl_usd=self.market_data.weekly_realized_pnl_usd,
+                weekly_realized_pnl_usd=weekly_pnl,
                 weekly_loss_cap_pct=self.weekly_loss_cap_pct,
                 current_timestamp=self.current_timestamp,
             )
@@ -187,18 +189,20 @@ class Orchestrator:
                 return {"status": "HALT", "reason": weekly_status.halt_reason}
 
         # (3) Loss Streak Kill
-        if hasattr(self.market_data, "loss_streak_count"):
+        loss_streak = self.market_data.get_loss_streak_count()
+        if loss_streak is not None:
             streak_status = check_loss_streak_kill(
-                loss_streak_count=self.market_data.loss_streak_count,
+                loss_streak_count=loss_streak,
                 current_timestamp=self.current_timestamp,
             )
             if streak_status.is_halted:
                 return {"status": "HALT", "reason": streak_status.halt_reason}
 
         # (4) Fee Anomaly
-        if hasattr(self.market_data, "fee_ratio_history"):
+        fee_history = self.market_data.get_fee_ratio_history()
+        if fee_history is not None:
             fee_status = check_fee_anomaly(
-                fee_ratio_history=self.market_data.fee_ratio_history,
+                fee_ratio_history=fee_history,
                 fee_spike_threshold=self.fee_spike_threshold,
                 current_timestamp=self.current_timestamp,
             )
@@ -206,9 +210,10 @@ class Orchestrator:
                 return {"status": "HALT", "reason": fee_status.halt_reason}
 
         # (5) Slippage Anomaly
-        if hasattr(self.market_data, "slippage_history") and self.current_timestamp is not None:
+        slippage_history = self.market_data.get_slippage_history()
+        if slippage_history is not None and self.current_timestamp is not None:
             slippage_status = check_slippage_anomaly(
-                slippage_history=self.market_data.slippage_history,
+                slippage_history=slippage_history,
                 slippage_threshold_usd=self.slippage_threshold_usd,
                 window_seconds=self.slippage_window_seconds,
                 current_timestamp=self.current_timestamp,
@@ -230,17 +235,31 @@ class Orchestrator:
         # 여기서는 통합만 수행 (최소 구현)
         pass
 
-    def _manage_position(self) -> None:
+    def _manage_position(self) -> Optional[ExitIntent]:
         """
-        Position 관리 (stop 갱신)
+        Position 관리 (stop 갱신 + exit decision)
 
         FLOW Section 2.5:
             - stop_manager.should_update_stop()
             - stop_manager.determine_stop_action()
+            - Phase 11: Exit decision (stop hit 체크)
+
+        Returns:
+            ExitIntent: Exit 주문 의도 (stop hit 시)
         """
-        # Position 관리는 이미 stop_manager.py에 구현되어 있음
-        # 여기서는 통합만 수행 (최소 구현)
-        pass
+        # IN_POSITION이 아니면 건너뛰기
+        if self.state != State.IN_POSITION or self.position is None:
+            return None
+
+        # Phase 11: Stop hit 체크
+        current_price = self.market_data.get_current_price()
+        if check_stop_hit(current_price=current_price, position=self.position):
+            # Stop hit → Exit intent 생성
+            intents = create_exit_intent(position=self.position, reason="stop_loss_hit")
+            return intents.exit_intent
+
+        # Stop 갱신 로직은 stop_manager.py에 구현되어 있음 (미통합)
+        return None
 
     def _decide_entry(self) -> dict:
         """
