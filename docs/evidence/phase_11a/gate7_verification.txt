@@ -1,6 +1,7 @@
-# Gate 7: CLAUDE.md Section 5.7 Self-Verification (Phase 11)
+# Gate 7: CLAUDE.md Section 5.7 Self-Verification (Phase 11a)
 # Date: 2026-01-24
-# Phase: 11 (Signal Generation + Exit Manager + Orchestrator Integration)
+# Phase: 11a (Signal Generation + Exit Manager + Orchestrator Integration 최소)
+# Phase 재정의: Phase 11 → 11a (100% 완료) + 11b (TODO)
 
 ## (1a) Placeholder 표현 감지
 $ grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError|RuntimeError\(.*TODO" tests/ 2>/dev/null | grep -v "\.pyc"

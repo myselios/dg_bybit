@@ -1,4 +1,6 @@
-# Phase 11 Completion Checklist
+# Phase 11a Completion Checklist
+
+**Phase 재정의**: Phase 11 → 11a (Signal+Exit, 100% 완료) + 11b (Full Integration+Testnet, TODO)
 
 ## DoD Items
 

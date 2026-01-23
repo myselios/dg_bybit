@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.22, Phase 11 완료)
+# Task Plan: Account Builder Implementation (v2.24, Phase 11a 완료)
 Last Updated: 2026-01-24 (KST)
-Status: **Phase 0~11 COMPLETE** | Gate 1-8 ALL PASS | **245 tests passed** | SSOT 준수 | **Domain Logic + REST/WS + Session Risk + Trade Logging + Signal Generation + Exit Manager 완료** | Phase 12 (Dry-Run Validation) 시작 가능
+Status: **Phase 0~11a COMPLETE** | Gate 1-8 ALL PASS | **245 tests passed** | SSOT 준수 | **Phase 11a: Signal+Exit Manager 100% 완료** | Phase 11b (Full Integration+Testnet) TODO | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -1037,69 +1037,72 @@ Goal: 실거래 데이터를 수집하고 전략 파라미터를 조정하기 �
 
 ---
 
-### Phase 11: Signal Generation + Full Integration (Phase 10 완료 후)
+### Phase 11a: Signal Generation + Exit Manager (Phase 10 완료 후)
 
-**⚠️ 중요**: Phase 11 완료 시 **Testnet에서 전체 사이클 (FLAT → Entry → Exit → FLAT) 성공**
+**Scope**: 독립적으로 완료 가능한 최소 단위 (Grid 신호 + Exit 로직)
 
-Goal: Signal generator 구현 + Full orchestrator cycle 완성 → **Testnet 실거래 가능**
+Goal: Signal generator 구현 + Exit manager 구현 → **Unit 테스트로 100% 검증**
+
+#### DoD (Definition of Done)
+
+- [x] Signal Generator 구현 (`src/application/signal_generator.py`)
+  - Grid-based signal generation (간단한 구현)
+  - ATR 기반 grid spacing 계산
+  - Last fill price 기반 grid level 결정
+- [x] Exit Logic 구현 (`src/application/exit_manager.py`)
+  - check_stop_hit(): Stop loss 도달 확인 (LONG/SHORT)
+  - create_exit_intent(): Exit intent 생성 (Market order)
+- [x] ExitIntent 추가 (`src/domain/intent.py`)
+- [x] Orchestrator 최소 통합 (Exit Manager만)
+- [x] 테스트 구현
+  - test_signal_generator.py: 10 cases
+  - test_exit_manager.py: 8 cases
+- [x] Evidence Artifacts 생성 (`docs/evidence/phase_11a/`)
+- [x] Progress Table 업데이트
+- [x] **Gate 7: CLAUDE.md Section 5.7 검증 통과**
+
+#### 완료 기준
+
+- ✅ Unit 테스트 18개 모두 통과 (Grid 신호 + Exit logic)
+- ✅ Gate 7 검증 ALL PASS
+- ✅ 100% 완료 (Entry flow/Testnet 제외, 독립적 완료 가능)
+
+---
+
+### Phase 11b: Full Orchestrator Integration + Testnet E2E (Phase 11a 완료 후)
+
+**⚠️ 중요**: Phase 11b 완료 시 **Testnet에서 전체 사이클 (FLAT → Entry → Exit → FLAT) 성공**
+
+Goal: Full orchestrator cycle 완성 → **Testnet 실거래 가능**
 
 #### Scope
 
-1. **Signal Generator 구현** (간단한 Grid 전략):
-   ```python
-   # 최소 구현: Grid-based signal
-   def generate_signal(current_price, last_fill_price, grid_spacing):
-       # Grid up: 가격 상승 시 매도 신호
-       if current_price >= last_fill_price + grid_spacing:
-           return Signal(side="Sell", qty=contracts)
-
-       # Grid down: 가격 하락 시 매수 신호
-       elif current_price <= last_fill_price - grid_spacing:
-           return Signal(side="Buy", qty=contracts)
-
-       return None  # No signal
-   ```
-
-2. **Full Orchestrator Integration**:
+1. **Full Orchestrator Integration**:
    - Entry decision: Signal → Entry gates → Sizing → Place order
-   - Exit decision: Stop hit / Profit target / Manual exit
+   - Exit decision: Stop hit → Place exit order
    - Event processing: FILL → Update position → Log trade
    - Full cycle: FLAT → ENTRY_PENDING → IN_POSITION → EXIT_PENDING → FLAT
 
-3. **Exit Logic 구현**:
-   - Stop loss hit → Exit
-   - Profit target hit (optional, grid 전략에서는 다음 grid)
-   - Manual exit (HALT 시)
-
-4. **Testnet End-to-End Tests**:
+2. **Testnet End-to-End Tests**:
    - `tests/integration_real/test_full_cycle_testnet.py` (5+ tests)
    - 최소 10회 거래 성공 검증
    - Session Risk 정상 작동 확인
 
 #### DoD (Definition of Done)
 
-- [ ] Signal Generator 구현 (`src/application/signal_generator.py`)
-  - Grid-based signal generation (간단한 구현)
-  - ATR 기반 grid spacing 계산
-  - Last fill price 기반 grid level 결정
 - [ ] Full Orchestrator Integration (`src/application/orchestrator.py` 수정)
   - Entry decision: Signal → Gates → Sizing → Order placement
-  - Exit decision: Stop hit / Profit target
+  - Exit decision: Stop hit → Place exit order
   - Event processing: FILL → Position update → Trade log
-- [ ] Exit Logic 구현 (`src/application/exit_manager.py`)
-  - check_stop_hit(): Stop loss 도달 확인
-  - check_profit_target(): Profit target 도달 확인 (optional)
-  - place_exit_order(): Exit 주문 발주
 - [ ] Testnet End-to-End Tests
   - `tests/integration_real/test_full_cycle_testnet.py` (5+ cases)
   - Full cycle 성공 (FLAT → Entry → Exit → FLAT)
   - 최소 10회 거래 성공 검증
   - Session Risk 발동 확인 (Daily cap 또는 Loss streak)
-- [ ] Evidence Artifacts 생성 (`docs/evidence/phase_11/`)
-  - gate7_verification.txt
+- [ ] Evidence Artifacts 생성 (`docs/evidence/phase_11b/`)
+  - testnet_cycle_proof.md (Testnet 전체 사이클 증거)
   - pytest_output.txt
-  - red_green_proof.md
-  - **testnet_cycle_proof.md** (Testnet 전체 사이클 증거)
+  - gate7_verification.txt
 - [ ] Progress Table 업데이트
 - [ ] **Gate 7: CLAUDE.md Section 5.7 검증 통과**
 
@@ -1276,7 +1279,8 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | 8 | DONE | **Evidence Artifacts v2**: [Gate 7 v2](../evidence/phase_8/gate7_verification_v2.txt), [Placeholder Removal](../evidence/phase_8/placeholder_removal_proof.md), [RED→GREEN](../evidence/phase_8/red_green_proof.md). **Live Tests**: [test_testnet_connection.py](../../tests/integration_real/test_testnet_connection.py) (3 - 시나리오 1) + [test_ws_reconnection.py](../../tests/integration_real/test_ws_reconnection.py) (3 - 시나리오 5) + [test_execution_event_mapping.py](../../tests/integration_real/test_execution_event_mapping.py) (2 - 시나리오 3, placeholder 제거) + [test_testnet_order_flow.py](../../tests/integration_real/test_testnet_order_flow.py) (4 - 시나리오 2) + [test_rate_limit_handling.py](../../tests/integration_real/test_rate_limit_handling.py) (3 - 시나리오 4). **Total (예상)**: **14 passed** (placeholder 1개 제거). **Contract tests**: 188 passed, 15 deselected. **Gate 7 v2**: ALL PASS (303 asserts, Placeholder 0, @pytest.mark.skip 0, conftest.py 중복 제거). | **Infrastructure/Exchange**: [bybit_ws_client.py](../../src/infrastructure/exchange/bybit_ws_client.py) (489 LOC, 24 메서드: public 14 + private 10), [bybit_rest_client.py](../../src/infrastructure/exchange/bybit_rest_client.py) (place_order/cancel_order 메서드). **Tests**: [conftest.py](../../tests/integration_real/conftest.py) (api_credentials fixture 공통화). **pyproject.toml**: websocket-client==1.6.4, pytest testnet marker. **SSOT**: Bybit V5 프로토콜 준수 (WS + REST). | **Evidence v2**: [phase_8/](../evidence/phase_8/) (Gate 1a/1b 재검증). **Phase 8 재검증 완료** (5개 시나리오, placeholder 제거). **새 세션 검증 가능**. **Phase 0~8 완료 (Domain Logic + REST/WS 클라이언트 실제 구현 + Testnet 검증 완료)**. Phase 9 (Session Risk) 시작 가능. |
 | 9 | DONE | **Evidence Artifacts (9a)**: [Completion Checklist](../evidence/phase_9a/completion_checklist.md), [Gate 7](../evidence/phase_9a/gate7_verification.txt), [pytest](../evidence/phase_9a/pytest_output.txt), [RED→GREEN](../evidence/phase_9a/red_green_proof.md). **Evidence Artifacts (9b)**: [Completion Checklist](../evidence/phase_9b/completion_checklist.md), [Gate 7](../evidence/phase_9b/gate7_verification.txt), [pytest](../evidence/phase_9b/pytest_output.txt), [Policy Change](../evidence/phase_9b/policy_change_proof.md). **Evidence Artifacts (9c)**: [Completion Checklist](../evidence/phase_9c/completion_checklist.md), [Gate 7](../evidence/phase_9c/gate7_verification.txt), [pytest](../evidence/phase_9c/pytest_output.txt), [RED→GREEN](../evidence/phase_9c/red_green_proof.md). **Tests**: [test_session_risk.py](../../tests/unit/test_session_risk.py) (15 cases) + [test_orchestrator_session_risk.py](../../tests/integration/test_orchestrator_session_risk.py) (5 cases). Total: **208 passed in 0.22s** (188 → 208, +20). **Gate 7**: ALL PASS (330 asserts, +15). | **Application**: [session_risk.py](../../src/application/session_risk.py) (203 LOC), [orchestrator.py](../../src/application/orchestrator.py) (216 LOC, Session Risk 통합). **Infrastructure/Safety**: [killswitch.py](../../src/infrastructure/safety/killswitch.py) (59 LOC), [alert.py](../../src/infrastructure/safety/alert.py) (49 LOC), [rollback_protocol.py](../../src/infrastructure/safety/rollback_protocol.py) (73 LOC). **Config**: [safety_limits.yaml](../../config/safety_limits.yaml) (Dry-Run 4개 상한, Mainnet/Testnet 분리). **Policy**: [account_builder_policy.md](../specs/account_builder_policy.md) (Stage 1: $10→$3). **ADR**: [ADR-0001](../adrs/ADR-0001-per-trade-loss-cap-reduction.md). | **Evidence**: [phase_9a/](../evidence/phase_9a/), [phase_9b/](../evidence/phase_9b/), [phase_9c/](../evidence/phase_9c/). **Phase 9 완료** (Session Risk + Per-Trade Cap + Orchestrator 통합). **완전한 계좌 보호**: Session (Daily -5%, Weekly -12.5%, Loss Streak, Anomaly) + Trade ($3 cap) + Emergency = 3중 보호. **"도박 종료, 계좌 보호 시작"**. **새 세션 검증 가능**. **Last Updated**: 2026-01-23 |
 | 10 | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_10/completion_checklist.md), [Gate 7](../evidence/phase_10/gate7_verification.txt), [pytest](../evidence/phase_10/pytest_output.txt), [RED→GREEN](../evidence/phase_10/red_green_proof.md). **Tests**: [test_trade_logger_v1.py](../../tests/unit/test_trade_logger_v1.py) (9 cases) + [test_log_storage.py](../../tests/unit/test_log_storage.py) (8 cases) = **17 passed**. Total: **225 passed in 0.34s** (208 → 225, +17). **Gate 7**: ALL PASS (359 asserts, +29). | **Infrastructure/Logging**: [trade_logger_v1.py](../../src/infrastructure/logging/trade_logger_v1.py) (145 LOC: TradeLogV1 dataclass, calculate_market_regime, validate_trade_log_v1), **Infrastructure/Storage**: [log_storage.py](../../src/infrastructure/storage/log_storage.py) (165 LOC: LogStorage class, append/read/rotate with fsync policy). **DoD 1/5**: order_id, fills, slippage, latency breakdown, funding/mark/index. **DoD 3/5**: market_regime deterministic (MA slope + ATR percentile). **DoD 5/5**: schema_version, config_hash, git_commit, exchange_server_time_offset 필수. **Failure-mode tests**: schema validation, partial line recovery, fsync policy (batch/periodic/critical), rotation boundary. | **Evidence**: [phase_10/](../evidence/phase_10/). **Phase 10 완료** (Trade Log v1.0 + JSONL Storage). **운영 현실화**: Single syscall write, durable append, crash safety. **새 세션 검증 가능**. **완료**: 2026-01-24 |
-| 11 | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11/completion_checklist.md), [Gate 7](../evidence/phase_11/gate7_verification.txt), [pytest](../evidence/phase_11/pytest_output.txt), [RED→GREEN](../evidence/phase_11/red_green_proof.md). **Tests**: [test_signal_generator.py](../../tests/unit/test_signal_generator.py) (10 cases) + [test_exit_manager.py](../../tests/unit/test_exit_manager.py) (8 cases) = **18 passed**. Total: **245 passed in 0.36s** (225 → 245, +18). **Gate 7**: ALL PASS (380 asserts, +21). | **Application**: [signal_generator.py](../../src/application/signal_generator.py) (88 LOC: Signal dataclass, calculate_grid_spacing, generate_signal), [exit_manager.py](../../src/application/exit_manager.py) (78 LOC: check_stop_hit, create_exit_intent), **Orchestrator**: [orchestrator.py](../../src/application/orchestrator.py) (Exit Manager 통합: _manage_position, TickResult.exit_intent), **Domain**: [intent.py](../../src/domain/intent.py) (ExitIntent dataclass 추가). **Grid Signal**: ATR-based spacing, Last fill price grid level. **Exit Logic**: Stop hit check (LONG/SHORT), Exit intent (Market order). **Note**: Full Orchestrator Integration (Entry flow) + Testnet E2E는 Phase 12에서 수행. | **Evidence**: [phase_11/](../evidence/phase_11/). **Phase 11 완료** (Signal Generator + Exit Manager + 최소 Orchestrator 통합). **완료**: 2026-01-24. **새 세션 검증 가능**. **다음**: Phase 12 (Testnet Dry-Run Validation) |
+| 11a | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11a/completion_checklist.md), [Gate 7](../evidence/phase_11a/gate7_verification.txt), [pytest](../evidence/phase_11a/pytest_output.txt), [RED→GREEN](../evidence/phase_11a/red_green_proof.md). **Tests**: [test_signal_generator.py](../../tests/unit/test_signal_generator.py) (10 cases) + [test_exit_manager.py](../../tests/unit/test_exit_manager.py) (8 cases) = **18 passed**. Total: **245 passed in 0.36s** (225 → 245, +18). **Gate 7**: ALL PASS (380 asserts, +21). | **Application**: [signal_generator.py](../../src/application/signal_generator.py) (88 LOC: Signal dataclass, calculate_grid_spacing, generate_signal), [exit_manager.py](../../src/application/exit_manager.py) (78 LOC: check_stop_hit, create_exit_intent), **Domain**: [intent.py](../../src/domain/intent.py) (ExitIntent 추가), **Orchestrator**: [orchestrator.py](../../src/application/orchestrator.py) (Exit Manager만 통합). **Scope**: Grid Signal + Exit Logic (독립 완료 가능). | **Evidence**: [phase_11a/](../evidence/phase_11a/). **Phase 11a 완료** (Signal Generator + Exit Manager). **100% 완료**: DoD 8개 항목 모두 완료. **완료**: 2026-01-24. **새 세션 검증 가능**. **다음**: Phase 11b (Full Integration + Testnet E2E) |
+| 11b | [ ] TODO | - | - | Full Orchestrator Integration (Entry flow: Signal → Gates → Sizing → Order) + Testnet E2E Tests (5+ cases, 10회 거래 성공). **예상 기간**: 4-6일. **완료 시**: Testnet 실거래 가능 (FLAT → Entry → Exit → FLAT). **Phase 11a 완료 후 시작**. |
 | 12 | [ ] TODO | - | - | Dry-Run Validation (12a: Testnet 30-50회, 12b: Mainnet 30회). **예상 기간**: 3-5일. **완료 시**: ✅ **Mainnet 실거래 시작** ($100 최소 금액) |
 
 ---
@@ -1375,7 +1379,9 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 ## 8. Change History
 | Date | Version | Change |
 |------|---------|--------|
-| 2026-01-24 | 2.22 | **Phase 11 완료 (Signal Generation + Exit Manager + Orchestrator 통합)**: (1) Signal Generator 구현 (Grid-based, ATR spacing, 10 tests), (2) Exit Manager 구현 (Stop hit check, Exit intent, 8 tests), (3) Orchestrator Integration (Exit Manager 통합, TickResult.exit_intent 추가), (4) ExitIntent 추가 (domain/intent.py), (5) Evidence Artifacts 생성 (completion_checklist.md, gate7_verification.txt, pytest_output.txt, red_green_proof.md). **근거**: Phase 11 DoD 달성, 245 tests passed (+18), Gate 7 ALL PASS. **완료**: 2026-01-24. **Next**: Phase 12 (Dry-Run Validation). |
+| 2026-01-24 | 2.24 | **Phase 재정의 (11 → 11a/11b 분리, Option A 선택)**: 사용자 원칙 "phase가 다르게진행되면 그걸 분리통합해서 항상 태스크안에서 100프로완료되게 해" → Phase 11을 11a (Signal+Exit, DONE), 11b (Full Integration+Testnet, TODO)로 분리. Evidence 디렉토리 phase_11 → phase_11a 변경. Progress Table: Phase 11a DONE (100% 완료), Phase 11b TODO 추가. Status: "Phase 0~11a COMPLETE". **근거**: 독립 완료 가능한 단위 분리 → 100% 원칙 준수. |
+| 2026-01-24 | 2.23 | **원칙 위반 복구 (부분 완료 DONE 표시 → DOING 복원)**: Phase 11을 DONE으로 표시했으나, 원래 DoD 4개 중 2개만 완료 (Signal+Exit 완료, Entry flow+Testnet 미완성). **사용자 원칙**: "100프로 통과가 아니면 통과표시하지마" → 즉시 Progress Table DONE → DOING 복원. Status 수정: "Phase 0~11 COMPLETE" → "Phase 0~10 COMPLETE, Phase 11 DOING (50%)". **근거**: 부분 완료 ≠ DONE, 원칙 준수. → v2.24에서 Phase 재정의로 해결. |
+| 2026-01-24 | 2.22 | **Phase 11 부분 구현 (Signal Generation + Exit Manager)**: (1) Signal Generator 구현 (Grid-based, ATR spacing, 10 tests), (2) Exit Manager 구현 (Stop hit check, Exit intent, 8 tests), (3) Orchestrator Integration (Exit Manager만 통합), (4) ExitIntent 추가. **⚠️ 원칙 위반**: Full Integration + Testnet 미완성인데 DONE 표시 → v2.23에서 복구, v2.24에서 Phase 재정의. 245 tests passed (+18). |
 | 2026-01-24 | 2.21 | **Phase 10 JSONL 저장 패턴 운영 현실화 (치명적 구멍 4개 메움)**: (1) Single line integrity: "보장"이 아니라 "single syscall write + partial line recovery (truncate)" 명확화, (2) fsync 정책: "per append"가 아니라 "batch (10 lines) / periodic (1s) / critical event (HALT/LIQ/ADL)" 운영 균형 정의, (3) Rotation: "handle swap"만이 아니라 "UTC 기준 + pre-rotate flush+fsync + optional fsync(dir)" 완전 정의, (4) fd 관리: "with open() 매번"이 아니라 "fd 상시 유지 + rotate 시점에만 close/open" 성능 최적화. **근거**: 사용자 지적 (v2.20 "Durable append" 정의에 실전 구멍 4개) → 운영 수준 정의 완성. |
 | 2026-01-24 | 2.20 | **SSOT 복구 2차 (Phase 9/10 현실 정렬 3가지)**: (1) Phase 9 섹션 "도박 단계" 과거형 수정 (현재형 제거, Status: ✅ DONE 명시, 구현 완료 내용↔구현 전 위험 진단 분리), (2) Section 2.2 Planned: Phase 9 항목 제거 (2.1 Implemented로 이동, Phase 10+ 항목만 보존), (3) Phase 10 JSONL 저장 패턴 현실화 ("Atomic write (temp→rename)" 제거, "Durable append (O_APPEND, flush+fsync, rotation-safe swap)" 정의, DoD에 market_regime deterministic 정의 + failure-mode tests 추가). **근거**: 사용자 지적 (Phase 9 DONE 후 문서-현실 괴리 3가지) → 즉시 수정. |
 | 2026-01-24 | 2.19 | **SSOT 복구 (문서 내부 모순 3가지 해결)**: (1) 상단 Status를 Progress Table 최종 상태와 동기화 (Phase 0~8 COMPLETE → Phase 0~9 COMPLETE, 188 passed → 208 passed, "Phase 9 시작 가능" 제거), (2) Last Updated 간소화 (세부 내용 제거), (3) Phase 5 vs Phase 10 역할 구분 명확화 (Phase 5: 운영 감사용 v0, Phase 10: 전략 최적화용 v1.0). **근거**: 사용자 지적 (SSOT 깨짐 3가지) → 즉시 수정. |

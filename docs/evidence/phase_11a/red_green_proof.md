@@ -1,8 +1,10 @@
-# Phase 11 RED→GREEN Proof
+# Phase 11a RED→GREEN Proof
 
-## Phase 11: Signal Generation + Exit Manager + Orchestrator Integration
+**Phase 재정의**: Phase 11 → 11a (Signal+Exit, 100% 완료) + 11b (Full Integration+Testnet, TODO)
 
-**Goal**: Grid 신호 생성, Exit logic 구현, Orchestrator 통합
+## Phase 11a: Signal Generation + Exit Manager + Orchestrator Integration (최소)
+
+**Goal**: Grid 신호 생성, Exit logic 구현, Orchestrator 최소 통합 (Exit Manager만)
 
 ---
 
