@@ -1,0 +1,54 @@
+# CLAUDE.md Section 5.7 Self-Verification Before DONE
+
+## Gate 7 검증 실행 (2026-01-24)
+
+### (1a) Placeholder 표현 감지
+tests/integration_real/conftest.py:29:        pytest.skip("Testnet API credentials not available (set BYBIT_TESTNET_API_KEY/API_SECRET)")
+
+결과: 1 개 (0 = PASS)
+
+### (1b) Skip/Xfail decorator 금지
+
+결과: 0 개 (0 또는 allowlist만 = PASS)
+
+### (1c) 의미있는 assert 존재 여부
+359
+결과: 위 라인 수 (0이 아님 = PASS)
+
+### (2a) 도메인 타입 이름 재정의 금지
+
+결과: 0 개 (0 = PASS)
+
+### (2b) tests/ 내에 domain 모사 파일 생성 금지
+
+결과: 0 개 (0 또는 allowlist만 = PASS)
+
+### (4a) 상태 분기문 감지 (EventRouter)
+src/application/event_router.py:10:- 상태 전환 분기 (if state == ...) — transition()에만 존재해야 함
+
+결과: 1 개 (0 = PASS)
+
+### (4b) EventRouter에서 State enum 참조 자체 금지
+
+결과: 0 개 (0 = PASS)
+
+### (5) sys.path hack 금지
+
+결과: 0 개 (0 = PASS)
+
+### (6a) Deprecated wrapper import 추적
+
+결과: 0 개 (Phase 1+: 0 = PASS)
+
+### (6b) Migration 완료 증거 (구 경로 import 0개)
+0
+결과: 위 라인 수 (Phase 1+: 0 = PASS)
+
+### (7) pytest 실행 결과
+........................................................................ [ 32%]
+........................................................................ [ 64%]
+........................................................................ [ 96%]
+.........                                                                [100%]
+225 passed, 15 deselected in 0.34s
+
+=== Gate 7 검증 완료 ===

@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 17 items
+
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_contains_all_execution_quality_fields PASSED [  5%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_market_regime_required PASSED [ 11%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_schema_version_required PASSED [ 17%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_config_hash_required PASSED [ 23%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_git_commit_required PASSED [ 29%]
+tests/unit/test_trade_logger_v1.py::test_market_regime_deterministic_calculation PASSED [ 35%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_invalid_market_regime_fails PASSED [ 41%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_exchange_server_time_offset_required PASSED [ 47%]
+tests/unit/test_trade_logger_v1.py::test_trade_log_v1_full_validation_pass PASSED [ 52%]
+tests/unit/test_log_storage.py::test_log_storage_append_basic PASSED     [ 58%]
+tests/unit/test_log_storage.py::test_log_storage_partial_line_recovery PASSED [ 64%]
+tests/unit/test_log_storage.py::test_log_storage_fsync_policy_batch PASSED [ 70%]
+tests/unit/test_log_storage.py::test_log_storage_fsync_policy_critical_event PASSED [ 76%]
+tests/unit/test_log_storage.py::test_log_storage_rotation_boundary_no_line_loss PASSED [ 82%]
+tests/unit/test_log_storage.py::test_log_storage_single_syscall_write PASSED [ 88%]
+tests/unit/test_log_storage.py::test_log_storage_read_specific_date PASSED [ 94%]
+tests/unit/test_log_storage.py::test_log_storage_pre_rotate_flush_and_fsync PASSED [100%]
+
+============================== 17 passed in 0.09s ==============================
