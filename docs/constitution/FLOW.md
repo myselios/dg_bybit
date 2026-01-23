@@ -26,7 +26,7 @@ ENTRY_PENDING  : Entry 주문 대기 중 (체결 미완료)
 IN_POSITION    : 포지션 오픈 (Stop Loss 주문 유지)
 EXIT_PENDING   : Exit 주문 대기 중 (청산 미완료)
 HALT           : 모든 진입 차단 (Manual reset only)
-COOLDOWN       : 일시적 차단 (자동 해제 가능)
+COOLDOWN       : 일시적 차단 (자동 해제 가능, 해제 조건은 Section 5 참조)
 ```
 
 ### 상태 전환 규칙
@@ -116,21 +116,47 @@ IN_POSITION + Amend 실패: stop_status = PENDING → 재시도 → ACTIVE or ER
 
 ---
 
+### State Invariants (상태별 불변 조건)
+
+**목적**: 각 상태에서 반드시 참이어야 하는 조건 (코드 assert 기준)
+
+| State | position.qty | pending_order_id | stop_order_id | stop_status | entry_allowed | Invariant Rule |
+|-------|--------------|------------------|---------------|-------------|---------------|----------------|
+| **FLAT** | == 0 | None | None | N/A | True (gate 통과 시) | 포지션 없음, 진입 가능 |
+| **ENTRY_PENDING** | >= 0 | != None | None (또는 부분체결 시 존재) | N/A (또는 부분체결 시 PENDING) | False | 주문 체결 대기, 부분체결 시 position.qty > 0 + entry_working=True |
+| **IN_POSITION** | > 0 | None (entry_working=False) 또는 존재 (entry_working=True) | != None (stop_status=ACTIVE/PENDING만 허용) | ACTIVE/PENDING | False | Stop 필수, MISSING은 복구 중 (최대 10초), ERROR는 HALT 직전 |
+| **EXIT_PENDING** | > 0 | != None (exit order) | None (청산 진행 중) | N/A | False | 청산 주문 대기 |
+| **HALT** | any | any (pending 주문은 취소됨) | any | any | False (Manual reset only) | 모든 진입 차단, 수동 복구만 |
+| **COOLDOWN** | any | any | any | any | False (Auto after timeout) | 일시적 차단, 자동 해제 가능 (Section 5 참조) |
+
+**강제 규칙**:
+1. **IN_POSITION에서 stop_status == MISSING 허용 시간**: 최대 10초 (복구 시도 중)
+2. **stop_status == ERROR 진입 즉시**: HALT (3회 복구 실패 후)
+3. **ENTRY_PENDING 부분체결 시**: 즉시 IN_POSITION 전환 + Stop 설치 (filled_qty > 0이면 무조건)
+4. **COOLDOWN 해제 조건**: Section 5 Emergency 조건 참조 (30분 경과 AND 5분 연속 안정)
+
+**테스트 요구사항**:
+- 각 상태 전환 시 위 invariant를 assert하는 oracle 테스트 필수
+- 예: `assert state == State.IN_POSITION implies position.qty > 0 and stop_order_id is not None`
+- Section 10.1 Code Enforcement Requirements 참조
+
+---
+
 ## 2. Tick Execution Flow (1 Cycle)
 
-**Tick 주기**: 목표 1초 간격, 실제는 동적 조정 (blocking wait 절대 금지)
+**Tick 주기**: 목표 2초 간격 (REST Budget 90회/분 준수), 실제는 동적 조정 (blocking wait 절대 금지)
 
 ### Tick 실행 규칙
 
-**목표 주기**: 1초
-**실제 주기**: API latency + rate limit 고려하여 0.5~2초 사이 동적 조정
+**목표 주기**: 2초 (REST Budget 준수)
+**실제 주기**: API latency + rate limit 고려하여 1~3초 사이 동적 조정
 
 **Rate Limit 보호 (합산 제한)**:
 - **REST Budget**: 1분 rolling window 기준 **90회 제한** (Bybit 120 req/min의 75%)
 - Tick snapshot: ~3회/tick (price, account, orders)
 - Reconcile: 상태별 5~30초마다 추가 REST 호출 (2회)
 - **합산 예산 관리** 필수
-- Rate limit 근접 시 (80% 도달): Tick 주기 자동 증가 (1초 → 2초)
+- Rate limit 근접 시 (80% 도달): Tick 주기 자동 증가 (2초 → 3초)
 - Execution events는 **WebSocket 우선**, REST는 fallback만
 
 ```python
@@ -159,7 +185,7 @@ def track_rest_call():
 2. **REST** (WebSocket 실패 시 fallback, snapshot 용도만)
 
 ```
-[Every Tick - 1초 간격]
+[Every Tick - 2초 간격 (목표)]
   │
   ▼
 ┌─────────────────────────────────────────┐
@@ -374,6 +400,60 @@ if additional_fill:
     )
 ```
 
+---
+
+### 2.5.3 Position Size Overflow 방지 (부분체결 누적)
+
+**문제**: 잔량 추가 체결로 원래 sizing 결과(max_contracts) 초과
+
+**규칙**:
+```python
+# Entry 시점: 원래 sizing 결과 저장
+session.original_max_contracts = contracts  # Sizing 결과 저장
+
+# 추가 체결 시
+if additional_fill:
+    new_total_qty = position.qty + additional_filled_qty
+
+    # 10% 초과 시 overflow 처리
+    if new_total_qty > session.original_max_contracts * 1.1:
+        log_critical("position_size_overflow", {
+            "original_max": session.original_max_contracts,
+            "current_qty": position.qty,
+            "additional_qty": additional_filled_qty,
+            "new_total": new_total_qty,
+            "overflow_pct": (new_total_qty / session.original_max_contracts - 1) * 100
+        })
+
+        # 초과분 즉시 청산 (reduceOnly 주문)
+        excess_qty = new_total_qty - session.original_max_contracts
+        place_exit_order(
+            qty=excess_qty,
+            reason="size_overflow",
+            orderType="Market",
+            reduceOnly=True
+        )
+
+        # 상태는 IN_POSITION 유지 (청산 대기 아님)
+        return
+
+    # 정상 범위: 누적
+    position.qty = new_total_qty
+
+    # Stop 갱신 (Section 2.5 참조)
+    update_stop_loss_if_needed(
+        current_stop_qty=old_stop_qty,
+        new_qty=position.qty,
+        stop_order_id=stop_order_id
+    )
+```
+
+**이유**:
+- 큰 주문 부분체결 반복 시 margin/liquidation 계산 틀어짐
+- Loss budget 기반 sizing 무효화 방지
+
+---
+
 ### State Confirmation Rule (정상 vs DEGRADED 모드 분리)
 
 #### 정상 모드 (WS healthy)
@@ -399,81 +479,13 @@ def on_execution_event(event):
 
 #### DEGRADED 모드 (WS unhealthy)
 
-**진입 조건**:
-- Heartbeat 10초 이상 없음
-- 연속 이벤트 드랍 3회 이상
+**자세한 내용은 Section 2.6 WebSocket DEGRADED Mode 참조**
 
-**동작**:
-```python
-if ws_heartbeat_timeout_exceeded or ws_event_drop_count >= 3:
-    log_critical("entering_degraded_mode", {
-        "reason": "ws_disconnection",
-        "heartbeat_timeout": ws_heartbeat_timeout_exceeded,
-        "event_drops": ws_event_drop_count
-    })
-
-    system.degraded_mode = True
-
-    # 1. 신규 진입 차단 (FLAT일 때만)
-    if state == FLAT:
-        entry_allowed = False
-        log_warning("entries_blocked", "degraded_mode")
-
-    # 2. Reconcile 주기 단축
-    if state == IN_POSITION:
-        reconcile_interval = 1.0  # 1초 (포지션 보호)
-    elif state in [ENTRY_PENDING, EXIT_PENDING]:
-        reconcile_interval = 1.0  # 1초 (중요 상태)
-    else:  # FLAT
-        reconcile_interval = 30.0  # 기존 유지
-
-    # 3. 목적: '확정'이 아니라 '정합성 회복'
-    # REST로 불일치 감지 → 히스테리시스 적용 (Section 2.6)
-```
-
-**장기 미복구 시 HALT**:
-```python
-# DEGRADED 상태 60초 이상 지속 → HALT
-if system.degraded_mode and now() - degraded_mode_entered_at > 60:
-    log_critical("degraded_mode_timeout", {
-        "duration": now() - degraded_mode_entered_at,
-        "state": state
-    })
-
-    # IN_POSITION: Stop 유지하고 HALT
-    # FLAT: 바로 HALT
-    if state == IN_POSITION:
-        # Stop 확인 후 HALT
-        if stop_status != ACTIVE:
-            # Stop 복구 시도
-            place_stop_loss(...)
-
-        HALT(reason="degraded_mode_timeout_with_position")
-    else:
-        HALT(reason="degraded_mode_timeout")
-```
-
-**복구**:
-```python
-if ws_heartbeat_ok and ws_event_drop_count == 0:
-    if system.degraded_mode:
-        log_info("ws_recovered", "exiting_degraded_mode")
-
-        system.degraded_mode = False
-
-        # 5분 COOLDOWN 후 진입 재개
-        entry_cooldown_until = now() + 300
-
-        log_warning("entry_cooldown", {
-            "duration": 300,
-            "reason": "ws_recovery_safety"
-        })
-```
-
-**정리**:
-- **정상**: Event-driven만, REST 확정 금지
-- **DEGRADED**: Reconcile 강화, 진입 차단, 60초 후 HALT
-- **목적**: DEGRADED에서도 '정합성 회복'이지 '상태 확정'이 아님
+**요약**:
+- WS 단절 시 진입 (heartbeat timeout, event drop 연속 3회)
+- 신규 진입 차단 + Reconcile 강화
+- 60초 미복구 시 HALT
+- WS 복구 시 자동 해제 + 5분 COOLDOWN
 
 ### Stop Loss 갱신 규칙 (Rate Limit 방지)
 
@@ -735,6 +747,139 @@ if ws_heartbeat_ok and ws_event_drop_count == 0:
 **Trade-off**:
 - **진입 기회 손실**: WS 단절 중 FLAT이면 Entry 차단
 - **수용 가능**: 포지션 보호 > 진입 기회
+
+---
+
+### 2.6.5 Complete Network Failure (WS + REST)
+
+**진입 조건**:
+- DEGRADED 상태에서 REST timeout 연속 3회 이상
+- 또는 WS 단절 + REST 첫 호출부터 timeout
+
+**동작**:
+```python
+if degraded_mode and rest_timeout_count >= 3:
+    log_critical("complete_network_failure", {
+        "ws_down_duration": now() - ws_down_at,
+        "rest_timeout_count": rest_timeout_count,
+        "state": state
+    })
+
+    # IN_POSITION: Stop 확인 불가 → 즉시 HALT
+    if state == IN_POSITION:
+        # Stop 상태를 알 수 없으므로 최악 가정
+        HALT(reason="network_failure_with_position")
+        log_critical("position_exposed_network_down", {
+            "position_qty": position.qty,
+            "last_known_stop_status": stop_status
+        })
+    else:
+        # FLAT/PENDING: HALT (복구 시까지 차단)
+        HALT(reason="network_failure")
+```
+
+**복구**:
+- HALT 상태이므로 Manual reset만 가능
+- 복구 후 포지션 재조회 → Stop 확인 → 안전 확인 후 재개
+
+---
+
+## 2.7. WebSocket Event Processing Contract (이벤트 처리 계약)
+
+**전제**: WS 이벤트는 중복/역순/지연 가능 (실거래 필연)
+
+### (1) Deduplication (중복 제거)
+
+**Dedup Key 정의**:
+```python
+# Execution event
+dedup_key = f"{execution_id}_{order_id}_{exec_time}"
+
+# Order event
+dedup_key = f"{order_id}_{order_status}_{update_time}"
+
+# Position event (ADL/Liquidation)
+dedup_key = f"{position_idx}_{update_type}_{update_time}"
+```
+
+**처리 규칙**:
+```python
+# 이미 처리한 이벤트는 무시
+if dedup_key in processed_events:
+    log_debug("duplicate_event_ignored", {"key": dedup_key})
+    return
+
+# 처리 후 기록 (최대 1000개 유지)
+processed_events.add(dedup_key)
+if len(processed_events) > 1000:
+    processed_events.pop()  # FIFO
+```
+
+---
+
+### (2) Ordering (순서 보장)
+
+**원칙**: 최신 seq/timestamp 우선
+
+**Out-of-order 방어**:
+```python
+# Order event에 seq 존재 시
+if event.seq <= last_processed_seq[order_id]:
+    log_warning("out_of_order_event", {
+        "event_seq": event.seq,
+        "last_seq": last_processed_seq[order_id]
+    })
+    return  # 무시
+
+# Seq 업데이트
+last_processed_seq[order_id] = event.seq
+```
+
+**Late event (지연 도착) 처리**:
+```python
+# 이미 상태가 더 진행됨 (예: FILL 이벤트가 늦게 도착했는데 이미 EXIT_PENDING)
+if state != expected_state_for_event(event):
+    log_warning("late_event_ignored", {
+        "event_type": event.type,
+        "current_state": state,
+        "expected_state": expected_state_for_event(event)
+    })
+    return  # 무시 (REST reconcile이 최종 확정)
+```
+
+---
+
+### (3) REST Reconcile Override (최종 진실)
+
+**우선순위**: REST = Source of Truth (WS 메시지 드랍 가능)
+
+**Override 규칙 (히스테리시스)**:
+```python
+# 연속 3회 불일치 시 REST로 덮어쓰기 (Section 2.6 참조)
+if ws_state != rest_state:
+    mismatch_count += 1
+    if mismatch_count >= 3:
+        state = rest_state  # REST 우선
+        log_critical("ws_rest_override", {
+            "ws_state": ws_state,
+            "rest_state": rest_state
+        })
+else:
+    mismatch_count = 0  # 일치하면 리셋
+```
+
+**REST 필드 신뢰도**:
+- **position.qty**: REST 우선 (WS position event보다 신뢰)
+- **order.status**: REST 우선 (WS order event는 지연 가능)
+- **stop_order_id**: REST로 확인 (WS에서 누락 가능)
+
+---
+
+### 테스트 요구사항 (Section 10.1 참조):
+- 중복 이벤트 무시 테스트 (동일 execution_id 2회 전송 → 1회만 처리)
+- Out-of-order 방어 테스트 (seq 역순 이벤트 → 무시)
+- Late event 무시 테스트 (FILL이 EXIT_PENDING 이후 도착 → 무시)
+- REST override 테스트 (연속 3회 불일치 → REST로 덮어쓰기)
 
 ---
 
@@ -1353,70 +1498,18 @@ def place_stop_loss(position_qty, stop_price, direction, signal_id):
     return stop_order
 ```
 
-#### Stop 관리 규칙 (헌법 승격)
+#### Stop 관리 규칙
 
-**1. SL 공백 금지 (Amend 우선)**:
-```python
-# Amend API 우선 (주문 유지, 공백 없음)
-try:
-    amend_stop_loss(
-        order_id=stop_order_id,
-        qty=new_qty
-    )
-except AmendNotSupported:
-    # Amend 불가 시에만 Cancel+Place
-    cancel_stop_loss(stop_order_id)
-    stop_order_id = place_stop_loss(...)
-```
+**자세한 내용은 Section 2.5 Stop Loss 갱신 규칙 참조**
 
-**2. Debounce/Threshold (Rate Limit 절약)**:
-```python
-# 20% threshold: 수량 변화 < 20% → 갱신 안 함
-delta_ratio = abs(new_qty - current_stop_qty) / current_stop_qty
-if delta_ratio < 0.20:
-    return  # 갱신 안 함
+**주문 생성 시 필수 파라미터 (Bybit v5 Conditional Order)**:
+- `triggerPrice`, `triggerDirection`, `triggerBy` (필수)
+- `reduceOnly=True`, `positionIdx=0`, `orderType="Market"` (강제)
 
-# 2초 debounce: 최소 2초 간격
-if now() - last_stop_update_at < 2.0:
-    return  # 갱신 안 함
-```
-
-**3. Stop 필수 존재 감시**:
-```python
-# IN_POSITION이면 Stop 필수
-if state == IN_POSITION:
-    if stop_status == MISSING:
-        # 즉시 복구 시도
-        try:
-            place_stop_loss(...)
-            stop_status = ACTIVE
-        except:
-            stop_recovery_fail_count += 1
-            if stop_recovery_fail_count >= 3:
-                stop_status = ERROR
-                HALT(reason="stop_loss_unrecoverable")
-```
-
-**금지**:
-```python
-# ❌ Entry 주문에 stopLoss 파라미터 + reduceOnly 혼용
-place_order(..., stopLoss=price, reduceOnly=True)
-# → Bybit: "Invalid parameter" 거절
-
-# ❌ Stop 공백 방치
-# Cancel+Place 시 "잠깐 비는 구간" 생기는 순간 계좌 터질 수 있음
-
-# ❌ 모든 PARTIAL_FILL마다 Stop 갱신
-# → Rate limit 지옥
-
-# ❌ IN_POSITION인데 Stop 없는 상태 방치
-# → 급변동 시 노출
-```
-
-**이유**:
-- PARTIAL_FILL에서 Stop qty 증감(amend) 필요
-- Stop/Entry 라이프사이클 분리 (상태도 분리)
-- Rate limit/SL 공백 방지 설계 가능
+**핵심 규칙**:
+1. **Amend 우선**: qty 변경 시 Cancel+Place가 아닌 Amend API 사용 (SL 공백 제거)
+2. **Threshold 20% + Debounce 2초**: 미세 변화 무시 (Rate limit 절약)
+3. **Stop 필수 감시**: IN_POSITION일 때 stop_status 확인, MISSING → 즉시 복구, 3회 실패 → HALT
 
 ---
 
@@ -1443,8 +1536,38 @@ Emergency Check는 **Signal보다 먼저**.
 1. 모든 pending orders 취소
 2. 신규 진입 차단
 3. 기존 포지션: Stop Loss 유지 (강제 청산 안 함)
-4. COOLDOWN: auto-recovery 조건 충족 시 자동 해제 (5분 연속 + 30분 cooldown)
+4. COOLDOWN: auto-recovery 조건 충족 시 자동 해제 (아래 참조)
 5. HALT: Manual reset만 가능
+
+---
+
+### COOLDOWN 해제 조건 (SSOT)
+
+**자동 해제 조건** (AND 결합, 둘 다 충족 시):
+1. **30분 경과** (최소 대기 시간)
+2. **5분 연속 안정** (emergency 조건 해소)
+
+**조건별 "안정" 정의**:
+- **price_drop 복구**: drop < -5% 연속 5분 + 30분 경과
+- **latency 복구**: latency < 2.0s 연속 5분 + 30분 경과
+
+**구현 예시**:
+```python
+# 자동 해제 조건 (AND 결합)
+if now() - cooldown_entered_at >= 1800:  # 30분 경과 (1800초)
+    if emergency_resolved_duration >= 300:  # 5분 연속 안정 (300초)
+        state = FLAT  # 자동 해제
+        log_info("cooldown_auto_released", {
+            "cooldown_duration": now() - cooldown_entered_at,
+            "resolved_duration": emergency_resolved_duration,
+            "trigger": emergency_trigger_type  # "price_drop_1m", "latency", etc.
+        })
+```
+
+**금지**:
+- 30분 미경과 시 해제
+- emergency 조건이 재발생하는데 해제
+- HALT와 COOLDOWN 혼동 (HALT는 Manual reset만)
 
 ---
 
@@ -1813,6 +1936,48 @@ if liq_distance_pct is None:
 
 ---
 
+### 7.6 Order Rejection Circuit Breaker
+
+**목적**: 영구적 거절 사유 반복 시 무한 재시도 방지
+
+**추적**:
+```python
+consecutive_reject_count = 0  # 연속 거절 횟수
+last_reject_reason = None     # 마지막 거절 사유
+```
+
+**Circuit Breaker**:
+```python
+def on_order_rejected(reason):
+    consecutive_reject_count += 1
+    last_reject_reason = reason
+
+    if consecutive_reject_count >= 3:
+        # 영구적 거절 사유 (계좌/마진/파라미터)
+        if reason in ["insufficient_margin", "invalid_qty", "invalid_price", "insufficient_balance"]:
+            HALT(reason=f"persistent_rejection_{reason}")
+            log_critical("order_rejection_circuit_break", {
+                "reason": reason,
+                "count": consecutive_reject_count
+            })
+        else:
+            # 일시적 거절 (rate limit, system busy 등)
+            COOLDOWN(reason="transient_rejection", duration=300)
+            log_warning("transient_rejection_cooldown", {
+                "reason": reason,
+                "count": consecutive_reject_count
+            })
+
+def on_order_success():
+    consecutive_reject_count = 0  # 리셋
+```
+
+**금지**:
+- 거절 사유 무시하고 무한 재시도
+- Rate limit으로 거절되는데 계속 호출 → Budget 소진
+
+---
+
 ## 8. Position Entry/Exit는 Idempotent (중복 방지)
 
 **규칙**: 동일한 주문을 중복 실행해도 1회만 체결
@@ -2013,6 +2178,105 @@ def on_position_closed(position, pnl_btc):
 
 ---
 
+### 10.1 Code Enforcement Requirements (코드 강제 요구사항)
+
+**헌법 지위 유지 조건**: 아래 코드 검증이 없으면 이 문서는 "참고 자료"로 격하
+
+#### (1) 상태머신 단일 진실 (SSOT)
+**요구사항**:
+- `src/application/transition.py` (또는 동등 파일)에 전이 함수 단일화
+- 외부에서 `state` 직접 set 금지 (캡슐화)
+- EventRouter/Handler는 thin wrapper로만 유지 (CLAUDE.md Section 5.7 Gate 4 참조)
+
+**검증 명령**:
+```bash
+# (A) transition 함수가 1개 파일에만 존재
+find src -name "*.py" -exec grep -l "def transition" {} \; | wc -l
+# → 1
+
+# (B) EventRouter에서 State enum 참조 없음
+grep -n "State\." src/application/event_router.py
+# → 비어있음 (thin wrapper 강제)
+```
+
+#### (2) 이벤트 dedup/ordering 구현
+**요구사항**:
+- WS 핸들러에서 `dedup_key` 기반 중복 제거
+- `seq` 또는 `timestamp` 기반 out-of-order 방어
+- REST reconcile override (연속 3회 불일치 → 덮어쓰기)
+
+**검증 명령**:
+```bash
+# (A) dedup 구현 존재
+grep -rn "dedup_key\|processed_events" src/adapter/ws_handler.py src/application/event_handler.py
+# → 파일 경로 + line 번호 출력
+
+# (B) seq 기반 ordering 존재
+grep -rn "last_processed_seq\|event.seq" src/
+# → 파일 경로 + line 번호 출력
+```
+
+#### (3) stop_status 강제 루프
+**요구사항**:
+- IN_POSITION일 때 매 tick마다 `stop_status` 확인
+- MISSING → 복구 시도 (최대 3회)
+- ERROR → 즉시 HALT
+
+**검증 명령**:
+```bash
+# stop_status 확인 루프 존재
+grep -rn "if state == IN_POSITION.*stop_status\|stop_status == MISSING" src/
+# → 파일 경로 + line 번호 출력
+
+# 3회 실패 후 HALT
+grep -rn "stop_recovery_fail_count >= 3\|HALT.*stop_loss_unrecoverable" src/
+# → 파일 경로 + line 번호 출력
+```
+
+#### (4) Oracle 테스트 존재
+**요구사항**:
+- `tests/oracles/test_state_transition_oracle.py` (또는 동등) 존재
+- 아래 시나리오 커버 (RED→GREEN 증거 필수):
+  - 부분체결 즉시 IN_POSITION 전환 + Stop 설치
+  - DEGRADED 60초 후 HALT
+  - REST Budget 초과 시 tick 주기 증가
+  - Stop 복구 3회 실패 → HALT
+  - WS 이벤트 중복 제거
+  - Position size overflow → 초과분 청산
+
+**검증 명령**:
+```bash
+# (A) Oracle 테스트 존재
+test -f tests/oracles/test_state_transition_oracle.py && echo "OK" || echo "FAIL"
+
+# (B) 필수 시나리오 커버
+grep -n "test_partial_fill\|test_degraded_halt\|test_rest_budget\|test_stop_recovery\|test_event_dedup\|test_size_overflow" tests/oracles/*.py
+# → 각 시나리오 1개 이상 존재
+
+# (C) pytest 통과
+pytest tests/oracles/ -v
+# → 모든 테스트 PASS
+```
+
+#### (5) Evidence Artifacts (Phase 완료 증거)
+**요구사항**:
+- `docs/evidence/flow_v1.9/` 디렉토리 생성
+- `gate_verification.txt` (위 검증 명령 4개 출력 저장)
+- `oracle_pytest_output.txt` (pytest 실행 결과)
+- `red_green_proof.md` (최소 1개 oracle 테스트 RED→GREEN 재현 증거)
+
+**PASS 조건**:
+- 위 4가지 검증 명령이 모두 통과 (출력 비어있지 않음 + 예상 결과 일치)
+- Evidence Artifacts 파일 3개 이상 존재
+- pytest 실행 결과 100% PASS
+
+**FAIL 조건**:
+- 검증 명령 중 1개라도 실패 (출력 없음, 예상 결과 불일치)
+- Evidence 없이 "구현했습니다" 보고
+- oracle 테스트 placeholder (assert True, pass, TODO) 포함
+
+---
+
 ## 최종 선언
 
 이 Flow는 **Account Builder의 실행 계약**이다.
@@ -2027,9 +2291,20 @@ def on_position_closed(position, pnl_btc):
 
 ## 문서 버전 및 변경 이력
 
-**현재 버전**: FLOW v1.8 (2026-01-21)
+**현재 버전**: FLOW v1.9 (2026-01-23)
 
 **변경 이력**:
+- v1.9 (2026-01-23): 헌법 강제력 확보 및 내부 정합성 개선 (ADR-0008)
+  - **SSOT 중복 제거**: Section 2.5 DEGRADED → Section 2.6 링크, Section 4.5 Stop 갱신 → Section 2.5 링크
+  - **REST Budget 정렬**: Tick 목표 주기 1초 → 2초 (90 calls/min 일치, 실행 가능 수치)
+  - **State Invariants 표 추가**: 6개 상태별 불변 조건 명문화 (Section 1 끝, 코드 assert 기준)
+  - **COOLDOWN 해제 조건 명확화**: 30분 경과 AND 5분 연속 안정 (Section 5 SSOT)
+  - **WS 이벤트 계약 추가**: Section 2.7 신규 (dedup/ordering/REST override)
+  - **Complete Failure 시나리오 3종**: Network partition (2.6.5), Rejection circuit breaker (7.6), Position size overflow (2.5.3)
+  - **Code Enforcement 요구사항**: Section 10.1 (검증 명령 4개 + Evidence Artifacts)
+  - 실거래 영향: 유령체결/유령취소 방지, 무한 재시도/교착 차단, oracle 테스트 강제
+  - 참조: ADR-0008
+
 - v1.8 (2026-01-21): HALT vs COOLDOWN 정의 정렬 (SSOT 충돌 수정)
   - **Section 5 Emergency 조건 수정**: price_drop → HALT → **COOLDOWN** (auto-recovery 가능)
   - **Section 1 State Machine 정의 우선**: HALT = Manual-only, COOLDOWN = Auto 해제

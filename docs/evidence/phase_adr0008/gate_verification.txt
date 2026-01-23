@@ -1,0 +1,50 @@
+=== FLOW v1.9 ADR-0008 Implementation - Gate 8-12 Verification ===
+Date: 2026-01-23
+Status: ALL GATES PASSED ✓
+
+=== Gate 8: transition SSOT ===
+[8a] transition() exists in single file only:
+src/application/transition.py
+
+[8b] EventRouter has no State enum references:
+  ✓ No State enum references found
+
+=== Gate 9: WS Event Dedup/Ordering ===
+[9a] ws_event_processor.py exists:
+  ✓ src/adapter/ws_event_processor.py
+
+[9b] process_event() has dedup logic:
+49:    def process_event(
+
+[9c] dedup_key generation exists:
+89:    def _generate_dedup_key(self, event: ExecutionEvent) -> str:
+
+=== Gate 10: Stop Status Loop ===
+[10a] position_manager.py exists:
+  ✓ src/application/position_manager.py
+
+[10b] manage_stop_status() checks IN_POSITION:
+46:    if current_state != State.IN_POSITION:
+
+[10c] stop_recovery_fail_count >= 3 → HALT:
+14:- stop_recovery_fail_count >= 3: ERROR → HALT
+40:    - stop_recovery_fail_count >= 3 → HALT
+60:        if current_position.stop_recovery_fail_count >= 3:
+
+=== Gate 11: Oracle Tests ===
+[11a] test_flow_v1_9_scenarios.py exists:
+  ✓ tests/oracles/test_flow_v1_9_scenarios.py
+
+[11b] test_event_dedup passes:
+============================== 1 passed in 0.01s ===============================
+
+[11c] test_stop_recovery_3_failures_halt passes:
+============================== 1 passed in 0.01s ===============================
+
+=== Gate 12: SSOT Alignment ===
+[12a] FLOW.md version == v1.9:
+**현재 버전**: FLOW v1.9 (2026-01-23)
+
+[12b] Changelog references ADR-0008:
+2297:- v1.9 (2026-01-23): 헌법 강제력 확보 및 내부 정합성 개선 (ADR-0008)
+2306:  - 참조: ADR-0008

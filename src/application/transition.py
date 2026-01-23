@@ -20,10 +20,12 @@ from domain.state import (
     State,
     StopStatus,
     Direction,
-    EventType,
-    ExecutionEvent,
     Position,
     PendingOrder
+)
+from domain.events import (
+    EventType,
+    ExecutionEvent,
 )
 from domain.intent import (
     TransitionIntents,
