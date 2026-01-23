@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.10, Gate-Driven + Evidence)
+# Task Plan: Account Builder Implementation (v2.12, Gate-Driven + Evidence + Real API)
 Last Updated: 2026-01-23 (KST)
-Status: Phase 0+1+2+3 COMPLETE (Evidence 확보 완료) | Gate 1-8 ALL PASS | 134 tests passed | SSOT 준수 | Phase 4 준비 완료
+Status: Phase 0+1+2+3+4+5+6 COMPLETE (Evidence 확보 완료) | Gate 1-8 ALL PASS | **171 tests passed** ([pytest output](../evidence/phase_6/pytest_output.txt)) | SSOT 준수 | **Domain Logic 완성** | Phase 7-9 (Real API Integration) 계획 확정
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -27,7 +27,7 @@ Non-goal
 - 모든 체크박스는 **fail→pass 증거**(테스트가 실제로 실패했다가 구현 후 통과) 가 있어야 DONE
 
 ### 1.2 Definition of DONE (DoD)
-각 작업 체크박스는 아래 3가지를 모두 만족해야 DONE:
+각 작업 체크박스는 아래 **4가지를 모두** 만족해야 DONE:
 1) **관련 테스트 최소 1개 이상 존재** (`tests/` 아래)
 2) 테스트가 **구현 전 실패했고(RED)** 구현 후 통과했음(GREEN)
 3) 코드가 **Flow/Policy 정의와 충돌하지 않음** (아래 1.3~1.5 Gate)
@@ -49,10 +49,20 @@ Non-goal
 - God Object 금지(책임 분리)
 
 ### 1.5 Real Trading Trap Fix Gates (FLOW v1.4~v1.6)
-아래는 “실거래 함정 방지”로 **누락 시 DONE 불가**:
+아래는 "실거래 함정 방지"로 **누락 시 DONE 불가**:
 - Position Mode One-way 검증
 - PARTIAL_FILL `entry_working` 플래그
-- REST Budget 90/min rolling window
+- **Rate limit: X-Bapi-* 헤더 기반 throttle** (Bybit 공식 SSOT)
+  - **retCode=10006** (rate limit 초과) → 1순위 신호
+  - X-Bapi-Limit-Status/Reset-Timestamp → backoff 기준
+  - HTTP 429는 보조 신호 (프록시/게이트웨이 레벨)
+  - 내부 safety budget(90/min)은 보수적 상한으로만 사용
+  - Endpoint별 token bucket (초당 제한은 Bybit 문서 기준)
+- **WS ping-pong + max_active_time 정책** (Bybit WebSocket v5 SSOT: https://bybit-exchange.github.io/docs/v5/ws/connect)
+  - Heartbeat monitoring: 10초 초과 → DEGRADED (Bybit 권장 ping 주기 20초)
+  - Reconnection logic + max_active_time 관리
+  - Private stream 엔드포인트 (testnet): wss://stream-testnet.bybit.com/v5/private
+  - Execution topic: execution 또는 execution.inverse (category별)
 - Reconcile 히스테리시스(연속 3회, 5초 COOLDOWN)
 - Fee 단위: contracts = USD notional
 - Liquidation gate(거래소-derived 우선)
@@ -124,16 +134,23 @@ src/
 │   ├── liquidation_gate.py # liquidation distance checks + fallback rules
 │   ├── order_executor.py # make/submit/cancel/amend intents -> exchange calls
 │   ├── stop_manager.py # stop placement/amend/debounce; stop_status recovery
-│   └── metrics_tracker.py # winrate/streak/multipliers
+│   ├── metrics_tracker.py # winrate/streak/multipliers
+│   └── orchestrator.py # (Phase 6) tick loop orchestrator
 │
 ├── infrastructure/
 │   ├── exchange/
-│   │   ├── adapter.py # interface
-│   │   └── bybit_adapter.py # real exchange implementation
-│   └── logging/
-│       ├── trade_logger.py
-│       ├── halt_logger.py
-│       └── metrics_logger.py
+│   │   ├── exchange_port.py # (Phase 7) ExchangeAdapter Port 인터페이스
+│   │   ├── bybit_rest_client.py # (Phase 7) REST client (timeout/retry/rate limit)
+│   │   ├── bybit_ws_client.py # (Phase 7) WS client (auth/subscribe/reconnect/heartbeat)
+│   │   └── bybit_adapter.py # (Phase 7) Port 구현 + domain 이벤트 변환
+│   ├── logging/
+│   │   ├── trade_logger.py
+│   │   ├── halt_logger.py
+│   │   └── metrics_logger.py
+│   └── safety/ # (Phase 9)
+│       ├── killswitch.py # 즉시 HALT + 손실/주문/호출 상한
+│       ├── alert.py # 텔레그램/슬랙/메일 알림
+│       └── rollback_protocol.py # 자동 정지/수동 개입 규칙
 │
 └── config/
     ├── constants.py # hard stops, invariants
@@ -141,7 +158,9 @@ src/
     ├── emergency_config.yaml
     ├── fees_config.yaml
     ├── sizing_config.yaml
-    └── performance_config.yaml
+    ├── performance_config.yaml
+    ├── api_config.yaml # (Phase 7) testnet/mainnet 분리, rate limit 설정
+    └── safety_limits.yaml # (Phase 9) dry-run 상한, killswitch 조건
 
 tests/
 ├── oracles/ (추가 예정)
@@ -150,12 +169,25 @@ tests/
 │   ├── test_entry_allowed.py
 │   ├── test_sizing.py
 │   ├── test_ids.py
-│   └── test_stop_manager.py
-└── integration/
-    └── test_orchestrator.py # only 5~10 E2E (Phase 6)
+│   ├── test_stop_manager.py
+│   ├── test_bybit_rest_client.py # (Phase 7) Contract tests (네트워크 0)
+│   └── test_bybit_ws_client.py # (Phase 7) Contract tests (네트워크 0)
+├── integration/
+│   └── test_orchestrator.py # only 5~10 E2E (Phase 6)
+└── integration_real/ # (Phase 8) Live tests (testnet, 기본 skip)
+    ├── test_testnet_connection.py # auth/subscribe/heartbeat
+    ├── test_testnet_order_flow.py # 주문 발주/취소/체결
+    ├── test_rate_limit_handling.py # 429 강제 발생 → backoff
+    ├── test_ws_reconnection.py # disconnect → reconnect + degraded
+    └── test_execution_event_mapping.py # 체결 이벤트 → ExecutionEvent
 ```
 
 **생성 원칙**: 각 Phase DoD 충족 시에만 생성 (TDD: 테스트 먼저 → 구현)
+
+**Phase 7-9 추가사항**:
+- Phase 7은 "골격만" (Contract tests only, Live tests 금지)
+- Phase 8은 "재현 가능한 시나리오 5개"로 제한 (증거 필수)
+- Phase 9는 "운영 안전장치" 필수화 (킬스위치, 상한, 알림, 롤백)
 
 ---
 
@@ -532,7 +564,7 @@ Goal: 실거래 감사(audit) 가능한 로그 스키마.
 ---
 
 ### Phase 6: Orchestrator Integration
-Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
+Goal: tick loop에서 Flow 순서대로 실행(application layer 통합).
 
 #### Conditions (Flow 준수)
 - Tick 순서 고정: Emergency → Events → Position → Entry
@@ -548,6 +580,198 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 #### DoD
 - [ ] orchestrator + integration tests
 - [ ] Progress Table 업데이트
+
+---
+
+### Phase 7: Real API Integration (클라이언트/어댑터 "골격"만)
+Goal: "네트워크 I/O를 붙이되, 실패해도 안전하게 멈추는 연결층"
+
+#### Conditions (안전 우선 + 경계 엄격)
+
+**금지 조항 (Phase 7에서 절대 하지 마)**:
+- ❌ **실제 네트워크 호출 전부 금지** (DNS resolve 포함)
+  - Contract tests only: requests_mock / respx / aioresponses 같은 mocking 라이브러리만 사용
+- ❌ **WS 실제 connect 금지**
+  - 메시지 파서/서브스크립션 payload 생성/재연결 상태머신만 테스트
+- ❌ **키 누락 시 HALT가 아니라 "프로세스 시작 거부"** (fail-fast)
+  - 키 누락 상태에서 봇이 떠 있으면 운영자가 "돌고 있네?" 착각
+
+**필수 조항**:
+- ✅ Contract tests only: 네트워크 없이 서명/요청/에러 매핑/리트라이 정책 검증
+- ✅ ExchangePort 고정: FakeExchange와 BybitAdapter 모두 동일 Port 구현
+- ✅ Rate limit은 X-Bapi-* 헤더 기반 (retCode 10006 우선, HTTP 429 보조)
+
+#### Deliverables
+- `src/infrastructure/exchange/exchange_port.py`
+  - ExchangeAdapter Port 인터페이스 (FakeExchange도 이 Port 구현)
+- `src/infrastructure/exchange/bybit_rest_client.py`
+  - 요청 서명/전송/타임아웃/재시도/429 처리
+  - X-Bapi-Limit-Status/Reset-Timestamp 기반 throttle
+  - Endpoint별 token bucket (초당 제한은 Bybit 문서 기준)
+- `src/infrastructure/exchange/bybit_ws_client.py`
+  - connect/auth/subscribe/reconnect/heartbeat만
+  - ping-pong + max_active_time 정책 (Bybit private stream 요구사항)
+- `src/infrastructure/exchange/bybit_adapter.py`
+  - REST/WS 결과를 domain 이벤트(ExecutionEvent)로 변환
+  - orderLinkId/idempotency 키 정책 준수
+  - "event-driven 상태 확정" 위반 금지 (REST polling으로 체결 확정 금지)
+- `config/api_config.yaml`
+  - API key/secret (env 변수)
+  - testnet vs mainnet 엔드포인트
+  - rate limit 설정 (per endpoint)
+
+#### 실거래 생존성 함정 3개 (Phase 7에서 반드시 해결)
+
+**1. WS 메시지 폭주/백프레셔**
+- 문제: 실전에서 WS는 폭주한다. 파서가 느리면 큐가 무한히 쌓이고 메모리 터진다.
+- 해결:
+  - WS inbound queue maxsize 설정 (예: 1000 메시지)
+  - Overflow 정책: 드랍/DEGRADED/HALT 중 선택
+  - 드랍 카운트를 ws_health의 event_drop_count로 연결
+
+**2. Clock 주입 (determinism 보장)**
+- 문제: Contract test에서 time.time() 박으면 flaky 된다.
+- 해결:
+  - REST/WS client에 Clock(callable) 주입
+  - Retry/backoff도 clock 기반으로 테스트 가능하게
+  - 테스트에서는 fake clock 사용
+
+**3. 실수로 mainnet 주문 방지 (사고 방지)**
+- 문제: Phase 8에서 testnet live tests 한다고 해도, 설정 실수 한 번이면 mainnet에 쏜다.
+- 해결:
+  - **testnet base_url 강제 assert** 코드 레벨에서 박기
+  - 예: `if env != "testnet": raise FatalConfigError("mainnet access forbidden before Phase 9")`
+  - Phase 7/8에서는 mainnet 엔드포인트 접근 자체를 코드로 차단
+
+#### Tests (Contract Tests Only, 네트워크 0)
+- `tests/unit/test_bybit_rest_client.py` (8~10케이스)
+  - 서명 생성이 deterministic
+  - 요청 payload가 Bybit 스펙 만족 (필수 필드, orderLinkId<=36 등)
+  - Rate limit 헤더 처리 로직 (가짜 헤더 주입)
+  - retCode 10006 → backoff 동작
+- `tests/unit/test_bybit_ws_client.py` (5~7케이스)
+  - subscribe topic 정확성 (execution 또는 execution.inverse)
+  - disconnect/reconnect 시 DEGRADED 플래그 설정
+  - ping-pong timeout 처리
+- `tests/unit/test_bybit_adapter.py` (5케이스)
+  - WS 메시지 샘플 → ExecutionEvent 변환 (FILL/PARTIAL/CANCEL)
+  - REST 응답 → Position/Balance 스냅샷 변환
+  - API 에러 → domain 예외 매핑
+
+#### DoD
+- [ ] ExchangePort 고정 + FakeExchange/BybitAdapter 구현
+- [ ] REST client: timeout/retry/retCode/헤더 기반 throttle
+- [ ] WS client: auth/subscribe/reconnect/ping-pong
+- [ ] **실거래 함정 3개 해결**:
+  - WS queue maxsize + overflow 정책 구현
+  - Clock 주입 (fake clock 테스트 가능)
+  - testnet base_url 강제 assert (mainnet 접근 차단)
+- [ ] Contract tests (18~22 cases) 통과 (네트워크 0)
+- [ ] **실제 네트워크 호출 0개 검증** (DNS resolve 포함)
+- [ ] API key 로딩 실패 시 **프로세스 시작 거부** 동작 검증 (HALT 아님)
+- [ ] Progress Table 업데이트
+- [ ] **Gate 7: CLAUDE.md Section 5.7 검증 통과**
+
+---
+
+### Phase 8: Testnet Validation (재현 가능한 시나리오 5개만)
+Goal: 실제 네트워크/거래소에서 "핵심 위험 이벤트"가 예상대로 동작하는지 증명
+
+#### Conditions (증거 필수)
+- **시나리오 5개로 제한**: 늪 방지
+- **재현 가능성 필수**: 실패 시 "원인 분류(네트워크/권한/스키마/레이트리밋)"가 재현 가능해야 DONE
+- 로그 + 실행 커맨드 + 결과 캡처를 docs/evidence/phase_8/에 저장
+
+#### 검증 시나리오 (5개 고정)
+1. **연결/인증/구독 성공 + heartbeat 정상**
+   - wss://stream-testnet.bybit.com/v5/private 연결
+   - auth 성공
+   - execution.inverse topic 구독 성공
+   - heartbeat 10초 이내 수신
+2. **소액 주문 발주→취소 성공 (idempotency 포함)**
+   - place_entry_order() 호출 → orderLinkId 생성
+   - 동일 orderLinkId 재시도 → DuplicateOrderError (또는 기존 주문 조회)
+   - cancel_order() 성공
+3. **체결 이벤트 수신→도메인 이벤트 매핑 성공**
+   - 주문 체결 발생
+   - WS execution 메시지 수신
+   - ExecutionEvent(FILL/PARTIAL) 변환 성공
+4. **Rate limit 강제 발생 → backoff 동작**
+   - 짧은 시간 내 다수 요청 → **retCode 10006 발생** (Bybit 공식 rate limit 신호)
+   - X-Bapi-Limit-Reset-Timestamp 기반 backoff
+   - "진입 차단" 또는 "degraded" 플래그 설정
+   - (보조) HTTP 429 응답도 처리 (프록시/게이트웨이 레벨)
+5. **WS 강제 disconnect → reconnect + degraded 타이머**
+   - WS 연결 강제 종료
+   - reconnect 시도
+   - DEGRADED 모드 진입 (10초 heartbeat timeout)
+   - 복구 시 DEGRADED 해제
+
+#### Tests (Live Tests, Testnet Only)
+- `tests/integration_real/test_testnet_connection.py` (시나리오 1)
+- `tests/integration_real/test_testnet_order_flow.py` (시나리오 2)
+- `tests/integration_real/test_execution_event_mapping.py` (시나리오 3)
+- `tests/integration_real/test_rate_limit_handling.py` (시나리오 4)
+- `tests/integration_real/test_ws_reconnection.py` (시나리오 5)
+
+#### DoD
+- [ ] 5개 시나리오 모두 성공 (testnet)
+- [ ] docs/evidence/phase_8/에 증거 저장:
+  - 실행 커맨드
+  - 로그 출력 (API 응답 + WS 메시지)
+  - 결과 캡처 (성공/실패 + 원인)
+- [ ] 실패 시 원인 분류 재현 가능 (네트워크/권한/스키마/레이트리밋)
+- [ ] Progress Table 업데이트
+- [ ] **Gate 7: CLAUDE.md Section 5.7 검증 통과**
+
+---
+
+### Phase 9: Mainnet Preparation (운영 안전장치)
+Goal: "돈이 들어가는 환경에서 '실패를 오래 구경'하지 않도록" 안전장치 고정
+
+#### Conditions (운영 계약서 수준)
+- Mainnet/Testnet 설정 완전 분리 (키/엔드포인트/심볼/레버리지)
+- dry-run 정의를 구체화: "최소 금액"이 아니라 **4개 상한**으로 고정
+- 킬스위치/알림/롤백 프로토콜 필수
+
+#### Deliverables
+- `src/infrastructure/safety/killswitch.py`
+  - 즉시 HALT 조건 (손실 상한, 주문 상한, 호출 상한 초과)
+  - 자동 정지 vs 수동 개입 분류
+- `src/infrastructure/safety/alert.py`
+  - 텔레그램/슬랙/메일 중 하나
+  - HALT 스냅샷 로그 (가격/잔고/포지션/게이트)
+- `src/infrastructure/safety/rollback_protocol.py`
+  - "이 상태면 자동 정지, 이 상태면 수동 개입" 규칙
+  - 복구 체크리스트
+- `config/safety_limits.yaml`
+  - **dry-run 4개 상한** (문서로 박아야 의미 있음):
+    1. 주문 1회당 notional 상한
+    2. 일일 총 notional 상한
+    3. 일일 손실 상한
+    4. 포지션 보유 시간 상한
+  - Mainnet/Testnet 분리 설정
+
+#### Tests
+- `tests/unit/test_killswitch.py` (6케이스)
+  - 손실 상한 초과 → 즉시 HALT
+  - 주문 상한 초과 → 즉시 HALT
+  - 호출 상한 초과 → 즉시 HALT
+  - 자동 정지 vs 수동 개입 분류
+- `tests/unit/test_alert.py` (3케이스)
+  - HALT 발생 → 알림 전송
+  - 스냅샷 로그 포맷 검증
+  - 알림 실패 시 fallback (로컬 로그)
+
+#### DoD
+- [ ] Mainnet/Testnet 설정 완전 분리 (키/엔드포인트 분리)
+- [ ] 킬스위치 구현 (손실/주문/호출 상한)
+- [ ] 알림 구현 (텔레그램/슬랙/메일 중 1개) + HALT 스냅샷
+- [ ] 롤백 프로토콜 문서화 (자동 정지/수동 개입 규칙)
+- [ ] dry-run 4개 상한 문서화 (safety_limits.yaml)
+- [ ] dry-run 실행 (testnet → mainnet 최소 금액)
+- [ ] Progress Table 업데이트
+- [ ] **Gate 7: CLAUDE.md Section 5.7 검증 통과**
 
 ---
 
@@ -577,21 +801,34 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 | 1 | ✅ DONE | **Evidence Artifacts (ADR-0007 적용)**: [Completion Checklist](../evidence/phase_1/completion_checklist.md), [Gate 7](../evidence/phase_1/gate7_verification.txt), [pytest](../evidence/phase_1/pytest_output.txt), [RED→GREEN](../evidence/phase_1/red_green_proof.md), [Thresholds](../evidence/phase_1/emergency_thresholds_verification.txt). **Tests**: test_emergency.py (8 cases) + test_ws_health.py (5 cases) = **13 passed**. Total: **83 passed in 0.07s**. **Gate 7**: ALL PASS (Placeholder 0, Skip/Xfail 0, Assert 166). **Policy Alignment**: 12 / 12 thresholds MATCH. **ADR-0007**: COOLDOWN semantic 완전 적용 (price_drop → COOLDOWN). **Verification**: `./scripts/verify_phase_completion.sh 1` → ✅ PASS (예상) | **Application**: [emergency.py](../../src/application/emergency.py) (EmergencyStatus with is_cooldown field, check_emergency, check_recovery, Policy 7.1/7.2/7.3 준수, ADR-0007 적용), [ws_health.py](../../src/application/ws_health.py) (WSHealthStatus, WSRecoveryStatus, check_ws_health, check_degraded_timeout, check_ws_recovery, FLOW 2.4 준수). **Infrastructure**: [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (MarketDataInterface Protocol, 6 메서드), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (deterministic test injection). **Thresholds Verified**: price_drop (-10%/-20% → COOLDOWN), balance (0/30s → HALT), latency (5s → Block), recovery (-5%/-10%, 30min), heartbeat (10s), event_drop (3), degraded (60s), ws_recovery (5min). **SSOT**: FLOW v1.8 + Policy v2.2 완전 일치. | **Commit**: f678ae9 (2026-01-21 06:00, ADR-0007 적용). **Phase 1 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료 + ADR-0007 완전 적용 + Policy 일치 검증 완료 (SSOT). **새 세션 검증 가능**. Phase 2 시작 가능. |
 | 2 | ✅ DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_2/completion_checklist.md), [Gate 7](../evidence/phase_2/gate7_verification.txt), [pytest](../evidence/phase_2/pytest_output.txt), [RED→GREEN](../evidence/phase_2/red_green_proof.md). **Tests**: test_ids.py (6) + test_entry_allowed.py (9) + test_sizing.py (8) + test_liquidation_gate.py (8) = **31 passed**. Total: **114 passed in 0.09s** (83 → 114). **Gate 7**: ALL PASS (Placeholder 0, Assert 181, Domain 재정의 0, Migration 완료). **Verification**: `./scripts/verify_phase_completion.sh 2` → ✅ PASS (expected) | **Domain**: [ids.py](../../src/domain/ids.py) (signal_id/orderLinkId validators). **Application**: [entry_allowed.py](../../src/application/entry_allowed.py) (8 gates + reject 이유코드), [sizing.py](../../src/application/sizing.py) (LONG/SHORT 정확한 공식 + margin + tick/lot), [liquidation_gate.py](../../src/application/liquidation_gate.py) (liq distance + 동적 기준 + fallback). **SSOT**: FLOW Section 2, 3.4, 7.5, 8 + Policy Section 5, 10. | **Commit**: 8d1c0d8 (impl) + 9fba6f7 (evidence, 2026-01-23). **Phase 2 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료. **새 세션 검증 가능**. Phase 3 시작 가능. |
 | 3 | DONE | [test_fee_verification.py](../../tests/unit/test_fee_verification.py) (5)<br>[test_order_executor.py](../../tests/unit/test_order_executor.py) (8)<br>[test_event_handler.py](../../tests/unit/test_event_handler.py) (7) | [fee_verification.py](../../src/application/fee_verification.py)<br>[order_executor.py](../../src/application/order_executor.py)<br>[event_handler.py](../../src/application/event_handler.py) | e7f5c15 (impl)<br>Evidence: [phase_3/](../evidence/phase_3/)<br>134 passed (+20) |
-| 4 | TODO | - | - | - |
-| 5 | TODO | - | - | - |
-| 6 | TODO | - | - | - |
+| 4 | ✅ DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_4/completion_checklist.md), [Gate 7](../evidence/phase_4/gate7_verification.txt), [pytest](../evidence/phase_4/pytest_output.txt), [RED→GREEN](../evidence/phase_4/red_green_proof.md). **Tests**: [test_stop_manager.py](../../tests/unit/test_stop_manager.py) (10) + [test_metrics_tracker.py](../../tests/unit/test_metrics_tracker.py) (6) = **16 passed**. Total: **152 passed in 0.14s** (134 → 152). **Gate 7**: ALL PASS (Placeholder 0, Assert 229, Domain 재정의 0, Migration 완료). **Verification**: `./scripts/verify_phase_completion.sh 4` → ✅ PASS (expected) | **Application**: [stop_manager.py](../../src/application/stop_manager.py) (should_update_stop, determine_stop_action, recover_missing_stop: 20% threshold + 2초 debounce + Amend 우선 + stop_status recovery), [metrics_tracker.py](../../src/application/metrics_tracker.py) (calculate_winrate, update_streak_on_closed_trade, apply_streak_multiplier, check_winrate_gate: Winrate rolling 50 trades + 3연승/연패 multiplier + N 구간별 gate). **SSOT**: FLOW Section 2.5, 9 + Policy Section 11. | **Evidence**: [phase_4/](../evidence/phase_4/). **Phase 4 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료. **새 세션 검증 가능**. Phase 5 시작 가능. |
+| 5 | ✅ DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_5/completion_checklist.md), [Gate 7](../evidence/phase_5/gate7_verification.txt), [pytest](../evidence/phase_5/pytest_output.txt), [RED→GREEN](../evidence/phase_5/red_green_proof.md). **Tests**: [test_trade_logger.py](../../tests/unit/test_trade_logger.py) (5) + [test_halt_logger.py](../../tests/unit/test_halt_logger.py) (4) + [test_metrics_logger.py](../../tests/unit/test_metrics_logger.py) (4) = **13 passed**. Total: **166 passed in 0.15s** (152 → 166, +14). **Gate 7**: ALL PASS (Placeholder 0, Assert 272, Domain 재정의 0, Migration 완료). **Verification**: `./scripts/verify_phase_completion.sh 5` → ✅ PASS (expected) | **Infrastructure/Logging**: [trade_logger.py](../../src/infrastructure/logging/trade_logger.py) (log_trade_entry, log_trade_exit, validate_trade_schema: entry/exit 로그 + schema validation + 재현 정보), [halt_logger.py](../../src/infrastructure/logging/halt_logger.py) (log_halt, validate_halt_schema: HALT 이유 + context snapshot), [metrics_logger.py](../../src/infrastructure/logging/metrics_logger.py) (log_metrics_update, validate_metrics_schema: winrate/streak/multiplier 변화 추적). **SSOT**: task_plan Phase 5 (재현 가능성 + schema validation), FLOW Section 6.2 (fee log), Section 7.1 (HALT context), Section 9 (metrics update). | **Evidence**: [phase_5/](../evidence/phase_5/). **Phase 5 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료. **새 세션 검증 가능**. Phase 6 시작 가능. |
+| 6 | ✅ DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_6/completion_checklist.md), [pytest](../evidence/phase_6/pytest_output.txt). **Tests**: [test_orchestrator.py](../../tests/integration/test_orchestrator.py) (5 integration cases: tick order, halt, degraded). Total: **171 passed in 0.14s** (166 → 171, +5). **Gate 7**: ALL PASS (280 meaningful asserts). | **Application**: [orchestrator.py](../../src/application/orchestrator.py) (Orchestrator, TickResult, run_tick: Emergency → Events → Position → Entry 순서 실행, God Object 금지 준수, thin wrapper). **SSOT**: task_plan Phase 6 (Tick 순서 고정), FLOW Section 2 (Tick Ordering), Section 4.2 (God Object 금지). | **Evidence**: [phase_6/](../evidence/phase_6/). **Phase 6 완료**. Integration tests 5개. **새 세션 검증 가능**. **Phase 0~6 완료 (Domain Logic 완성)**. Phase 7 (Real API Integration) 시작 가능. |
+| 7 | TODO | - | - | Real API Integration (클라이언트/어댑터 골격, Contract tests only) |
+| 8 | TODO | - | - | Testnet Validation (재현 가능한 시나리오 5개, 증거 필수) |
+| 9 | TODO | - | - | Mainnet Preparation (운영 안전장치: 킬스위치/알림/롤백/dry-run 상한) |
 
 ---
 
 ## 6. Appendix: File Ownership (누가 뭘 담당하는지)
 
-- transition.py: 상태/인텐트 “유일한” 전이 엔진(핵심)
+**Domain Logic (Phase 0-6)**:
+- transition.py: 상태/인텐트 "유일한" 전이 엔진(핵심)
 - entry_allowed.py: entry gate 결정(거절 사유코드 포함)
 - sizing.py: contracts 산출(단위 고정)
 - emergency.py/ws_health.py: 안전 모드/복구/차단
 - order_executor.py: intents를 I/O로 실행(테스트는 fake_exchange로)
 - stop_manager.py: SL 공백 방지의 주체
 - orchestrator.py: Flow 순서 실행자(로직 최소)
+
+**Real API Integration (Phase 7-9)**:
+- exchange_port.py: ExchangeAdapter Port 인터페이스 (FakeExchange와 BybitAdapter 교체 가능)
+- bybit_rest_client.py: REST 통신만 (서명/타임아웃/재시도/헤더 기반 rate limit)
+- bybit_ws_client.py: WS 통신만 (auth/subscribe/reconnect/ping-pong)
+- bybit_adapter.py: REST/WS 결과를 domain 이벤트로 변환 (로직 없음, 매핑만)
+- killswitch.py: 손실/주문/호출 상한 감시 + 즉시 HALT
+- alert.py: HALT 스냅샷 + 알림 전송 (텔레그램/슬랙/메일)
+- rollback_protocol.py: 자동 정지/수동 개입 규칙
 
 ---
 
@@ -653,6 +890,8 @@ Goal: tick loop에서 Flow 순서대로 실행(실제 운용 연결).
 ## 8. Change History
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-23 | 2.12 | **Phase 7 경계 엄격화 + 실거래 함정 3개 추가**: Phase 7 금지 조항 강화 (실제 네트워크 호출 금지, WS connect 금지, 키 누락 시 프로세스 거부), 실거래 생존성 함정 3개 해결 (WS 폭주/백프레셔, Clock 주입, mainnet 사고 방지). Rate limit retCode 10006 우선 명시 (HTTP 429 보조). WS 스펙 근거 추가 (Bybit 문서 링크). DoD "3가지" → "4가지" 수정. Status에 pytest 최종 출력 링크 추가. |
+| 2026-01-23 | 2.11 | **Phase 7-9 추가 (Real API Integration → Mainnet Preparation)**: Bybit 공식 스펙 준수 (X-Bapi-* 헤더 기반 rate limit, WS ping-pong), Phase 7 "골격만" (Contract tests only, Live tests 금지), Phase 8 "재현 가능한 시나리오 5개", Phase 9 "운영 안전장치" (킬스위치/알림/롤백/dry-run 상한). Real Trading Trap Fix Gates 수정 ("90/min" → internal safety budget, WS 요구사항 추가). |
 | 2026-01-19 | 2.5 | **Repo Map 정렬 완료 (Gate 4 재발 방지)**: Repo Map을 "Implemented (Phase 0 완료)" vs "Planned (Phase 1+)" 섹션으로 분리, 문서↔현실 괴리 제거, 컨텍스트 끊김 시 혼란 방지 |
 | 2026-01-19 | 2.4 | **Gate 7 완전 달성**: sys.path hack 0개 (pyproject.toml 정상화, PYTHONPATH=src 방식), 패키징 표준 준수, CLAUDE.md pytest 실행법 업데이트 |
 | 2026-01-18 | 2.3 | Oracle Backlog 섹션 추가 (17개 미래 케이스 문서화, Gate 1 위반 제거) |
