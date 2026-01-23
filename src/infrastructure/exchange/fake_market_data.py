@@ -30,9 +30,13 @@ class FakeMarketData:
     Implements MarketDataInterface with injectable state.
     """
 
-    def __init__(self):
+    def __init__(self, current_price: float = 42000.0, equity_btc: float = 0.0025):
         """
         Initialize with safe defaults (no emergency triggers).
+
+        Args:
+            current_price: Mark price (USD, default 42000.0)
+            equity_btc: Equity (BTC, default 0.0025)
 
         Defaults:
           - mark_price: 42000.0 (USD)
@@ -44,19 +48,25 @@ class FakeMarketData:
           - price_1m_ago: 42000.0 (no drop)
           - price_5m_ago: 42000.0 (no drop)
         """
-        self._mark_price = 42000.0
-        self._equity_btc = 0.0025
+        self._mark_price = current_price
+        self._equity_btc = equity_btc
         self._rest_latency_p95_1m = 0.15
         self._ws_last_heartbeat_ts = time.time()
         self._ws_event_drop_count = 0
         self._timestamp = time.time()
 
         # Price history (for drop calculation)
-        self._price_1m_ago = 42000.0
-        self._price_5m_ago = 42000.0
+        self._price_1m_ago = current_price
+        self._price_5m_ago = current_price
 
         # Balance staleness control
         self._balance_ts = time.time()
+
+        # Phase 6: Orchestrator test support
+        self._ws_degraded = False
+        self._degraded_entered_at = None
+        self._signal = None
+        self._events = []
 
     # ========== MarketDataInterface Implementation ==========
 
@@ -194,3 +204,69 @@ class FakeMarketData:
             float: timestamp - balance_ts (e.g., 35.0)
         """
         return self._timestamp - self._balance_ts
+
+    # ========== Phase 6: Orchestrator Test Support ==========
+
+    def set_signal(self, side: str, qty: int):
+        """
+        Entry signal 주입 (orchestrator test용).
+
+        Args:
+            side: "Buy" or "Sell"
+            qty: 수량 (contracts)
+        """
+        self._signal = {"side": side, "qty": qty}
+
+    def inject_fill_event(self, order_id: str, filled_qty: int):
+        """
+        FILL event 주입 (orchestrator test용).
+
+        Args:
+            order_id: Order ID
+            filled_qty: 체결 수량
+        """
+        self._events.append({"type": "FILL", "order_id": order_id, "filled_qty": filled_qty})
+
+    def inject_exit_event(self, order_id: str, filled_qty: int):
+        """
+        EXIT event 주입 (orchestrator test용).
+
+        Args:
+            order_id: Order ID
+            filled_qty: 청산 수량
+        """
+        self._events.append({"type": "EXIT", "order_id": order_id, "filled_qty": filled_qty})
+
+    def set_ws_degraded(self, degraded: bool, entered_at_offset: float = 0.0):
+        """
+        WS degraded mode 설정 (orchestrator test용).
+
+        Args:
+            degraded: True이면 degraded mode
+            entered_at_offset: degraded 진입 시각 offset (초, 음수면 과거)
+        """
+        self._ws_degraded = degraded
+        if degraded:
+            self._degraded_entered_at = time.time() + entered_at_offset
+
+    def is_ws_degraded(self) -> bool:
+        """
+        WS degraded mode 여부 반환.
+
+        Returns:
+            bool: degraded mode이면 True
+        """
+        return self._ws_degraded
+
+    def is_degraded_timeout(self) -> bool:
+        """
+        Degraded timeout (60초 경과) 여부 반환.
+
+        Returns:
+            bool: degraded 60초 경과 시 True
+        """
+        if not self._ws_degraded or self._degraded_entered_at is None:
+            return False
+
+        elapsed = time.time() - self._degraded_entered_at
+        return elapsed >= 60.0

@@ -1,0 +1,46 @@
+# CLAUDE.md Section 5.7 Self-Verification (Phase 6)
+# Date: 2026-01-23 18:10 KST
+
+# (1a) Placeholder 표현 감지
+$ grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError|RuntimeError\(.*TODO" tests/ 2>/dev/null | grep -v "\.pyc"
+(출력 없음)
+
+# (1b) Skip/Xfail decorator 감지
+$ grep -RInE "pytest\.mark\.(skip|xfail)|@pytest\.mark\.(skip|xfail)|unittest\.SkipTest" tests/ 2>/dev/null | grep -v "\.pyc"
+(출력 없음)
+
+# (1c) 의미있는 assert 존재 여부
+$ grep -RIn "assert .*==" tests/ 2>/dev/null | wc -l
+280
+
+# (2a) 도메인 타입 이름 재정의 금지
+$ grep -RInE "^class[[:space:]]+(Position|PendingOrder|ExecutionEvent|State)\b" tests/ 2>/dev/null | grep -v "\.pyc"
+(출력 없음)
+
+# (2b) domain 모사 파일 생성 금지
+$ find tests -type f -maxdepth 3 -name "*.py" 2>/dev/null | grep -E "(domain|state|intent|events)\.py"
+(출력 없음)
+
+# (3) transition SSOT 파일 존재
+$ test -f src/application/transition.py && echo "OK: transition.py exists" || (echo "FAIL: missing transition.py" && exit 1)
+OK: transition.py exists
+
+# (4b) EventRouter State 참조 금지
+$ grep -n "State\." src/application/event_router.py 2>/dev/null
+(출력 없음)
+
+# (5) sys.path hack 금지
+$ grep -RIn "sys\.path\.insert" src/ tests/ 2>/dev/null
+(출력 없음)
+
+# (6a) Deprecated wrapper import 추적
+$ grep -RInE "application\.services\.(state_transition|event_router)" tests/ src/ 2>/dev/null
+(출력 없음)
+
+# (6b) Migration 완료 증거
+$ grep -RInE "from application\.services|import application\.services" tests/ src/ 2>/dev/null | wc -l
+0
+
+# (7) pytest 실행
+$ pytest -q
+171 passed in 0.12s
