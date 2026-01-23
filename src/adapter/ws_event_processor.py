@@ -91,14 +91,19 @@ class WSEventProcessor:
         Dedup key 생성 (FLOW Section 2.7)
 
         형식:
-        - Event: {order_id}_{type}_{timestamp}
+        - Execution event (execution_id 있음): {execution_id}
+        - Execution event (execution_id 없음, fallback): {order_id}_{type}_{timestamp}
 
-        TODO: ExecutionEvent에 execution_id 추가 후 더 정확한 key 사용
-        - Execution event: {execution_id}_{order_id}_{exec_time}
-        - Order event: {order_id}_{order_status}_{update_time}
-        - Position event: {position_idx}_{update_type}_{update_time}
+        FLOW v1.9 규칙:
+        - execution_id는 Bybit execId (unique per execution)
+        - execution_id가 있으면 이것만으로 dedup 가능
+        - 없으면 order_id + type + timestamp로 fallback
         """
-        # 현재는 order_id + type + timestamp 기반
+        # execution_id가 있으면 이것만 사용 (가장 정확한 dedup)
+        if event.execution_id:
+            return event.execution_id
+
+        # Fallback: order_id + type + timestamp (구 방식)
         return f"{event.order_id}_{event.type.value}_{event.timestamp}"
 
     def _check_ordering(self, event: ExecutionEvent) -> bool:

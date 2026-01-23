@@ -32,11 +32,15 @@ class EventType(Enum):
 @dataclass
 class ExecutionEvent:
     """
-    Execution Event (FLOW Section 2.5)
+    Execution Event (FLOW Section 2.5, 2.7)
 
     상태 확정 규칙:
     - 정상 모드: 이벤트가 상태 전이 트리거
     - DEGRADED 모드: Reconcile로 보조 (확정 아님)
+
+    FLOW v1.9 Section 2.7 WS Event Processing:
+    - execution_id: Bybit execId (dedup 핵심 키)
+    - seq: WS message sequence number (ordering 검증용)
     """
     type: EventType
     order_id: str
@@ -44,6 +48,10 @@ class ExecutionEvent:
     filled_qty: int
     order_qty: int
     timestamp: float
+
+    # WS Event Processing (FLOW Section 2.7)
+    execution_id: Optional[str] = None  # Bybit execId (dedup용)
+    seq: Optional[int] = None  # WS sequence number (ordering용)
 
     # 추가 정보 (optional)
     exec_price: Optional[float] = None

@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 3 items
+
+tests/oracles/test_flow_v1_9_scenarios.py::TestFlowV19Scenarios::test_event_dedup_ignores_duplicate PASSED [ 33%]
+tests/oracles/test_flow_v1_9_scenarios.py::TestFlowV19Scenarios::test_event_ordering_ignores_out_of_order PASSED [ 66%]
+tests/oracles/test_flow_v1_9_scenarios.py::TestFlowV19Scenarios::test_stop_recovery_3_failures_halt PASSED [100%]
+
+============================== 3 passed in 0.01s ===============================
