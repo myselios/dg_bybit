@@ -1,0 +1,127 @@
+# config/safety_limits.yaml
+# Safety Limits Configuration (Dry-run 4개 상한)
+# Last Updated: 2026-01-23
+
+# SSOT: task_plan.md Phase 9c
+# Purpose: Mainnet/Testnet 분리, dry-run 상한 설정
+
+---
+
+# Session Risk Policy (Phase 9a)
+session_risk:
+  # Daily Loss Cap (일일 손실 상한)
+  daily_loss_cap_pct: 5.0  # 5% equity
+  daily_loss_cap_note: "Equity 5% 손실 시 HALT, 다음날 UTC 0시 해제"
+
+  # Weekly Loss Cap (주간 손실 상한)
+  weekly_loss_cap_pct: 12.5  # 12.5% equity
+  weekly_loss_cap_cooldown_days: 7
+  weekly_loss_cap_note: "Equity 12.5% 손실 시 COOLDOWN 7일"
+
+  # Loss Streak Kill (연속 손실 중단)
+  loss_streak_3_halt: true
+  loss_streak_3_cooldown_hours: 24  # 다음날 UTC 0시
+  loss_streak_5_cooldown_hours: 72  # 72시간
+  loss_streak_note: "3연패 HALT (당일), 5연패 COOLDOWN (72h)"
+
+  # Fee Anomaly (수수료 급증 감지)
+  fee_spike_threshold: 1.5  # Fee ratio threshold
+  fee_spike_consecutive_count: 2
+  fee_spike_halt_minutes: 30
+  fee_anomaly_note: "Fee spike 2회 연속 → HALT 30분"
+
+  # Slippage Anomaly (슬리피지 급증 감지)
+  slippage_threshold_usd: 2.0  # Slippage threshold ($)
+  slippage_spike_count: 3
+  slippage_window_seconds: 600  # 10 minutes
+  slippage_halt_minutes: 60
+  slippage_anomaly_note: "Slippage spike 3회/10분 → HALT 60분"
+
+# Per-Trade Cap (Phase 9b, ADR-0001)
+per_trade_cap:
+  # Stage 1 (equity < $300)
+  stage_1_max_loss_usd: 3.0  # $3 (3% equity at $100)
+  stage_1_loss_pct: 3.0  # 3%
+  stage_1_note: "ADR-0001: $10→$3 reduction (생존성 우선)"
+
+  # Stage 2 ($300 ≤ equity < $700)
+  stage_2_max_loss_usd: 20.0  # $20
+  stage_2_loss_pct: 8.0  # 8%
+
+  # Stage 3 (equity ≥ $700)
+  stage_3_max_loss_usd: 30.0  # $30
+  stage_3_loss_pct: 6.0  # 6%
+
+# Emergency Policy (기존)
+emergency:
+  # Balance Anomaly
+  balance_halt_min_usd: 80.0  # equity < $80 → HALT (manual reset)
+
+  # Degraded Mode
+  degraded_mode_timeout_seconds: 60  # WS degraded 60초 → HALT
+
+  # Price Drop Halt (보류, 추후 구현)
+  # drop_1m_halt_pct: -10.0  # 1분 -10% → HALT
+  # drop_5m_halt_pct: -20.0  # 5분 -20% → HALT
+
+# Dry-Run 4개 상한 (Phase 9c 요구사항)
+dry_run_limits:
+  # 1. Testnet 최소 금액 (dry-run)
+  testnet_min_equity_usd: 100.0
+  testnet_min_note: "Testnet 초기 금액 최소 $100"
+
+  # 2. Mainnet 최소 금액 (dry-run → 실거래 전환 시)
+  mainnet_min_equity_usd: 100.0
+  mainnet_min_note: "Mainnet 시작 최소 $100 (최대 위험 $5/day, $3/trade)"
+
+  # 3. Mainnet 초기 거래 횟수 제한 (Kill Switch 발동 증거 확보용)
+  mainnet_initial_max_trades: 50
+  mainnet_initial_note: "초기 30~50 거래 후 Kill Switch 발동 증거 확인"
+
+  # 4. Mainnet 첫 주 일일 거래 제한
+  mainnet_first_week_max_trades_per_day: 5
+  mainnet_first_week_note: "첫 주는 Stage 1 제한 (5 trades/day) 강제"
+
+# Environment (Mainnet/Testnet 분리)
+environment:
+  # Testnet 설정
+  testnet_enabled: true
+  testnet_api_base_url: "https://api-testnet.bybit.com"
+  testnet_ws_url: "wss://stream-testnet.bybit.com/v5/private"
+  testnet_symbol: "BTCUSD"
+  testnet_leverage: 1  # Testnet은 1배 레버리지 강제
+
+  # Mainnet 설정
+  mainnet_enabled: false  # 초기 false (dry-run 완료 후 true)
+  mainnet_api_base_url: "https://api.bybit.com"
+  mainnet_ws_url: "wss://stream.bybit.com/v5/private"
+  mainnet_symbol: "BTCUSD"
+  mainnet_leverage: 3  # Stage 1 기본 레버리지
+
+  # API Credentials (환경변수에서 로드)
+  # BYBIT_TESTNET_API_KEY
+  # BYBIT_TESTNET_API_SECRET
+  # BYBIT_MAINNET_API_KEY
+  # BYBIT_MAINNET_API_SECRET
+
+# Kill Switch (최소 구현, 추후 확장)
+killswitch:
+  enabled: true
+  manual_halt_file: ".halt"  # 이 파일이 존재하면 즉시 HALT
+  manual_halt_note: "touch .halt → 즉시 HALT (manual reset only)"
+
+# Alert (최소 구현, 추후 확장)
+alert:
+  enabled: false  # 초기 비활성화 (추후 Slack/Discord 연동)
+  log_only: true  # 현재는 로그만 출력
+
+# Rollback Protocol (최소 구현, 추후 확장)
+rollback:
+  enabled: false  # 초기 비활성화 (추후 DB 스냅샷 연동)
+  note: "현재 미구현, HALT 시 manual intervention 필요"
+
+# Validation (startup 시 검증)
+validation:
+  require_api_credentials: true
+  require_positive_equity: true
+  require_network_connectivity: true

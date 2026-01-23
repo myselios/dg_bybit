@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 15 items
+
+tests/unit/test_session_risk.py::test_daily_loss_cap_not_exceeded PASSED [  6%]
+tests/unit/test_session_risk.py::test_daily_loss_cap_exceeded PASSED     [ 13%]
+tests/unit/test_session_risk.py::test_daily_loss_cap_reset_at_boundary PASSED [ 20%]
+tests/unit/test_session_risk.py::test_weekly_loss_cap_not_exceeded PASSED [ 26%]
+tests/unit/test_session_risk.py::test_weekly_loss_cap_exceeded PASSED    [ 33%]
+tests/unit/test_session_risk.py::test_weekly_loss_cap_reset_at_boundary PASSED [ 40%]
+tests/unit/test_session_risk.py::test_loss_streak_2 PASSED               [ 46%]
+tests/unit/test_session_risk.py::test_loss_streak_3_halt PASSED          [ 53%]
+tests/unit/test_session_risk.py::test_loss_streak_5_cooldown PASSED      [ 60%]
+tests/unit/test_session_risk.py::test_fee_spike_single PASSED            [ 66%]
+tests/unit/test_session_risk.py::test_fee_spike_consecutive_halt PASSED  [ 73%]
+tests/unit/test_session_risk.py::test_fee_spike_non_consecutive PASSED   [ 80%]
+tests/unit/test_session_risk.py::test_slippage_spike_2_times PASSED      [ 86%]
+tests/unit/test_session_risk.py::test_slippage_spike_3_times_halt PASSED [ 93%]
+tests/unit/test_session_risk.py::test_slippage_spike_window_expired PASSED [100%]
+
+============================== 15 passed in 0.01s ==============================

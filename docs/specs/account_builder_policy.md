@@ -174,8 +174,8 @@ Anti-flap (ENTRY evaluation time only):
 
 ### 5.1 Stage 1 — Expansion ($100 → $300) : Aggressive
 - default_leverage: 3x
-- max_loss_usd_cap: $10
-- loss_pct_cap: 12%
+- max_loss_usd_cap: $3
+- loss_pct_cap: 3%
 - EV gate: expected_profit_usd >= estimated_fee_usd * 2.0
 - volatility: ATR_pct_24h > 3%
 - maker_only_default: true
@@ -218,12 +218,12 @@ Definitions:
 - equity_usd = equity_btc * btc_price_usd (display)
 
 Stage USD caps:
-- Stage 1: max_loss_usd_cap = $10
+- Stage 1: max_loss_usd_cap = $3
 - Stage 2: max_loss_usd_cap = $20
 - Stage 3: max_loss_usd_cap = $30
 
 BTC percentage caps:
-- Stage 1: pct_cap = 12%
+- Stage 1: pct_cap = 3%
 - Stage 2: pct_cap = 8%
 - Stage 3: pct_cap = 6%
 

@@ -21,6 +21,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 from domain.state import State, Position
 from infrastructure.exchange.market_data_interface import MarketDataInterface
+from application.session_risk import (
+    check_daily_loss_cap,
+    check_weekly_loss_cap,
+    check_loss_streak_kill,
+    check_fee_anomaly,
+    check_slippage_anomaly,
+)
 
 
 @dataclass
@@ -58,6 +65,14 @@ class Orchestrator:
         self.state = State.FLAT
         self.position: Optional[Position] = None
 
+        # Session Risk Policy 설정 (Phase 9c)
+        self.daily_loss_cap_pct = 5.0  # 5% equity
+        self.weekly_loss_cap_pct = 12.5  # 12.5% equity
+        self.fee_spike_threshold = 1.5  # Fee ratio threshold
+        self.slippage_threshold_usd = 2.0  # Slippage threshold ($)
+        self.slippage_window_seconds = 600.0  # 10 minutes
+        self.current_timestamp = None  # Slippage anomaly용
+
     def run_tick(self) -> TickResult:
         """
         Tick 실행 (Emergency → Events → Position → Entry)
@@ -78,16 +93,10 @@ class Orchestrator:
 
         # (1) Emergency check (최우선)
         execution_order.append("emergency")
-        emergency_status = self._check_emergency()
-        if emergency_status == "HALT":
+        emergency_result = self._check_emergency()
+        if emergency_result["status"] == "HALT":
             self.state = State.HALT
-            # halt_reason 판단
-            if self.market_data.get_equity_btc() <= 0:
-                halt_reason = "balance_too_low"
-            elif self.market_data.is_degraded_timeout():
-                halt_reason = "degraded_mode_timeout"
-            else:
-                halt_reason = "emergency"
+            halt_reason = emergency_result["reason"]
             return TickResult(
                 state=self.state,
                 execution_order=execution_order,
@@ -121,31 +130,93 @@ class Orchestrator:
         """현재 상태 반환"""
         return self.state
 
-    def _check_emergency(self) -> str:
+    def _check_emergency(self) -> dict:
         """
         Emergency 체크 (최우선)
 
         Returns:
-            "PASS" or "HALT"
+            {"status": "PASS" or "HALT", "reason": str}
 
-        FLOW Section 7.1:
+        FLOW Section 7.1 + Phase 9c Session Risk Policy:
             - balance_too_low (equity <= 0)
-            - price_drop_1m (-10%)
-            - price_drop_10m (-20%)
-            - latency_too_high (> 5초)
             - degraded_timeout (60s)
+            - Session Risk Policy 4개:
+              - Daily Loss Cap (-5%)
+              - Weekly Loss Cap (-12.5%)
+              - Loss Streak Kill (3연패, 5연패)
+              - Fee/Slippage Anomaly (2회 연속, 3회/10분)
         """
         # balance_too_low 체크
         equity_btc = self.market_data.get_equity_btc()
         if equity_btc <= 0:
-            return "HALT"
+            return {"status": "HALT", "reason": "balance_too_low"}
 
         # degraded timeout 체크 (60초)
         degraded_timeout = self.market_data.is_degraded_timeout()
         if degraded_timeout:
-            return "HALT"
+            return {"status": "HALT", "reason": "degraded_mode_timeout"}
 
-        return "PASS"
+        # Session Risk Policy 체크 (Phase 9c)
+        # get_btc_mark_price_usd() 지원 확인
+        if not hasattr(self.market_data, "get_btc_mark_price_usd"):
+            # Session Risk 미지원 (FakeMarketData 등)
+            return {"status": "PASS", "reason": None}
+
+        equity_usd = equity_btc * self.market_data.get_btc_mark_price_usd()
+
+        # (1) Daily Loss Cap
+        if hasattr(self.market_data, "daily_realized_pnl_usd"):
+            daily_status = check_daily_loss_cap(
+                equity_usd=equity_usd,
+                daily_realized_pnl_usd=self.market_data.daily_realized_pnl_usd,
+                daily_loss_cap_pct=self.daily_loss_cap_pct,
+                current_timestamp=self.current_timestamp,
+            )
+            if daily_status.is_halted:
+                return {"status": "HALT", "reason": daily_status.halt_reason}
+
+        # (2) Weekly Loss Cap
+        if hasattr(self.market_data, "weekly_realized_pnl_usd"):
+            weekly_status = check_weekly_loss_cap(
+                equity_usd=equity_usd,
+                weekly_realized_pnl_usd=self.market_data.weekly_realized_pnl_usd,
+                weekly_loss_cap_pct=self.weekly_loss_cap_pct,
+                current_timestamp=self.current_timestamp,
+            )
+            if weekly_status.is_halted:
+                return {"status": "HALT", "reason": weekly_status.halt_reason}
+
+        # (3) Loss Streak Kill
+        if hasattr(self.market_data, "loss_streak_count"):
+            streak_status = check_loss_streak_kill(
+                loss_streak_count=self.market_data.loss_streak_count,
+                current_timestamp=self.current_timestamp,
+            )
+            if streak_status.is_halted:
+                return {"status": "HALT", "reason": streak_status.halt_reason}
+
+        # (4) Fee Anomaly
+        if hasattr(self.market_data, "fee_ratio_history"):
+            fee_status = check_fee_anomaly(
+                fee_ratio_history=self.market_data.fee_ratio_history,
+                fee_spike_threshold=self.fee_spike_threshold,
+                current_timestamp=self.current_timestamp,
+            )
+            if fee_status.is_halted:
+                return {"status": "HALT", "reason": fee_status.halt_reason}
+
+        # (5) Slippage Anomaly
+        if hasattr(self.market_data, "slippage_history") and self.current_timestamp is not None:
+            slippage_status = check_slippage_anomaly(
+                slippage_history=self.market_data.slippage_history,
+                slippage_threshold_usd=self.slippage_threshold_usd,
+                window_seconds=self.slippage_window_seconds,
+                current_timestamp=self.current_timestamp,
+            )
+            if slippage_status.is_halted:
+                return {"status": "HALT", "reason": slippage_status.halt_reason}
+
+        return {"status": "PASS", "reason": None}
 
     def _process_events(self) -> None:
         """

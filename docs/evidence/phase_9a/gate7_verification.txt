@@ -1,0 +1,135 @@
+# CLAUDE.md Section 5.7 Self-Verification
+Date: 2026-01-23
+Phase: 9a (Session Risk Policy)
+
+## Gate 1a: Placeholder 표현 감지
+Command: grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError|RuntimeError\(.*TODO" tests/ 2>/dev/null | grep -v "\.pyc" | wc -l
+
+Output: 1
+
+Detail:
+tests/integration_real/conftest.py:29:        pytest.skip("Testnet API credentials not available...")
+
+Result: ✅ PASS (정당한 사유: API credentials 없을 때만 skip)
+
+---
+
+## Gate 1b: Skip/Xfail decorator 검증
+Command: grep -RInE "pytest\.mark\.(skip|xfail)|@pytest\.mark\.(skip|xfail)|unittest\.SkipTest" tests/ 2>/dev/null | grep -v "\.pyc" | wc -l
+
+Output: 0
+
+Result: ✅ PASS (skip decorator 없음)
+
+---
+
+## Gate 1c: 의미있는 assert 존재 여부
+Command: grep -RIn "assert .*==" tests/ 2>/dev/null | wc -l
+
+Output: 315
+
+Result: ✅ PASS (315개의 비교 assert 존재, +12 증가)
+
+---
+
+## Gate 2a: 도메인 타입 재정의 금지
+Command: grep -RInE "^class[[:space:]]+(Position|PendingOrder|ExecutionEvent|State)\b" tests/ 2>/dev/null | grep -v "\.pyc" | wc -l
+
+Output: 0
+
+Result: ✅ PASS (도메인 타입 재정의 없음)
+
+---
+
+## Gate 2b: tests/ 내 domain 모사 파일 검증
+Command: find tests -type f -maxdepth 3 -name "*.py" 2>/dev/null | grep -E "(domain|state|intent|events)\.py" | wc -l
+
+Output: 0
+
+Result: ✅ PASS (domain 모사 파일 없음)
+
+---
+
+## Gate 3: transition SSOT 파일 존재
+Command: test -f src/application/transition.py && echo "✅ OK: transition.py exists" || (echo "❌ FAIL: missing transition.py" && exit 1)
+
+Output: ✅ OK: transition.py exists
+
+Result: ✅ PASS
+
+---
+
+## Gate 4b: EventRouter State enum 참조 검증
+Command: grep -n "State\." src/application/event_router.py src/application/services/event_router.py 2>/dev/null | wc -l
+
+Output: 0
+
+Result: ✅ PASS (thin wrapper 강제 성공)
+
+---
+
+## Gate 5: sys.path hack 검증
+Command: grep -RIn "sys\.path\.insert" src/ tests/ 2>/dev/null | wc -l
+
+Output: 0
+
+Result: ✅ PASS (sys.path hack 없음)
+
+---
+
+## Gate 6b: Migration 완료 증거
+Command: grep -RInE "from application\.services|import application\.services" tests/ src/ 2>/dev/null | wc -l
+
+Output: 0
+
+Result: ✅ PASS (Migration 완료)
+
+---
+
+## Gate 7: pytest 증거
+
+### 전체 테스트
+Command: pytest -q
+
+Output: 203 passed, 15 deselected in 0.20s
+
+Result: ✅ PASS (188 → 203, +15)
+
+### Session Risk Policy 테스트
+Command: pytest tests/unit/test_session_risk.py -v
+
+Output: 15 passed in 0.02s
+
+Result: ✅ PASS
+
+Tests:
+- test_daily_loss_cap_not_exceeded: PASSED
+- test_daily_loss_cap_exceeded: PASSED
+- test_daily_loss_cap_reset_at_boundary: PASSED
+- test_weekly_loss_cap_not_exceeded: PASSED
+- test_weekly_loss_cap_exceeded: PASSED
+- test_weekly_loss_cap_reset_at_boundary: PASSED
+- test_loss_streak_2: PASSED
+- test_loss_streak_3_halt: PASSED
+- test_loss_streak_5_cooldown: PASSED
+- test_fee_spike_single: PASSED
+- test_fee_spike_consecutive_halt: PASSED
+- test_fee_spike_non_consecutive: PASSED
+- test_slippage_spike_2_times: PASSED
+- test_slippage_spike_3_times_halt: PASSED
+- test_slippage_spike_window_expired: PASSED
+
+---
+
+## 최종 결론
+
+✅ **모든 Gate 검증 통과**
+- Gate 1 (Placeholder 금지): ✅ PASS (정당한 사유 1개)
+- Gate 2 (도메인 재정의 금지): ✅ PASS
+- Gate 3 (transition SSOT): ✅ PASS
+- Gate 4 (EventRouter thin wrapper): ✅ PASS
+- Gate 5 (sys.path hack 금지): ✅ PASS
+- Gate 6 (Migration 완료): ✅ PASS
+- Gate 7 (pytest 증거): ✅ PASS (203 passed, 15 새 테스트)
+
+**Phase 9a DONE 조건 충족**
