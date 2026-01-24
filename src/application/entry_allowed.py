@@ -32,6 +32,38 @@ from src.domain.state import State
 
 
 @dataclass
+class StageParams:
+    """
+    Stage 파라미터 (Policy Section 5)
+
+    Attributes:
+        max_trades_per_day: 최대 거래 횟수/일 (예: 10)
+        atr_pct_24h_min: 최소 ATR (pct, 예: 0.02 = 2%)
+        ev_fee_multiple_k: EV gate 계수 (예: 2.0)
+        maker_only_default: Maker-only 모드 (예: True)
+    """
+    max_trades_per_day: int
+    atr_pct_24h_min: float
+    ev_fee_multiple_k: float
+    maker_only_default: bool
+
+
+@dataclass
+class SignalContext:
+    """
+    Signal context (EV gate용)
+
+    Attributes:
+        expected_profit_usd: 예상 수익 (USD, Grid spacing 기반)
+        estimated_fee_usd: 예상 수수료 (USD, Maker/Taker 구분)
+        is_maker: Maker 주문 여부 (True = Maker, False = Taker)
+    """
+    expected_profit_usd: float
+    estimated_fee_usd: float
+    is_maker: bool
+
+
+@dataclass
 class EntryDecision:
     """
     Entry 허용 여부 결정
@@ -46,10 +78,10 @@ class EntryDecision:
 
 def check_entry_allowed(
     state: State,
-    stage,  # StageParams (test에서 정의)
+    stage: StageParams,
     trades_today: int,
     atr_pct_24h: float,
-    signal,  # SignalContext (test에서 정의)
+    signal: SignalContext,
     winrate: float,
     position_mode: str,
     cooldown_until: float | None,

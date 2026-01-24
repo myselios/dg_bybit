@@ -26,6 +26,33 @@ import math
 
 
 @dataclass
+class SizingParams:
+    """
+    Sizing 파라미터
+
+    Attributes:
+        max_loss_btc: 최대 손실 (BTC)
+        entry_price_usd: 진입가 (USD)
+        stop_distance_pct: Stop 거리 (pct, 예: 0.03 = 3%)
+        leverage: 레버리지 (예: 3.0)
+        equity_btc: 현재 equity (BTC)
+        fee_rate: 수수료율 (예: 0.0001)
+        direction: "LONG" or "SHORT"
+        qty_step: Lot size (예: 1)
+        tick_size: Tick size (예: 0.5)
+    """
+    max_loss_btc: float
+    entry_price_usd: float
+    stop_distance_pct: float
+    leverage: float
+    equity_btc: float
+    fee_rate: float
+    direction: str
+    qty_step: int
+    tick_size: float
+
+
+@dataclass
 class SizingResult:
     """
     Sizing 결과
@@ -38,12 +65,12 @@ class SizingResult:
     reject_reason: str | None = None
 
 
-def calculate_contracts(params) -> SizingResult:
+def calculate_contracts(params: SizingParams) -> SizingResult:
     """
     Position sizing (loss budget + margin 제약)
 
     Args:
-        params: SizingParams (test에서 정의)
+        params: SizingParams
             - max_loss_btc: 최대 손실 (BTC)
             - entry_price_usd: 진입가 (USD)
             - stop_distance_pct: Stop 거리 (pct, 예: 0.03 = 3%)

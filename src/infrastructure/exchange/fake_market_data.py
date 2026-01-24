@@ -21,6 +21,7 @@ Design:
 """
 
 import time
+from typing import Optional, List, Dict, Any
 
 
 class FakeMarketData:
@@ -67,6 +68,21 @@ class FakeMarketData:
         self._degraded_entered_at = None
         self._signal = None
         self._events = []
+
+        # Phase 9: Session Risk test support
+        self._daily_realized_pnl_usd: Optional[float] = None
+        self._weekly_realized_pnl_usd: Optional[float] = None
+        self._loss_streak_count: Optional[int] = None
+        self._fee_ratio_history: Optional[List[float]] = None
+        self._slippage_history: Optional[List[Dict[str, Any]]] = None
+
+        # Phase 11b: Entry Flow test support
+        self._atr: Optional[float] = 100.0  # Default ATR (Grid spacing용)
+        self._last_fill_price: Optional[float] = None  # Default None (Entry 불가 상태)
+        self._trades_today: int = 0  # Default 0 (거래 없음)
+        self._atr_pct_24h: float = 0.03  # Default 3% (ATR gate 통과)
+        self._winrate: float = 0.6  # Default 60% (winrate gate 통과)
+        self._position_mode: str = "MergedSingle"  # Default one-way mode
 
     # ========== MarketDataInterface Implementation ==========
 
@@ -270,3 +286,115 @@ class FakeMarketData:
 
         elapsed = time.time() - self._degraded_entered_at
         return elapsed >= 60.0
+
+    # ========== Phase 9: Session Risk Protocol Methods ==========
+
+    def get_btc_mark_price_usd(self) -> float:
+        """BTC Mark Price (USD 기준)."""
+        return self._mark_price
+
+    def get_daily_realized_pnl_usd(self) -> Optional[float]:
+        """당일 realized PnL (USD 단위)."""
+        return self._daily_realized_pnl_usd
+
+    def get_weekly_realized_pnl_usd(self) -> Optional[float]:
+        """주간 realized PnL (USD 단위)."""
+        return self._weekly_realized_pnl_usd
+
+    def get_loss_streak_count(self) -> Optional[int]:
+        """연속 손실 카운트."""
+        return self._loss_streak_count
+
+    def get_fee_ratio_history(self) -> Optional[List[float]]:
+        """Fee ratio 히스토리 (최근 순서)."""
+        return self._fee_ratio_history
+
+    def get_slippage_history(self) -> Optional[List[Dict[str, Any]]]:
+        """Slippage 히스토리 (시간 윈도우 내)."""
+        return self._slippage_history
+
+    # ========== Phase 11b: Entry Flow Methods ==========
+
+    def get_current_price(self) -> float:
+        """현재 BTC 가격 (USD 기준)."""
+        return self._mark_price  # Alias for get_mark_price()
+
+    def get_atr(self) -> Optional[float]:
+        """ATR (Average True Range) 값."""
+        return self._atr
+
+    def get_last_fill_price(self) -> Optional[float]:
+        """마지막 체결 가격 (Grid 기준점)."""
+        return self._last_fill_price
+
+    def get_trades_today(self) -> int:
+        """오늘 거래 횟수."""
+        return self._trades_today
+
+    def get_atr_pct_24h(self) -> float:
+        """24시간 ATR (pct)."""
+        return self._atr_pct_24h
+
+    def get_winrate(self) -> float:
+        """현재 winrate (0.0~1.0)."""
+        return self._winrate
+
+    def get_position_mode(self) -> str:
+        """Position mode ('MergedSingle' = one-way, 'BothSide' = hedge)."""
+        return self._position_mode
+
+    # ========== Phase 11b: Test Injection Methods ==========
+
+    def inject_atr(self, atr: float):
+        """
+        ATR 주입 (Signal generation test용).
+
+        Args:
+            atr: ATR 값 (e.g., 100.0)
+        """
+        self._atr = atr
+
+    def inject_last_fill_price(self, price: float):
+        """
+        마지막 체결 가격 주입 (Grid signal test용).
+
+        Args:
+            price: 마지막 체결 가격 (e.g., 49800.0)
+        """
+        self._last_fill_price = price
+
+    def inject_trades_today(self, count: int):
+        """
+        오늘 거래 횟수 주입 (Entry gate test용).
+
+        Args:
+            count: 거래 횟수 (e.g., 5)
+        """
+        self._trades_today = count
+
+    def inject_atr_pct_24h(self, atr_pct: float):
+        """
+        24시간 ATR (pct) 주입 (Entry gate test용).
+
+        Args:
+            atr_pct: ATR pct (e.g., 0.03 = 3%)
+        """
+        self._atr_pct_24h = atr_pct
+
+    def inject_winrate(self, winrate: float):
+        """
+        Winrate 주입 (Entry gate test용).
+
+        Args:
+            winrate: Winrate (0.0~1.0, e.g., 0.6 = 60%)
+        """
+        self._winrate = winrate
+
+    def inject_position_mode(self, mode: str):
+        """
+        Position mode 주입 (Entry gate test용).
+
+        Args:
+            mode: Position mode ("MergedSingle" or "BothSide")
+        """
+        self._position_mode = mode
