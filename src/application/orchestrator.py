@@ -19,7 +19,7 @@ Exports:
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
-from domain.state import State, Position
+from domain.state import State, Position, Direction
 from infrastructure.exchange.market_data_interface import MarketDataInterface
 from application.exit_manager import check_stop_hit, create_exit_intent
 from domain.intent import ExitIntent
@@ -248,7 +248,7 @@ class Orchestrator:
         FLOW Section 2.5:
             - stop_manager.should_update_stop()
             - stop_manager.determine_stop_action()
-            - Phase 11: Exit decision (stop hit 체크)
+            - Phase 11b: Exit decision (stop hit 체크 + Exit order placement)
 
         Returns:
             ExitIntent: Exit 주문 의도 (stop hit 시)
@@ -257,11 +257,42 @@ class Orchestrator:
         if self.state != State.IN_POSITION or self.position is None:
             return None
 
-        # Phase 11: Stop hit 체크
+        # Phase 11b: Stop hit 체크
         current_price = self.market_data.get_current_price()
         if check_stop_hit(current_price=current_price, position=self.position):
             # Stop hit → Exit intent 생성
             intents = create_exit_intent(position=self.position, reason="stop_loss_hit")
+
+            # Phase 11b: Exit order 발주 (DoD: "Place exit order")
+            if self.rest_client is not None:
+                try:
+                    # Exit order 발주 (Market order for immediate execution)
+                    exit_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
+                    exit_order = self.rest_client.place_order(
+                        symbol="BTCUSD",
+                        side=exit_side,
+                        qty=self.position.qty,
+                        order_link_id=f"exit_{self.position.signal_id}",
+                        order_type="Market",  # Market order (즉시 체결)
+                        time_in_force="GoodTillCancel",
+                    )
+
+                    # State 전이: IN_POSITION → EXIT_PENDING
+                    self.state = State.EXIT_PENDING
+                    self.pending_order = {
+                        "order_id": exit_order["orderId"],
+                        "order_link_id": exit_order["orderLinkId"],
+                        "side": exit_side,
+                        "qty": self.position.qty,
+                        "price": current_price,  # Market price (참고용)
+                        "signal_id": self.position.signal_id,
+                    }
+                except Exception as e:
+                    # Exit order 실패 → HALT (치명적 오류)
+                    self.state = State.HALT
+                    # halt_reason은 run_tick()에서 설정 필요 (여기서는 로깅만)
+                    pass
+
             return intents.exit_intent
 
         # Stop 갱신 로직은 stop_manager.py에 구현되어 있음 (미통합)

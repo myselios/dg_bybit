@@ -38,13 +38,13 @@ class MockRestClient:
         self,
         symbol: str,
         side: str,
-        order_type: str,
         qty: int,
-        price: float,
-        time_in_force: str,
         order_link_id: str,
+        order_type: str = "Market",
+        time_in_force: str = "GoodTillCancel",
+        price: float = None,
     ):
-        """Mock place_order method"""
+        """Mock place_order method (matches bybit_rest_client.py signature)"""
         if self.should_fail:
             raise Exception("Order placement failed (mock)")
 
@@ -93,7 +93,7 @@ def test_full_cycle_success():
     # Given
     fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
     fake_data.inject_atr(100.0)
-    fake_data.inject_last_fill_price(49800.0)  # Grid up: 50000 = 49800 + 200
+    fake_data.inject_last_fill_price(50200.0)  # Grid down: 50000 = 50200 - 200 (Buy signal → LONG)
     fake_data.inject_trades_today(0)
     fake_data.inject_atr_pct_24h(0.03)
     fake_data.inject_winrate(0.6)
@@ -123,31 +123,24 @@ def test_full_cycle_success():
     # Tick 3: Stop hit (price drops below stop_price) → EXIT_PENDING
     # Position: LONG, entry_price=50000, stop_price=48500 (50000*0.97)
     # Current price drops to 48400
-    fake_data._mark_price = 48400.0
+    exit_price = 48400.0
+    fake_data._mark_price = exit_price
     result3 = orchestrator.run_tick()
-    # Note: orchestrator._manage_position()에서 Exit decision 발생
-    # 하지만 현재 구현은 check_stop_hit만 체크하고 실제 Exit order는 미구현
-    # 따라서 State는 IN_POSITION 유지됨 (Phase 11b에서는 Exit Manager만 통합, Full Exit flow는 Phase 12)
-
-    # 임시로 수동 Exit 시뮬레이션
-    # Tick 3: Manual Exit order placement (현재 구현 한계로 인한 workaround)
-    orchestrator.state = State.EXIT_PENDING
-    orchestrator.pending_order = {
-        "order_id": "mock_exit_order_999",
-        "order_link_id": "exit_mock",
-        "side": "Sell" if orchestrator.position.direction == Direction.LONG else "Buy",
-        "qty": orchestrator.position.qty,
-        "price": 48400.0,
-        "signal_id": orchestrator.position.signal_id,
-    }
+    # Phase 11b: Exit order placement 구현 완료 (Stop hit → Place exit order)
+    assert orchestrator.state == State.EXIT_PENDING, f"State should be EXIT_PENDING after stop hit, got {orchestrator.state}"
+    assert orchestrator.pending_order is not None, "Exit order should be placed"
+    assert orchestrator.pending_order["side"] == "Sell", "Exit order should be Sell (LONG position)"
+    assert len(mock_rest_client.orders) == 2, "2 orders should be placed (Entry + Exit)"
+    exit_order = mock_rest_client.orders[1]  # Second order is Exit order
+    assert exit_order["side"] == "Sell"
+    assert exit_order["orderType"] == "Market"
 
     # Tick 4: Exit FILL event → FLAT
-    exit_price = 48400.0
     fake_data.inject_fill_event(
-        order_id="mock_exit_order_999",
-        filled_qty=orchestrator.position.qty,
-        order_link_id="exit_mock",
-        side="Sell",
+        order_id=exit_order["orderId"],  # Use actual exit order ID
+        filled_qty=exit_order["qty"],
+        order_link_id=exit_order["orderLinkId"],
+        side=exit_order["side"],
         price=exit_price,
     )
     # Exit FILL 후 last_fill_price 업데이트 (Grid signal 무효화)
@@ -401,24 +394,28 @@ def test_multiple_cycles_success():
         if orchestrator.state != State.IN_POSITION:
             break  # Position creation failed
 
-        # Tick 3: Manual Exit (workaround for incomplete Exit flow)
-        orchestrator.state = State.EXIT_PENDING
-        orchestrator.pending_order = {
-            "order_id": f"mock_exit_{i}",
-            "order_link_id": f"exit_{i}",
-            "side": "Sell" if orchestrator.position.direction == Direction.LONG else "Buy",
-            "qty": orchestrator.position.qty,
-            "price": 50000.0,
-            "signal_id": orchestrator.position.signal_id,
-        }
+        # Tick 3: Stop hit → EXIT_PENDING
+        # LONG position: stop_price = entry * 0.97, trigger at entry * 0.96
+        # SHORT position: stop_price = entry * 1.03, trigger at entry * 1.04
+        if orchestrator.position.direction == Direction.LONG:
+            stop_trigger_price = entry_order["price"] * 0.96  # Below stop_price
+        else:  # SHORT
+            stop_trigger_price = entry_order["price"] * 1.04  # Above stop_price
+
+        fake_data._mark_price = stop_trigger_price
+        result3 = orchestrator.run_tick()
+        if orchestrator.state != State.EXIT_PENDING:
+            break  # Exit order placement failed
+
+        exit_order = mock_rest_client.orders[-1]  # Last order is Exit order
 
         # Tick 4: Exit FILL → FLAT
-        exit_price = 50000.0
+        exit_price = stop_trigger_price
         fake_data.inject_fill_event(
-            order_id=f"mock_exit_{i}",
-            filled_qty=orchestrator.position.qty,
-            order_link_id=f"exit_{i}",
-            side="Sell" if orchestrator.position.direction == Direction.LONG else "Buy",
+            order_id=exit_order["orderId"],
+            filled_qty=exit_order["qty"],
+            order_link_id=exit_order["orderLinkId"],
+            side=exit_order["side"],
             price=exit_price,
         )
         # Exit FILL 후 last_fill_price 업데이트 (Grid signal 무효화)
