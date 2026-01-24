@@ -257,6 +257,7 @@ class BybitRestClient:
         order_link_id: str,
         order_type: str = "Market",
         time_in_force: str = "GoodTillCancel",
+        price: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         주문 발주
@@ -268,12 +269,13 @@ class BybitRestClient:
             order_link_id: orderLinkId (idempotency)
             order_type: 주문 타입 (기본: Market)
             time_in_force: 유효 기간 (기본: GoodTillCancel)
+            price: 주문 가격 (Limit 주문 시 필수)
 
         Returns:
             Dict: 응답 JSON
 
         Raises:
-            ValueError: orderLinkId > 36자
+            ValueError: orderLinkId > 36자 또는 Limit 주문에 price 없음
             RateLimitError: Rate limit 초과
 
         SSOT: task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
@@ -281,6 +283,10 @@ class BybitRestClient:
         # orderLinkId <= 36자 검증
         if len(order_link_id) > 36:
             raise ValueError("orderLinkId must be <= 36 characters")
+
+        # Limit 주문에는 price 필수
+        if order_type == "Limit" and price is None:
+            raise ValueError("Limit order requires price")
 
         # Bybit 스펙 payload
         params = {
@@ -292,6 +298,10 @@ class BybitRestClient:
             "timeInForce": time_in_force,
             "orderLinkId": order_link_id,
         }
+
+        # Limit 주문이면 price 추가
+        if price is not None:
+            params["price"] = price
 
         return self._make_request("POST", "/v5/order/create", params)
 

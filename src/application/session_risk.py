@@ -19,6 +19,7 @@ Exports:
 - check_slippage_anomaly: Slippage spike anomaly 검증
 """
 
+import math
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 
@@ -69,8 +70,10 @@ def check_daily_loss_cap(
         # HALT + COOLDOWN (next day UTC 0:00)
         cooldown_until = None
         if current_timestamp is not None:
-            # 다음날 UTC 0:00 = current + 86400 (simplified, 실제는 UTC boundary 계산 필요)
-            cooldown_until = current_timestamp + 86400.0
+            # 다음날 UTC 0:00 = (floor(current / 86400) + 1) * 86400
+            days = int(current_timestamp / 86400.0)
+            next_utc_midnight = (days + 1) * 86400.0
+            cooldown_until = next_utc_midnight
 
         return SessionRiskStatus(
             is_halted=True,
@@ -158,7 +161,10 @@ def check_loss_streak_kill(
     if loss_streak_count >= 3:
         cooldown_until = None
         if current_timestamp is not None:
-            cooldown_until = current_timestamp + 86400.0  # next day
+            # 다음날 UTC 0:00 = (floor(current / 86400) + 1) * 86400
+            days = int(current_timestamp / 86400.0)
+            next_utc_midnight = (days + 1) * 86400.0
+            cooldown_until = next_utc_midnight
 
         return SessionRiskStatus(
             is_halted=True,

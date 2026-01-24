@@ -91,8 +91,9 @@ def test_daily_loss_cap_exceeded():
     assert status.is_halted, "Should halt when daily loss > cap"
     assert status.halt_reason == "daily_loss_cap_exceeded"
     assert status.cooldown_until is not None, "Cooldown until next UTC 0:00"
-    # cooldown_until should be next day UTC 0:00 (86400 seconds later)
-    expected_cooldown = current_timestamp + 86400.0
+    # cooldown_until should be next day UTC 0:00 (floor(current/86400) + 1) * 86400
+    days = int(current_timestamp / 86400.0)
+    expected_cooldown = (days + 1) * 86400.0
     assert status.cooldown_until == expected_cooldown
 
 
@@ -131,6 +132,84 @@ def test_daily_loss_cap_reset_at_boundary():
 
     # Then: ALLOW (리셋됨)
     assert not status_day2.is_halted, "Day 2: daily_pnl reset, should allow"
+
+
+def test_daily_loss_cap_utc_23_59_59_edge_case():
+    """
+    Edge case: 23:59:59에 Daily cap 발동
+
+    검증:
+    - cooldown_until = 다음날 00:00:00 UTC (not +24h)
+    - 차단 시간: 1초 (not 거의 24시간)
+    """
+    # Given: equity $100, daily_pnl = -$6 (-6%), cap = 5%
+    # 2026-01-23 23:59:59 UTC
+    equity_usd = 100.0
+    daily_realized_pnl_usd = -6.0
+    daily_loss_cap_pct = 5.0
+    current_timestamp = 1737676799.0  # 2026-01-23 23:59:59 UTC
+
+    # When: check_daily_loss_cap()
+    status = check_daily_loss_cap(
+        equity_usd=equity_usd,
+        daily_realized_pnl_usd=daily_realized_pnl_usd,
+        daily_loss_cap_pct=daily_loss_cap_pct,
+        current_timestamp=current_timestamp,
+    )
+
+    # Then: cooldown_until = 2026-01-24 00:00:00 UTC (1초 후)
+    expected_cooldown = 1737676800.0  # 2026-01-24 00:00:00 UTC
+    assert status.is_halted, "Should halt when daily loss > cap"
+    assert status.halt_reason == "daily_loss_cap_exceeded"
+    assert status.cooldown_until == expected_cooldown, (
+        f"Expected next UTC 0:00 ({expected_cooldown}), "
+        f"got {status.cooldown_until} (차이: {status.cooldown_until - expected_cooldown}초)"
+    )
+
+    # 차단 시간: 1초 (not ~24시간)
+    lockout_duration = status.cooldown_until - current_timestamp
+    assert lockout_duration == 1.0, (
+        f"Expected 1 second lockout, got {lockout_duration} seconds"
+    )
+
+
+def test_daily_loss_cap_utc_00_00_01_edge_case():
+    """
+    Edge case: 00:00:01에 Daily cap 발동
+
+    검증:
+    - cooldown_until = 다음날 00:00:00 UTC
+    - 차단 시간: 거의 24시간 (86399초)
+    """
+    # Given: equity $100, daily_pnl = -$6 (-6%), cap = 5%
+    # 2026-01-23 00:00:01 UTC
+    equity_usd = 100.0
+    daily_realized_pnl_usd = -6.0
+    daily_loss_cap_pct = 5.0
+    current_timestamp = 1737590401.0  # 2026-01-23 00:00:01 UTC
+
+    # When: check_daily_loss_cap()
+    status = check_daily_loss_cap(
+        equity_usd=equity_usd,
+        daily_realized_pnl_usd=daily_realized_pnl_usd,
+        daily_loss_cap_pct=daily_loss_cap_pct,
+        current_timestamp=current_timestamp,
+    )
+
+    # Then: cooldown_until = 2026-01-24 00:00:00 UTC (거의 24시간 후)
+    expected_cooldown = 1737676800.0  # 2026-01-24 00:00:00 UTC
+    assert status.is_halted, "Should halt when daily loss > cap"
+    assert status.halt_reason == "daily_loss_cap_exceeded"
+    assert status.cooldown_until == expected_cooldown, (
+        f"Expected next UTC 0:00 ({expected_cooldown}), "
+        f"got {status.cooldown_until}"
+    )
+
+    # 차단 시간: 거의 24시간 (86399초)
+    lockout_duration = status.cooldown_until - current_timestamp
+    assert lockout_duration == 86399.0, (
+        f"Expected 86399 seconds lockout (almost 24h), got {lockout_duration} seconds"
+    )
 
 
 # ============================================================================
@@ -276,8 +355,9 @@ def test_loss_streak_3_halt():
     # Then: HALT (당일)
     assert status.is_halted
     assert status.halt_reason == "loss_streak_3_halt"
-    # cooldown_until = next day UTC 0:00
-    expected_cooldown = current_timestamp + 86400.0
+    # cooldown_until = next day UTC 0:00 (floor(current/86400) + 1) * 86400
+    days = int(current_timestamp / 86400.0)
+    expected_cooldown = (days + 1) * 86400.0
     assert status.cooldown_until == expected_cooldown
 
 

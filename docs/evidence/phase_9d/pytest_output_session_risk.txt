@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, mock-3.15.1, cov-7.0.0, anyio-4.12.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 22 items
+
+tests/unit/test_session_risk.py::test_daily_loss_cap_not_exceeded PASSED [  4%]
+tests/unit/test_session_risk.py::test_daily_loss_cap_exceeded PASSED     [  9%]
+tests/unit/test_session_risk.py::test_daily_loss_cap_reset_at_boundary PASSED [ 13%]
+tests/unit/test_session_risk.py::test_daily_loss_cap_utc_23_59_59_edge_case PASSED [ 18%]
+tests/unit/test_session_risk.py::test_daily_loss_cap_utc_00_00_01_edge_case PASSED [ 22%]
+tests/unit/test_session_risk.py::test_weekly_loss_cap_not_exceeded PASSED [ 27%]
+tests/unit/test_session_risk.py::test_weekly_loss_cap_exceeded PASSED    [ 31%]
+tests/unit/test_session_risk.py::test_weekly_loss_cap_reset_at_boundary PASSED [ 36%]
+tests/unit/test_session_risk.py::test_loss_streak_2 PASSED               [ 40%]
+tests/unit/test_session_risk.py::test_loss_streak_3_halt PASSED          [ 45%]
+tests/unit/test_session_risk.py::test_loss_streak_5_cooldown PASSED      [ 50%]
+tests/unit/test_session_risk.py::test_fee_spike_single PASSED            [ 54%]
+tests/unit/test_session_risk.py::test_fee_spike_consecutive_halt PASSED  [ 59%]
+tests/unit/test_session_risk.py::test_fee_spike_non_consecutive PASSED   [ 63%]
+tests/unit/test_session_risk.py::test_slippage_spike_2_times PASSED      [ 68%]
+tests/unit/test_session_risk.py::test_slippage_spike_3_times_halt PASSED [ 72%]
+tests/unit/test_session_risk.py::test_slippage_spike_window_expired PASSED [ 77%]
+tests/integration/test_orchestrator_session_risk.py::test_daily_loss_cap_triggers_halt PASSED [ 81%]
+tests/integration/test_orchestrator_session_risk.py::test_weekly_loss_cap_triggers_cooldown PASSED [ 86%]
+tests/integration/test_orchestrator_session_risk.py::test_loss_streak_3_triggers_halt PASSED [ 90%]
+tests/integration/test_orchestrator_session_risk.py::test_fee_anomaly_triggers_halt PASSED [ 95%]
+tests/integration/test_orchestrator_session_risk.py::test_slippage_anomaly_triggers_halt PASSED [100%]
+
+============================== 22 passed in 0.04s ==============================

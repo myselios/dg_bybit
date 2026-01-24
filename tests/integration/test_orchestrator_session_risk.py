@@ -19,6 +19,8 @@ Test Coverage:
 5. slippage_anomaly_triggers_halt (Slippage spike 3회/10분 → HALT)
 """
 
+import time
+from typing import Optional, List, Dict, Any
 from application.orchestrator import Orchestrator
 from domain.state import State
 from infrastructure.exchange.market_data_interface import MarketDataInterface
@@ -44,6 +46,9 @@ class FakeMarketDataWithSessionRisk(MarketDataInterface):
         self.fee_ratio_history = []
         self.slippage_history = []
 
+        # Phase 9d: Slippage anomaly test용 timestamp 설정
+        self.current_timestamp = time.time()  # Default: 현재 시각
+
     def get_equity_btc(self) -> float:
         return self.equity_btc
 
@@ -58,6 +63,38 @@ class FakeMarketDataWithSessionRisk(MarketDataInterface):
         if self.degraded_start_time is None:
             return False
         return (self.degraded_start_time > 60.0)
+
+    # MarketDataInterface Protocol 필수 메서드
+    def get_mark_price(self) -> float:
+        return self.btc_mark_price_usd
+
+    def get_rest_latency_p95_1m(self) -> float:
+        return 0.15  # Safe default
+
+    def get_ws_last_heartbeat_ts(self) -> float:
+        return time.time()
+
+    def get_ws_event_drop_count(self) -> int:
+        return 0
+
+    def get_timestamp(self) -> float:
+        return self.current_timestamp
+
+    # Session Risk Protocol 메서드
+    def get_daily_realized_pnl_usd(self) -> Optional[float]:
+        return self.daily_realized_pnl_usd
+
+    def get_weekly_realized_pnl_usd(self) -> Optional[float]:
+        return self.weekly_realized_pnl_usd
+
+    def get_loss_streak_count(self) -> Optional[int]:
+        return self.loss_streak_count
+
+    def get_fee_ratio_history(self) -> Optional[List[float]]:
+        return self.fee_ratio_history if self.fee_ratio_history else None
+
+    def get_slippage_history(self) -> Optional[List[Dict[str, Any]]]:
+        return self.slippage_history if self.slippage_history else None
 
 
 def test_daily_loss_cap_triggers_halt():
@@ -184,13 +221,14 @@ def test_slippage_anomaly_triggers_halt():
         {"slippage_usd": -2.5, "timestamp": 1737600200.0},  # 3분 20초 후
         {"slippage_usd": -3.0, "timestamp": 1737600400.0},  # 6분 40초 후
     ]
+    # Phase 9d: market_data.current_timestamp 설정 (orchestrator가 get_timestamp()로 가져감)
+    market_data.current_timestamp = 1737600500.0  # 최근 spike 이후 1분 40초
 
     orchestrator = Orchestrator(market_data)
     orchestrator.slippage_threshold_usd = 2.0
     orchestrator.slippage_window_seconds = 600.0  # 10분
-    orchestrator.current_timestamp = 1737600500.0  # 최근 spike 이후 1분 40초
 
-    # When: run_tick()
+    # When: run_tick() (orchestrator가 current_timestamp를 market_data에서 가져옴)
     result = orchestrator.run_tick()
 
     # Then: HALT + halt_reason

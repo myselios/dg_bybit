@@ -6,6 +6,84 @@
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 0. 헌법 선언
 
 이 문서는 Account Builder 시스템의 **실행 규칙**을 정의한다.
@@ -15,6 +93,84 @@
 - 이 Flow를 어기는 구현은 **버그로 간주**한다.
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 1. Execution State Machine (최소 상태 집합)
 
@@ -116,6 +272,84 @@ IN_POSITION + Amend 실패: stop_status = PENDING → 재시도 → ACTIVE or ER
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### State Invariants (상태별 불변 조건)
 
 **목적**: 각 상태에서 반드시 참이어야 하는 조건 (코드 assert 기준)
@@ -141,6 +375,84 @@ IN_POSITION + Amend 실패: stop_status = PENDING → 재시도 → ACTIVE or ER
 - Section 10.1 Code Enforcement Requirements 참조
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 2. Tick Execution Flow (1 Cycle)
 
@@ -278,6 +590,84 @@ def track_rest_call():
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 2.5. Execution Events (상태 확정 규칙)
 
 **필수 규칙**: ENTRY_PENDING/EXIT_PENDING 상태에서 확정은 **이벤트로만** 가능
@@ -402,6 +792,84 @@ if additional_fill:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 2.5.3 Position Size Overflow 방지 (부분체결 누적)
 
 **문제**: 잔량 추가 체결로 원래 sizing 결과(max_contracts) 초과
@@ -453,6 +921,84 @@ if additional_fill:
 - Loss budget 기반 sizing 무효화 방지
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### State Confirmation Rule (정상 vs DEGRADED 모드 분리)
 
@@ -570,6 +1116,84 @@ def update_stop_loss_if_needed(current_stop_qty, new_qty, stop_order_id):
 - **수용 가능**: 손실 예산은 stop_distance로 제어되며, 수량 미세 조정은 청산거리에 미미한 영향
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 2.6. WebSocket Reconcile (상태 불일치 방지)
 
@@ -750,6 +1374,84 @@ if ws_heartbeat_ok and ws_event_drop_count == 0:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 2.6.5 Complete Network Failure (WS + REST)
 
 **진입 조건**:
@@ -784,6 +1486,84 @@ if degraded_mode and rest_timeout_count >= 3:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 2.7. WebSocket Event Processing Contract (이벤트 처리 계약)
 
 **전제**: WS 이벤트는 중복/역순/지연 가능 (실거래 필연)
@@ -817,6 +1597,84 @@ if len(processed_events) > 1000:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### (2) Ordering (순서 보장)
 
 **원칙**: 최신 seq/timestamp 우선
@@ -849,6 +1707,84 @@ if state != expected_state_for_event(event):
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### (3) REST Reconcile Override (최종 진실)
 
 **우선순위**: REST = Source of Truth (WS 메시지 드랍 가능)
@@ -875,6 +1811,84 @@ else:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 테스트 요구사항 (Section 10.1 참조):
 - 중복 이벤트 무시 테스트 (동일 execution_id 2회 전송 → 1회만 처리)
 - Out-of-order 방어 테스트 (seq 역순 이벤트 → 무시)
@@ -882,6 +1896,84 @@ else:
 - REST override 테스트 (연속 3회 불일치 → REST로 덮어쓰기)
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 3. Bybit Inverse Futures 특성 (계산 기준)
 
@@ -956,6 +2048,84 @@ place_order(...)  # positionIdx 누락
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 3.2 Inverse PnL Formula (Direction별 정확한 공식)
 
 **Bybit Inverse Futures PnL**:
@@ -1016,6 +2186,84 @@ Short: loss_btc ≈ (contracts / entry) × d
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 3.3 Stop Distance 출처 계약 (Grid Strategy)
 
 **문제**: stop_distance_pct를 어디서 받는지 불명확 → 구현자 마음대로
@@ -1074,6 +2322,84 @@ stop_distance_pct = 0.03  # Grid spacing 무시 불가
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 3.4 Position Sizing (Direction별 정확한 공식)
 
 **목표**: `max_loss_btc`를 초과하지 않는 최대 contracts
@@ -1113,6 +2439,84 @@ contracts ≈ (max_loss_btc × entry) / stop_distance_pct
 - stop_distance_pct ≥ 0.03: Direction별 정확한 공식 사용 필수
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### 3.4 Margin Calculation
 
@@ -1211,6 +2615,84 @@ place_order(
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 3.5 Leverage와 Loss Budget의 독립성 (중요)
 
 **핵심 원칙**: Stop-loss 손실은 레버리지와 무관
@@ -1245,6 +2727,84 @@ contracts = (max_loss_btc × entry × leverage) / stop_distance_pct
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 3.6 Margin과 Loss Budget 충돌 해결
 
 **문제**: Loss budget으로 계산한 contracts가 margin 부족으로 REJECT
@@ -1268,6 +2828,84 @@ contracts = min(max_contracts_from_margin, max_contracts_from_loss)
 **이유**: Margin 부족으로 주문 실패하는 것보다, 작은 포지션이라도 진입하는 게 낫다.
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 4. 절대 금지 사항 (Real Trading Killers)
 
@@ -1318,6 +2956,84 @@ if state == ENTRY_PENDING and now() - order_placed_at > 300:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 4.2 God Object (Orchestrator가 모든 책임)
 
 **금지**:
@@ -1365,6 +3081,84 @@ class Orchestrator:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 4.3 USD-based Calculation
 
 **금지**:
@@ -1392,6 +3186,84 @@ margin_usd = required_margin_btc × entry_price
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 4.4 State Bypass (상태 건너뛰기)
 
 **금지**:
@@ -1415,6 +3287,84 @@ if state == ENTRY_PENDING and order.filled:
 ```
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### 4.5 Stop Loss 주문 계약 (Conditional Order 고정)
 
@@ -1513,6 +3463,84 @@ def place_stop_loss(position_qty, stop_price, direction, signal_id):
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 5. Emergency Priority (최우선 규칙)
 
 Emergency Check는 **Signal보다 먼저**.
@@ -1540,6 +3568,84 @@ Emergency Check는 **Signal보다 먼저**.
 5. HALT: Manual reset만 가능
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### COOLDOWN 해제 조건 (SSOT)
 
@@ -1570,6 +3676,143 @@ if now() - cooldown_entered_at >= 1800:  # 30분 경과 (1800초)
 - HALT와 COOLDOWN 혼동 (HALT는 Manual reset만)
 
 ---
+
+### Session Risk Policy (Phase 9a - 계좌 보호 단계)
+
+**목적**: 일/주 손실 상한, 연속 손실 중단, 이상치 감지 → **"도박 종료, 계좌 보호 시작"**
+
+**4개 Kill Switch** (우선순위 순서):
+
+1. **Daily Loss Cap** (일일 손실 상한)
+   - **Trigger**: `daily_realized_pnl_usd <= -5% equity`
+   - **Action**: HALT (당일 거래 종료) + COOLDOWN (다음날 UTC 0시까지)
+   - **예시**: equity $100 → daily loss -$5 → HALT
+
+2. **Weekly Loss Cap** (주간 손실 상한)
+   - **Trigger**: `weekly_realized_pnl_usd <= -12.5% equity`
+   - **Action**: COOLDOWN (7일)
+   - **예시**: equity $100 → weekly loss -$12.5 → COOLDOWN 7일
+
+3. **Loss Streak Kill** (연속 손실 중단)
+   - **3연패**: HALT (당일 거래 종료, 다음날 UTC 0시까지)
+   - **5연패**: COOLDOWN (72시간)
+   - **현재 축소 로직 유지**: 3연패 시 size 0.5배 (중단 전 단계)
+
+4. **Anomaly Detection** (이상치 감지)
+   - **Fee Spike**: `fee_ratio > 1.5` (예상 대비 50%↑), 2회 연속 → HALT 30분
+   - **Slippage Spike**: `abs(slippage_usd) > $2`, 3회/10분 → HALT 60분
+   - **WS DEGRADED**: 재연결 루프 진입 시 → 신규 진입 차단 (청산만 허용)
+
+**HALT 조건** (AND 결합):
+```
+Emergency Check = {
+  Section 5 Emergency (balance < $80, degraded 60s, latency, price_drop)
+  +
+  Session Risk (daily/weekly cap, loss streak, anomaly)
+}
+```
+
+**보호 구조 (3중 안전망)**:
+1. **Per-Trade Cap**: $3 (Stage 1) — 단일 거래 손실 제한
+2. **Session Risk**: Daily -5%, Weekly -12.5% — 일/주 손실 상한
+3. **Emergency**: Balance, Latency, Price Drop — 시장/시스템 비정상
+
+**구현**:
+- `src/application/session_risk.py` (203 LOC, Phase 9a)
+- `src/application/orchestrator.py::_check_emergency()` (Session Risk 통합)
+
+**테스트**:
+- `tests/unit/test_session_risk.py` (15 cases)
+- `tests/integration/test_orchestrator_session_risk.py` (5 cases)
+
+**SSOT**:
+- 정책 수치: `config/safety_limits.yaml` (session_risk 섹션)
+- Per-Trade Cap: `docs/specs/account_builder_policy.md` Section 5 (Stage 1: $3)
+- 구현 순서: `docs/plans/task_plan.md` Phase 9a/9b/9c
+
+**참조**:
+- ADR-0001: Per-Trade Loss Cap Reduction (Stage 1: $10 → $3)
+- Phase 9 Evidence: `docs/evidence/phase_9a/`, `phase_9b/`, `phase_9c/`
+
+---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 6. Fee Rate (Dynamic, not Hardcoded)
 
@@ -1650,6 +3893,84 @@ Parameters:
 - 캐시 없이 매번 API 호출 ❌ (rate limit 낭비)
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### 6.2 Fee Post-Trade Verification (필수 안전장치)
 
@@ -1743,6 +4064,84 @@ if now() >= session.fee_spike_until:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 7. Sizing Double-Check (Margin vs Loss)
 
 **필수**: Sizing 후 Margin feasibility 재확인
@@ -1768,6 +4167,84 @@ if required_margin + fee_buffer > equity_btc:
 ```
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### 7.5 Liquidation Distance Gate (강제 안전장치)
 
@@ -1936,6 +4413,84 @@ if liq_distance_pct is None:
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ### 7.6 Order Rejection Circuit Breaker
 
 **목적**: 영구적 거절 사유 반복 시 무한 재시도 방지
@@ -1977,6 +4532,84 @@ def on_order_success():
 - Rate limit으로 거절되는데 계속 호출 → Budget 소진
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ## 8. Position Entry/Exit는 Idempotent (중복 방지)
 
@@ -2129,6 +4762,84 @@ place_stop_loss(
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 9. Metrics Update는 Closed Trades만
 
 **규칙**: Winrate/Streak는 **청산 완료** 거래만 집계
@@ -2155,6 +4866,84 @@ def on_position_closed(position, pnl_btc):
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 10. 변경 규칙 (ADR 필수)
 
 이 문서를 수정하려면:
@@ -2177,6 +4966,84 @@ def on_position_closed(position, pnl_btc):
    - Breaking change는 Major version up
 
 ---
+
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
 
 ### 10.1 Code Enforcement Requirements (코드 강제 요구사항)
 
@@ -2277,6 +5144,84 @@ pytest tests/oracles/ -v
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 최종 선언
 
 이 Flow는 **Account Builder의 실행 계약**이다.
@@ -2289,11 +5234,96 @@ pytest tests/oracles/ -v
 
 ---
 
+---
+
+### 10.2 Document-First Workflow (문서 우선 작업 흐름)
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+**문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
+- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
+- 증거 없는 완료 보고 (Evidence Artifacts 누락)
+- 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
+
+#### 필수 작업 순서
+
+**Phase/Task 시작 시**:
+```
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+   ↓
+2. task_plan.md에서 TODO 항목 확인
+   ↓
+3. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [ ] TODO → [~] IN PROGRESS
+   - Last Updated 갱신
+   ↓
+4. 테스트 작성 (RED)
+   ↓
+5. 최소 구현 (GREEN)
+   ↓
+6. 리팩토링
+   ↓
+7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
+   ↓
+8. ⚠️ task_plan.md Progress Table 업데이트
+   - 상태: [~] IN PROGRESS → [x] DONE
+   - Evidence 링크 추가
+   - Last Updated 갱신
+```
+
+**절대 금지**:
+- 코드 구현 후 문서 업데이트 누락
+- task_plan.md 업데이트 없이 다음 Phase 진행
+- Evidence Artifacts 없이 DONE 보고
+
+#### 강제 규칙
+
+**Pre-flight Check** (Phase/Task 시작 전):
+1. `docs/plans/task_plan.md` 읽기
+2. 현재 Phase 상태 확인 (TODO/IN PROGRESS/DONE)
+3. **IN PROGRESS가 아니면 즉시 중단** → 먼저 Progress Table 업데이트 필요
+
+**DONE Check** (Phase/Task 완료 시):
+1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
+2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+3. Last Updated 갱신
+4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
+
+**검증 명령**:
+```bash
+# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+stat -c %y docs/plans/task_plan.md
+
+# (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
+ls -la docs/evidence/phase_N/
+
+# (C) Progress Table에 Evidence 링크 존재 확인
+grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
+# → 출력: Evidence: docs/evidence/phase_N/...
+```
+
+**위반 시 즉시 Rollback**:
+- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
+
+**참조**:
+- CLAUDE.md Section 5.6: "문서 업데이트는 작업의 일부"
+- CLAUDE.md Section 3.1: "작업이 DONE되면 **즉시** Progress Table 갱신"
+- CLAUDE.md Section 5.7: "Self-Verification Before DONE"
+
 ## 문서 버전 및 변경 이력
 
 **현재 버전**: FLOW v1.9 (2026-01-23)
 
 **변경 이력**:
+- v1.10 (2026-01-23): 문서 우선 작업 흐름 강제 (Document-First Workflow)
+  - **Section 10.2 추가**: 모든 작업은 문서 리뷰 → 문서 업데이트 → 구현 순서 강제
+  - Pre-flight Check: Phase 시작 전 task_plan.md 상태 확인 필수
+  - DONE Check: Evidence Artifacts + Progress Table 업데이트 + Last Updated 갱신 필수
+  - 위반 시 즉시 Rollback 규칙 추가
+  - 참조: CLAUDE.md Section 5.6, 5.7
+
 - v1.9 (2026-01-23): 헌법 강제력 확보 및 내부 정합성 개선 (ADR-0008)
   - **SSOT 중복 제거**: Section 2.5 DEGRADED → Section 2.6 링크, Section 4.5 Stop 갱신 → Section 2.5 링크
   - **REST Budget 정렬**: Tick 목표 주기 1초 → 2초 (90 calls/min 일치, 실행 가능 수치)

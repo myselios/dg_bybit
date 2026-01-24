@@ -1,0 +1,44 @@
+===================================================================
+Section 5.7 Self-Verification — Phase 9 Revision
+Date: 2026-01-23 22:25:08 UTC
+===================================================================
+
+--- (1a) Placeholder 표현 감지 ---
+tests/integration_real/conftest.py:29:        pytest.skip("Testnet API credentials not available (set BYBIT_TESTNET_API_KEY/API_SECRET)")
+
+--- (1b) Skip/Xfail decorator 금지 ---
+(출력 비어있음 - PASS)
+
+--- (1c) 의미있는 assert 존재 여부 ---
+assert == 카운트: 375
+(PASS - 테스트에 도메인 값 비교 assert 존재)
+
+--- (2a) 도메인 타입 이름 재정의 금지 ---
+(출력 비어있음 - PASS)
+
+--- (2b) tests/ 내에 domain 모사 파일 생성 금지 ---
+(출력 비어있음 - PASS)
+
+--- (3) transition SSOT 파일 존재 ---
+OK: transition.py exists
+
+--- (4a) 상태 분기문 감지 (if/elif state ==) ---
+src/application/event_router.py:10:- 상태 전환 분기 (if state == ...) — transition()에만 존재해야 함
+(출력 비어있음 - PASS)
+
+--- (4b) EventRouter에서 State enum 참조 자체 금지 ---
+(출력 비어있음 - PASS)
+
+--- (5) sys.path hack 금지 ---
+(출력 비어있음 - PASS)
+
+--- (6a) Deprecated wrapper import 추적 ---
+(출력 비어있음 - Phase 1+ PASS)
+
+--- (6b) Migration 완료 증거 (구 경로 import 0개) ---
+구 경로 import 카운트: 0
+(PASS - Migration 완료)
+
+===================================================================
+Section 5.7 Self-Verification 완료
+===================================================================

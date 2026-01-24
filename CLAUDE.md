@@ -1,5 +1,5 @@
 # CLAUDE.md — CBGB (Controlled BTC Growth Bot) 개발 운영 계약서
-Last Updated: 2026-01-18
+Last Updated: 2026-01-23
 
 이 문서는 Claude Code(claude.ai/code) 및 모든 구현자가 **이 레포에서 작업할 때 따라야 하는 운영 계약서**다.  
 목적은 좋은 말이 아니라 **실거래에서 살아남는 구현**이다.
@@ -83,8 +83,64 @@ Last Updated: 2026-01-18
 
 ## 5) Pre-flight Hard Gates (Phase 진행 전 선행 강제 조건)
 
+현재 레포는 "문서가 아니라 테스트가 단속 장치가 되어야 한다"를 목표로 한다.
+따라서 Phase(0~6) 진행 전에 아래 조건을 먼저 만족해야 한다.
+
 현재 레포는 “문서가 아니라 테스트가 단속 장치가 되어야 한다”를 목표로 한다.  
 따라서 Phase(0~6) 진행 전에 아래 조건을 먼저 만족해야 한다.
+
+
+### 5.0 Document-First Workflow (문서 우선 작업 흐름) — 최우선 규칙
+
+**헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
+
+#### 작업 시작 전 필수 절차
+
+1. **SSOT 3문서 읽기** (FLOW.md, account_builder_policy.md, task_plan.md)
+2. **task_plan.md에서 TODO 항목 확인**
+3. **⚠️ 즉시 task_plan.md Progress Table 업데이트**:
+   - 상태: `[ ] TODO` → `[~] IN PROGRESS`
+   - Last Updated 갱신
+4. **그 후에만 구현 시작** (테스트 작성 → 코드 구현)
+
+#### 작업 완료 시 필수 절차
+
+1. **Evidence Artifacts 생성** (`docs/evidence/phase_N/` 디렉토리)
+2. **task_plan.md Progress Table 업데이트**:
+   - 상태: `[~] IN PROGRESS` → `[x] DONE`
+   - Evidence 링크 추가
+   - Last Updated 갱신
+3. **위 절차 없이 DONE 보고 → 즉시 Rollback**
+
+#### 절대 금지
+
+- ❌ **코드를 먼저 작성하고 나중에 문서 업데이트**
+- ❌ **task_plan.md 업데이트 없이 다음 Phase 진행**
+- ❌ **Evidence Artifacts 없이 DONE 보고**
+- ❌ **"나중에 문서 정리하겠다"는 말**
+
+#### 위반 시 즉시 조치
+
+**코드 구현 후 task_plan.md 미업데이트 발견 시**:
+```bash
+# 1. 즉시 모든 작업 원복 (Rollback)
+git restore <modified_files>
+rm -rf <untracked_files>
+
+# 2. task_plan.md 먼저 업데이트
+# 3. 그 후 구현 재개
+```
+
+**근거**:
+- SSOT 원칙 (Single Source of Truth): 문서가 유일한 진실
+- 작업 진행 상태 투명성 확보
+- 증거 기반 완료 보고 강제
+- 다음 작업자의 혼란 방지
+
+**참조**:
+- FLOW.md Section 10.2 Document-First Workflow
+- CLAUDE.md Section 5.6, 5.7
+- CLAUDE.md Section 8 작업 절차
 
 ### 5.1 Placeholder 테스트 금지 (Zero Tolerance)
 - `assert True`, `pass`, `TODO` 포함 테스트는 **테스트가 아니다**

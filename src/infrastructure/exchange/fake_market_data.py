@@ -233,25 +233,80 @@ class FakeMarketData:
         """
         self._signal = {"side": side, "qty": qty}
 
-    def inject_fill_event(self, order_id: str, filled_qty: int):
+    def inject_fill_event(
+        self,
+        order_id: str,
+        filled_qty: int,
+        order_link_id: Optional[str] = None,
+        side: Optional[str] = None,
+        price: Optional[float] = None,
+    ):
         """
         FILL event 주입 (orchestrator test용).
 
         Args:
-            order_id: Order ID
+            order_id: Order ID (Bybit 서버 생성)
             filled_qty: 체결 수량
+            order_link_id: Order Link ID (클라이언트 ID, Optional)
+            side: "Buy" or "Sell" (Optional)
+            price: 체결 가격 (Optional)
         """
-        self._events.append({"type": "FILL", "order_id": order_id, "filled_qty": filled_qty})
+        event = {
+            "type": "FILL",
+            "orderId": order_id,  # Bybit API 형식 (camelCase)
+            "execQty": str(filled_qty),  # Bybit API는 string
+        }
+        if order_link_id:
+            event["orderLinkId"] = order_link_id
+        if side:
+            event["side"] = side
+        if price:
+            event["execPrice"] = str(price)
 
-    def inject_exit_event(self, order_id: str, filled_qty: int):
+        self._events.append(event)
+
+    def inject_exit_event(
+        self,
+        order_id: str,
+        filled_qty: int,
+        order_link_id: Optional[str] = None,
+        side: Optional[str] = None,
+        price: Optional[float] = None,
+    ):
         """
         EXIT event 주입 (orchestrator test용).
 
         Args:
-            order_id: Order ID
+            order_id: Order ID (Bybit 서버 생성)
             filled_qty: 청산 수량
+            order_link_id: Order Link ID (클라이언트 ID, Optional)
+            side: "Buy" or "Sell" (Optional)
+            price: 체결 가격 (Optional)
         """
-        self._events.append({"type": "EXIT", "order_id": order_id, "filled_qty": filled_qty})
+        event = {
+            "type": "EXIT",
+            "orderId": order_id,
+            "execQty": str(filled_qty),
+        }
+        if order_link_id:
+            event["orderLinkId"] = order_link_id
+        if side:
+            event["side"] = side
+        if price:
+            event["execPrice"] = str(price)
+
+        self._events.append(event)
+
+    def get_fill_events(self) -> List[Dict[str, Any]]:
+        """
+        FILL event 목록 반환 (orchestrator test용).
+
+        Returns:
+            List[Dict]: FILL event 목록 (소비 후 clear)
+        """
+        events = self._events.copy()
+        self._events.clear()  # 소비 후 clear (중복 처리 방지)
+        return events
 
     def set_ws_degraded(self, degraded: bool, entered_at_offset: float = 0.0):
         """

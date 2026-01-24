@@ -20,8 +20,13 @@ Exports:
 """
 
 import time
-from typing import Callable, Optional, Dict, Any, List
+import hmac
+import hashlib
+import json
+import threading
+from typing import Callable, Optional, Dict, Any
 from collections import deque
+import websocket  # websocket-client 라이브러리
 
 # FatalConfigError는 bybit_rest_client에서 import
 from infrastructure.exchange.bybit_rest_client import FatalConfigError
@@ -90,6 +95,17 @@ class BybitWsClient:
         # 메시지 큐 (FIFO, maxsize 제한)
         self._message_queue: deque = deque(maxlen=queue_maxsize)
         self._drop_count = 0  # Overflow로 드랍된 메시지 수
+
+        # WebSocket 연결 상태
+        self._ws: Optional[websocket.WebSocketApp] = None
+        self._ws_thread: Optional[threading.Thread] = None
+        self._running = False
+        self._authenticated = False
+        self._subscribed = False
+        self._on_message_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+
+        # Ping thread
+        self._ping_thread: Optional[threading.Thread] = None
 
     def get_subscribe_payload(self) -> Dict[str, Any]:
         """
@@ -212,3 +228,262 @@ class BybitWsClient:
             int: Drop count
         """
         return self._drop_count
+
+    def _generate_auth_signature(self, expires: int) -> str:
+        """
+        Auth 서명 생성 (HMAC-SHA256)
+
+        Args:
+            expires: Expiration timestamp (milliseconds)
+
+        Returns:
+            str: Hex-encoded signature
+
+        SSOT: Bybit V5 WebSocket Auth
+        서명 문자열: "GET/realtime{expires}"
+        """
+        # Bybit 공식 문서: https://bybit-exchange.github.io/docs/v5/ws/connect
+        signature_payload = f"GET/realtime{expires}"
+        signature = hmac.new(
+            self.api_secret.encode("utf-8"),
+            signature_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return signature
+
+    def _send_auth(self) -> None:
+        """
+        Auth 메시지 전송
+
+        SSOT: Bybit V5 WebSocket Auth
+        메시지: {"op": "auth", "args": [api_key, expires, signature]}
+        """
+        if not self._ws:
+            return
+
+        expires = int(self.clock() * 1000) + 10000  # 현재 시각 + 10초 (milliseconds)
+        signature = self._generate_auth_signature(expires)
+
+        auth_message = {
+            "op": "auth",
+            "args": [self.api_key, expires, signature],
+        }
+        self._ws.send(json.dumps(auth_message))
+
+    def _send_subscribe(self) -> None:
+        """
+        Subscribe 메시지 전송 (execution.inverse topic)
+
+        SSOT: Bybit V5 WebSocket Private Execution
+        메시지: {"op": "subscribe", "args": ["execution.inverse"]}
+        """
+        if not self._ws:
+            return
+
+        subscribe_message = self.get_subscribe_payload()
+        self._ws.send(json.dumps(subscribe_message))
+
+    def _send_ping(self) -> None:
+        """
+        Ping 메시지 전송 (클라이언트 → 서버)
+
+        SSOT: Bybit V5 WebSocket Heartbeat
+        메시지: {"op": "ping"}
+        클라이언트가 ping 전송 (권장 20초마다)
+        """
+        if not self._ws or not self._running:
+            return
+
+        ping_message = {"op": "ping"}
+        try:
+            self._ws.send(json.dumps(ping_message))
+        except Exception:
+            # Ping 전송 실패 (연결 끊김) → DEGRADED
+            self._degraded = True
+            if self._degraded_entered_at is None:
+                self._degraded_entered_at = self.clock()
+
+    def _ping_loop(self) -> None:
+        """
+        Ping loop (background thread, 20초마다 ping 전송)
+
+        SSOT: Bybit V5 WebSocket Heartbeat
+        권장 주기: 20초
+        무활동 10분 시 서버가 연결 종료
+        """
+        while self._running:
+            time.sleep(20.0)  # 20초 대기
+            if self._running:
+                self._send_ping()
+
+    def _on_ws_message(self, ws: websocket.WebSocketApp, message: str) -> None:
+        """
+        WebSocket 메시지 수신 콜백
+
+        Args:
+            ws: WebSocketApp 인스턴스
+            message: 수신된 메시지 (JSON string)
+
+        SSOT: Bybit V5 WebSocket Message Types
+        - op=auth 응답: {"success": true, "op": "auth"}
+        - op=subscribe 응답: {"success": true, "op": "subscribe"}
+        - op=pong 응답: {"success": true, "op": "pong"}
+        - execution 메시지: {"topic": "execution.inverse", "data": [...]}
+        """
+        try:
+            msg = json.loads(message)
+        except json.JSONDecodeError:
+            # Invalid JSON → 무시
+            return
+
+        op = msg.get("op")
+        success = msg.get("success")
+
+        # Auth 응답 처리
+        if op == "auth" and success:
+            self._authenticated = True
+            # Auth 성공 → Subscribe 전송
+            self._send_subscribe()
+            return
+
+        # Subscribe 응답 처리
+        if op == "subscribe" and success:
+            self._subscribed = True
+            return
+
+        # Pong 응답 처리
+        if op == "pong":
+            self.on_pong_received()
+            return
+
+        # Execution 메시지 처리 (topic 기반)
+        topic = msg.get("topic")
+        if topic and topic.startswith("execution"):
+            # 메시지 큐에 추가
+            self.enqueue_message(msg)
+            # 콜백 호출 (있으면)
+            if self._on_message_callback:
+                self._on_message_callback(msg)
+            return
+
+    def _on_ws_open(self, ws: websocket.WebSocketApp) -> None:
+        """
+        WebSocket 연결 성공 콜백
+
+        Args:
+            ws: WebSocketApp 인스턴스
+
+        SSOT: Bybit V5 WebSocket Connection
+        연결 성공 → Auth 전송
+        """
+        # Auth 전송
+        self._send_auth()
+
+    def _on_ws_error(self, ws: websocket.WebSocketApp, error: Exception) -> None:
+        """
+        WebSocket 에러 콜백
+
+        Args:
+            ws: WebSocketApp 인스턴스
+            error: Exception
+
+        SSOT: task_plan.md Phase 7 - error 발생 시 DEGRADED
+        """
+        self._degraded = True
+        if self._degraded_entered_at is None:
+            self._degraded_entered_at = self.clock()
+
+    def _on_ws_close(
+        self, ws: websocket.WebSocketApp, close_status_code: int, close_msg: str
+    ) -> None:
+        """
+        WebSocket 연결 종료 콜백
+
+        Args:
+            ws: WebSocketApp 인스턴스
+            close_status_code: Close status code
+            close_msg: Close message
+
+        SSOT: task_plan.md Phase 7 - close 발생 시 DEGRADED
+        """
+        self._degraded = True
+        if self._degraded_entered_at is None:
+            self._degraded_entered_at = self.clock()
+        self._authenticated = False
+        self._subscribed = False
+
+    def start(self, on_message_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
+        """
+        WebSocket 연결 시작 (background thread)
+
+        Args:
+            on_message_callback: 메시지 수신 콜백 (Optional)
+
+        SSOT: task_plan.md Phase 8 - Thread 모델
+        - Main Thread: start() → WS Thread 시작
+        - WS Thread: connect → auth → subscribe → recv_loop
+        - Ping Thread: 20초마다 ping 전송
+        """
+        if self._running:
+            # 이미 실행 중
+            return
+
+        self._running = True
+        self._on_message_callback = on_message_callback
+
+        # WebSocketApp 생성
+        self._ws = websocket.WebSocketApp(
+            self.wss_url,
+            on_open=self._on_ws_open,
+            on_message=self._on_ws_message,
+            on_error=self._on_ws_error,
+            on_close=self._on_ws_close,
+        )
+
+        # WS Thread 시작
+        self._ws_thread = threading.Thread(target=self._ws.run_forever, daemon=True)
+        self._ws_thread.start()
+
+        # Ping Thread 시작
+        self._ping_thread = threading.Thread(target=self._ping_loop, daemon=True)
+        self._ping_thread.start()
+
+    def stop(self) -> None:
+        """
+        WebSocket 연결 종료 (thread join timeout=5.0)
+
+        SSOT: task_plan.md Phase 8 - stop() 메서드
+        """
+        if not self._running:
+            return
+
+        self._running = False
+
+        # WebSocket 연결 종료
+        if self._ws:
+            self._ws.close()
+
+        # Thread join (timeout=5.0)
+        if self._ws_thread and self._ws_thread.is_alive():
+            self._ws_thread.join(timeout=5.0)
+
+        if self._ping_thread and self._ping_thread.is_alive():
+            self._ping_thread.join(timeout=5.0)
+
+        # 상태 초기화
+        self._ws = None
+        self._ws_thread = None
+        self._ping_thread = None
+        self._authenticated = False
+        self._subscribed = False
+
+    def is_connected(self) -> bool:
+        """
+        연결/인증/구독 완료 여부 확인
+
+        Returns:
+            bool: 연결/인증/구독 모두 완료되면 True
+
+        SSOT: task_plan.md Phase 8 - is_connected() 메서드
+        """
+        return self._running and self._authenticated and self._subscribed

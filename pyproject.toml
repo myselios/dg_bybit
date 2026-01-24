@@ -12,6 +12,7 @@ dependencies = [
     "pydantic==2.5.2",
     "structlog==23.2.0",
     "requests==2.31.0",
+    "websocket-client==1.6.4",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "testnet: marks tests as requiring Testnet connection (deselected by default)",
+]
+addopts = "-m 'not testnet'"
 
 [tool.mypy]
 python_version = "3.12"

@@ -118,6 +118,7 @@ def test_entry_blocked_state_not_flat():
 
     Given:
         - State: IN_POSITION (not FLAT)
+        - Position: Created (Self-healing check 통과용)
 
     When:
         - run_tick() 실행
@@ -134,6 +135,16 @@ def test_entry_blocked_state_not_flat():
     mock_rest_client = MockRestClient()
     orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_rest_client)
     orchestrator.state = State.IN_POSITION  # Force state
+
+    # Phase 11b: Self-healing check 통과를 위해 Position도 설정
+    from domain.state import Position, Direction
+    orchestrator.position = Position(
+        qty=100,
+        entry_price=50000.0,
+        direction=Direction.LONG,
+        signal_id="test_signal",
+        stop_price=48500.0,
+    )
 
     # When
     result = orchestrator.run_tick()
