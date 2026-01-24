@@ -21,25 +21,27 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 from domain.state import State, Position
 from infrastructure.exchange.market_data_interface import MarketDataInterface
-from application.session_risk import (
-    check_daily_loss_cap,
-    check_weekly_loss_cap,
-    check_loss_streak_kill,
-    check_fee_anomaly,
-    check_slippage_anomaly,
-)
 from application.exit_manager import check_stop_hit, create_exit_intent
 from domain.intent import ExitIntent
 
 # Phase 11b: Entry Flow imports
-from application.entry_allowed import (
-    check_entry_allowed,
-    EntryDecision,
-    StageParams,
-    SignalContext,
-)
+from application.entry_allowed import check_entry_allowed, EntryDecision
 from application.signal_generator import generate_signal, calculate_grid_spacing, Signal
-from application.sizing import calculate_contracts, SizingResult, SizingParams
+from application.sizing import calculate_contracts, SizingResult
+
+# Phase 11b: Refactored modules (God Object mitigation)
+from application.emergency_checker import check_emergency_status
+from application.entry_coordinator import (
+    get_stage_params,
+    build_signal_context,
+    build_sizing_params,
+    generate_signal_id,
+)
+from application.event_processor import (
+    verify_state_consistency,
+    match_pending_order,
+    create_position_from_fill,
+)
 
 
 @dataclass
@@ -119,7 +121,10 @@ class Orchestrator:
         entry_block_reason = None
 
         # (0) Self-healing check (Position vs State 일관성, Phase 11b)
-        inconsistency_reason = self._verify_state_consistency()
+        inconsistency_reason = verify_state_consistency(
+            position=self.position,
+            state=self.state,
+        )
         if inconsistency_reason is not None:
             self.state = State.HALT
             halt_reason = inconsistency_reason
@@ -176,87 +181,18 @@ class Orchestrator:
         Returns:
             {"status": "PASS" or "HALT", "reason": str}
 
-        FLOW Section 7.1 + Phase 9c Session Risk Policy:
-            - balance_too_low (equity <= 0)
-            - degraded_timeout (60s)
-            - Session Risk Policy 4개:
-              - Daily Loss Cap (-5%)
-              - Weekly Loss Cap (-12.5%)
-              - Loss Streak Kill (3연패, 5연패)
-              - Fee/Slippage Anomaly (2회 연속, 3회/10분)
+        FLOW Section 7.1 + Phase 9c Session Risk Policy
+        Refactored: Delegates to emergency_checker.check_emergency_status()
         """
-        # balance_too_low 체크
-        equity_btc = self.market_data.get_equity_btc()
-        if equity_btc <= 0:
-            return {"status": "HALT", "reason": "balance_too_low"}
-
-        # degraded timeout 체크 (60초)
-        degraded_timeout = self.market_data.is_degraded_timeout()
-        if degraded_timeout:
-            return {"status": "HALT", "reason": "degraded_mode_timeout"}
-
-        # Session Risk Policy 체크 (Phase 9c)
-        btc_mark_price_usd = self.market_data.get_btc_mark_price_usd()
-        equity_usd = equity_btc * btc_mark_price_usd
-
-        # (1) Daily Loss Cap
-        daily_pnl = self.market_data.get_daily_realized_pnl_usd()
-        if daily_pnl is not None:
-            daily_status = check_daily_loss_cap(
-                equity_usd=equity_usd,
-                daily_realized_pnl_usd=daily_pnl,
-                daily_loss_cap_pct=self.daily_loss_cap_pct,
-                current_timestamp=self.current_timestamp,
-            )
-            if daily_status.is_halted:
-                return {"status": "HALT", "reason": daily_status.halt_reason}
-
-        # (2) Weekly Loss Cap
-        weekly_pnl = self.market_data.get_weekly_realized_pnl_usd()
-        if weekly_pnl is not None:
-            weekly_status = check_weekly_loss_cap(
-                equity_usd=equity_usd,
-                weekly_realized_pnl_usd=weekly_pnl,
-                weekly_loss_cap_pct=self.weekly_loss_cap_pct,
-                current_timestamp=self.current_timestamp,
-            )
-            if weekly_status.is_halted:
-                return {"status": "HALT", "reason": weekly_status.halt_reason}
-
-        # (3) Loss Streak Kill
-        loss_streak = self.market_data.get_loss_streak_count()
-        if loss_streak is not None:
-            streak_status = check_loss_streak_kill(
-                loss_streak_count=loss_streak,
-                current_timestamp=self.current_timestamp,
-            )
-            if streak_status.is_halted:
-                return {"status": "HALT", "reason": streak_status.halt_reason}
-
-        # (4) Fee Anomaly
-        fee_history = self.market_data.get_fee_ratio_history()
-        if fee_history is not None:
-            fee_status = check_fee_anomaly(
-                fee_ratio_history=fee_history,
-                fee_spike_threshold=self.fee_spike_threshold,
-                current_timestamp=self.current_timestamp,
-            )
-            if fee_status.is_halted:
-                return {"status": "HALT", "reason": fee_status.halt_reason}
-
-        # (5) Slippage Anomaly
-        slippage_history = self.market_data.get_slippage_history()
-        if slippage_history is not None and self.current_timestamp is not None:
-            slippage_status = check_slippage_anomaly(
-                slippage_history=slippage_history,
-                slippage_threshold_usd=self.slippage_threshold_usd,
-                window_seconds=self.slippage_window_seconds,
-                current_timestamp=self.current_timestamp,
-            )
-            if slippage_status.is_halted:
-                return {"status": "HALT", "reason": slippage_status.halt_reason}
-
-        return {"status": "PASS", "reason": None}
+        return check_emergency_status(
+            market_data=self.market_data,
+            daily_loss_cap_pct=self.daily_loss_cap_pct,
+            weekly_loss_cap_pct=self.weekly_loss_cap_pct,
+            fee_spike_threshold=self.fee_spike_threshold,
+            slippage_threshold_usd=self.slippage_threshold_usd,
+            slippage_window_seconds=self.slippage_window_seconds,
+            current_timestamp=self.current_timestamp,
+        )
 
     def _process_events(self) -> None:
         """
@@ -274,16 +210,16 @@ class Orchestrator:
         - Exception handling (롤백)
         """
         # WS에서 FILL event 가져오기 (Mock 구현)
-        fill_events = self._get_fill_events()
+        fill_events = self.market_data.get_fill_events()
 
         for event in fill_events:
             try:
                 # Step 1: Pending order 매칭 (orderId 또는 orderLinkId)
-                if not self._match_pending_order(event):
+                if not match_pending_order(event=event, pending_order=self.pending_order):
                     continue  # 매칭 실패 → 다음 event
 
                 # Step 2: Position 생성
-                position = self._create_position_from_fill(event)
+                position = create_position_from_fill(event=event, pending_order=self.pending_order)
 
                 # Step 3: State 전환 (atomic with Position)
                 if self.state == State.ENTRY_PENDING:
@@ -304,126 +240,6 @@ class Orchestrator:
                 # 로그 기록 후 다음 event 처리
                 # (실제로는 로그 시스템에 기록해야 하지만, 최소 구현은 pass)
                 pass
-
-    # ========== Phase 11b: Helper Methods (Event Processing) ==========
-
-    def _verify_state_consistency(self) -> Optional[str]:
-        """
-        Position vs State 일관성 검증 (Self-healing check)
-
-        Returns:
-            Optional[str]: 일관성 위반 시 이유 문자열, 정상 시 None
-
-        Phase 11b: Risk mitigation (Section 9 리스크 분석)
-
-        일관성 규칙:
-        - Position != None → State는 IN_POSITION 또는 EXIT_PENDING이어야 함
-        - Position = None → State는 FLAT, ENTRY_PENDING, COOLDOWN, HALT 중 하나여야 함
-
-        위반 조합 (HALT 트리거):
-        1. Position != None and State in [FLAT, ENTRY_PENDING] → "position_state_inconsistent"
-        2. Position = None and State = IN_POSITION → "position_state_inconsistent"
-        """
-        # Case 1: Position이 있는데 State가 FLAT 또는 ENTRY_PENDING
-        if self.position is not None:
-            if self.state in [State.FLAT, State.ENTRY_PENDING]:
-                return "position_state_inconsistent"
-
-        # Case 2: Position이 없는데 State가 IN_POSITION
-        if self.position is None:
-            if self.state == State.IN_POSITION:
-                return "position_state_inconsistent"
-
-        # 일관성 정상
-        return None
-
-    def _get_fill_events(self) -> List[Dict[str, Any]]:
-        """
-        WS에서 FILL event 가져오기
-
-        Returns:
-            List[Dict]: FILL event 목록 (Bybit API format)
-
-        Phase 11b: Event Processing
-        """
-        return self.market_data.get_fill_events()
-
-    def _match_pending_order(self, event: dict) -> bool:
-        """
-        FILL event를 Pending order와 매칭
-
-        Args:
-            event: FILL event (Bybit API format)
-                - orderId: Bybit 서버 생성 ID
-                - orderLinkId: 클라이언트 ID (optional)
-
-        Returns:
-            bool: 매칭 성공 시 True
-
-        매칭 조건 (Dual ID tracking):
-        1. event["orderId"] == pending_order["order_id"] (우선)
-        2. event.get("orderLinkId") == pending_order["order_link_id"] (fallback)
-
-        리스크 완화: Dual ID tracking으로 매칭 실패 방지
-        """
-        if self.pending_order is None:
-            return False
-
-        # orderId 매칭 (우선)
-        if event.get("orderId") == self.pending_order["order_id"]:
-            return True
-
-        # orderLinkId 매칭 (fallback)
-        if event.get("orderLinkId") == self.pending_order["order_link_id"]:
-            return True
-
-        return False
-
-    def _create_position_from_fill(self, event: dict) -> Position:
-        """
-        FILL event → Position 생성
-
-        Args:
-            event: FILL event (Bybit API format)
-                - execQty: 체결 수량 (string)
-                - execPrice: 체결 가격 (string)
-                - side: "Buy" or "Sell"
-
-        Returns:
-            Position: entry_price, qty, direction, stop_price, signal_id
-
-        Stop price 계산:
-        - LONG: entry_price * (1 - stop_distance_pct)
-        - SHORT: entry_price * (1 + stop_distance_pct)
-        - stop_distance_pct = 3% (Policy Section 9)
-        """
-        from domain.state import Position, Direction
-
-        # Event에서 데이터 추출
-        qty = int(event["execQty"])
-        entry_price = float(event["execPrice"])
-        side = event["side"]
-
-        # Signal ID (pending_order에서 가져옴)
-        signal_id = self.pending_order["signal_id"] if self.pending_order else "unknown"
-
-        # Direction 계산
-        direction = Direction.LONG if side == "Buy" else Direction.SHORT
-
-        # Stop price 계산 (3% stop distance)
-        stop_distance_pct = 0.03
-        if direction == Direction.LONG:
-            stop_price = entry_price * (1 - stop_distance_pct)
-        else:  # SHORT
-            stop_price = entry_price * (1 + stop_distance_pct)
-
-        return Position(
-            qty=qty,
-            entry_price=entry_price,
-            direction=direction,
-            signal_id=signal_id,
-            stop_price=stop_price,
-        )
 
     def _manage_position(self) -> Optional[ExitIntent]:
         """
@@ -511,12 +327,12 @@ class Orchestrator:
             return {"blocked": True, "reason": "no_signal"}
 
         # Step 4: Entry gates 검증
-        stage = self._get_stage_params()
+        stage = get_stage_params()
         trades_today = self.market_data.get_trades_today()
         atr_pct_24h = self.market_data.get_atr_pct_24h()
 
         # Sizing 먼저 계산 (EV gate용 qty 필요)
-        sizing_params = self._build_sizing_params(signal)
+        sizing_params = build_sizing_params(signal=signal, market_data=self.market_data)
         sizing_result: SizingResult = calculate_contracts(params=sizing_params)
 
         if sizing_result.contracts == 0:
@@ -526,7 +342,7 @@ class Orchestrator:
         signal.qty = sizing_result.contracts
 
         # Signal context 생성 (EV gate용)
-        signal_context = self._build_signal_context(signal)
+        signal_context = build_signal_context(signal=signal, grid_spacing=self.grid_spacing)
 
         winrate = self.market_data.get_winrate()
         position_mode = self.market_data.get_position_mode()
@@ -560,7 +376,7 @@ class Orchestrator:
 
         try:
             # Signal ID 생성
-            self.current_signal_id = self._generate_signal_id()
+            self.current_signal_id = generate_signal_id()
 
             # Entry order 발주 (Limit order, Maker)
             order_result = self.rest_client.place_order(
@@ -595,112 +411,3 @@ class Orchestrator:
         }
 
         return {"blocked": False, "reason": None}
-
-    # ========== Phase 11b: Helper Methods (Entry Flow) ==========
-
-    def _get_stage_params(self) -> StageParams:
-        """
-        Stage 파라미터 반환 (Policy Section 5)
-
-        Returns:
-            StageParams: Stage 파라미터 객체
-
-        현재는 Stage 1 고정 (추후 동적 변경)
-        """
-        return StageParams(
-            max_trades_per_day=10,
-            atr_pct_24h_min=0.02,  # 2%
-            ev_fee_multiple_k=2.0,
-            maker_only_default=True,
-        )
-
-    def _build_signal_context(self, signal: Signal) -> SignalContext:
-        """
-        Signal context 생성 (EV gate용)
-
-        Args:
-            signal: Signal 객체 (signal_generator.Signal)
-
-        Returns:
-            SignalContext: Signal context 객체
-
-        Grid spacing 기반 예상 수익 계산:
-        - Expected profit: grid_spacing / entry_price (BTC) * entry_price (USD) = grid_spacing (USD)
-        - Fee: qty / entry_price (BTC) * fee_rate * entry_price (USD) ≈ qty * fee_rate (USD approx)
-        """
-        # Fee 추정 (Maker: 0.01%, Taker: 0.06%)
-        fee_rate = 0.0001 if signal.qty > 0 else 0.0001  # Maker-only 전략
-        estimated_fee_usd = (signal.qty / signal.price) * fee_rate * signal.price
-
-        # Expected profit (Grid spacing)
-        expected_profit_usd = self.grid_spacing
-
-        return SignalContext(
-            expected_profit_usd=expected_profit_usd,
-            estimated_fee_usd=estimated_fee_usd,
-            is_maker=True,  # Maker-only 전략
-        )
-
-    def _build_sizing_params(self, signal: Signal) -> SizingParams:
-        """
-        Sizing 파라미터 생성
-
-        Args:
-            signal: Signal 객체 (signal_generator.Signal)
-
-        Returns:
-            SizingParams: Sizing 파라미터 객체
-
-        Policy:
-        - Max loss budget: 1% equity per trade
-        - Stop distance: 3%
-        - Leverage: 3x (Stage 1)
-        - Fee rate: 0.01% (Maker)
-        """
-        # Equity BTC
-        equity_btc = self.market_data.get_equity_btc()
-
-        # Max loss BTC (loss budget = 1% equity per trade)
-        max_loss_btc = equity_btc * 0.01
-
-        # Direction (Buy → LONG, Sell → SHORT)
-        direction = "LONG" if signal.side == "Buy" else "SHORT"
-
-        # Stop distance pct (3%)
-        stop_distance_pct = 0.03
-
-        # Leverage (Stage 1 = 3x)
-        leverage = 3.0
-
-        # Fee rate (Maker: 0.01%)
-        fee_rate = 0.0001
-
-        # Tick/Lot size (Bybit BTCUSD)
-        tick_size = 0.5
-        qty_step = 1
-
-        return SizingParams(
-            max_loss_btc=max_loss_btc,
-            entry_price_usd=signal.price,
-            stop_distance_pct=stop_distance_pct,
-            leverage=leverage,
-            equity_btc=equity_btc,
-            fee_rate=fee_rate,
-            direction=direction,
-            qty_step=qty_step,
-            tick_size=tick_size,
-        )
-
-    def _generate_signal_id(self) -> str:
-        """
-        Signal ID 생성 (타임스탬프 기반)
-
-        Returns:
-            str: Signal ID (예: "1737700000")
-
-        Grid trading에서 각 신호를 추적하기 위한 고유 ID
-        """
-        import time
-
-        timestamp = int(time.time())
-        return f"{timestamp}"
