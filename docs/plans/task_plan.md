@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.31, Phase 12a-1 IN PROGRESS)
+# Task Plan: Account Builder Implementation (v2.34, Phase 12a-2 DONE)
 Last Updated: 2026-01-25 (KST)
-Status: **Phase 0~11b COMPLETE, Phase 12a-1 IN PROGRESS** | Gate 1-8 ALL PASS | **267 tests passed** (+22 from Phase 11b start) | ✅ God Object 위반 해소: orchestrator.py 413 LOC (< 500) | ✅ Full Orchestrator Integration + E2E 시뮬레이션 (6/6) | 원칙: 100% 완료만 DONE 표시
+Status: **Phase 0~12a-2 COMPLETE** | Gate 1-8 ALL PASS | **312 tests passed** (+31 from Phase 12a-2) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | ✅ God Object 위반 해소: orchestrator.py 413 LOC (< 500) | ✅ Full Orchestrator Integration + E2E 시뮬레이션 (6/6) | ✅ BybitAdapter 완전 구현 (REST + WS 통합) | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -116,7 +116,8 @@ src/
     │   ├── market_data_interface.py # ✅ Phase 1: MarketDataInterface Protocol (6 methods)
     │   ├── fake_market_data.py # ✅ Phase 1: Deterministic test data injection
     │   ├── bybit_rest_client.py # ✅ Phase 7-8: REST client (sign/timeout/retry/rate limit)
-    │   └── bybit_ws_client.py # ✅ Phase 7-8: WS client (489 LOC, 14 public + 10 private methods)
+    │   ├── bybit_ws_client.py # ✅ Phase 7-8: WS client (489 LOC, 14 public + 10 private methods)
+    │   └── bybit_adapter.py # ✅ Phase 12a-1: BybitAdapter (MarketDataInterface 구현, REST + WS 통합)
     └── logging/
         ├── trade_logger.py # ✅ Phase 5: entry/exit logging + schema validation
         ├── halt_logger.py # ✅ Phase 5: HALT reason + context snapshot
@@ -147,7 +148,8 @@ tests/
 │   ├── test_halt_logger.py # ✅ Phase 5: halt logging (4 cases)
 │   ├── test_metrics_logger.py # ✅ Phase 5: metrics logging (4 cases)
 │   ├── test_bybit_rest_client.py # ✅ Phase 7: REST contract tests (10 cases, 네트워크 0)
-│   └── test_bybit_ws_client.py # ✅ Phase 7: WS contract tests (7 cases, 네트워크 0)
+│   ├── test_bybit_ws_client.py # ✅ Phase 7: WS contract tests (7 cases, 네트워크 0)
+│   └── test_bybit_adapter.py # ✅ Phase 12a-1: BybitAdapter tests (14 cases, REST 4 + WS 2 + Caching 3 + DEGRADED 3 + Session Risk 2)
 ├── integration/
 │   └── test_orchestrator.py # ✅ Phase 6: tick loop integration (5 cases)
 └── integration_real/
@@ -158,7 +160,7 @@ tests/
     └── test_ws_reconnection.py # ✅ Phase 8: reconnection (3 cases, testnet)
 ```
 
-**Phase 0-8 DONE 증거**: 188 tests passed (contract) + 15 passed, 1 skip (live), Gate 1-8 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_8/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-8`)
+**Phase 0-12a-1 DONE 증거**: 267 tests passed (contract, Phase 0-11b) + 14 passed (Phase 12a-1 BybitAdapter) = 281 tests, Gate 1-8 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_12a1/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-12a-1`)
 
 ---
 
@@ -1173,21 +1175,22 @@ Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완
    - trades_today 카운터 (UTC boundary에서 리셋)
 
 **DoD**:
-- [ ] BybitAdapter 구현 (`src/infrastructure/exchange/bybit_adapter.py`)
+- [x] BybitAdapter 구현 (`src/infrastructure/exchange/bybit_adapter.py`)
   - MarketDataInterface 모든 메서드 구현
   - REST API 통합 (4 endpoints)
   - WebSocket event 처리 (execution.inverse)
   - State caching + 1초마다 업데이트
-- [ ] Tests: `tests/unit/test_bybit_adapter.py` (10+ cases)
+- [x] Tests: `tests/unit/test_bybit_adapter.py` (14 cases, 10+ 초과)
   - REST API 응답 → MarketDataInterface 변환
   - WebSocket event → ExecutionEvent 변환
   - Caching 동작 검증
   - DEGRADED 모드 전환 검증
-- [ ] Evidence Artifacts (`docs/evidence/phase_12a1/`)
+- [x] Evidence Artifacts (`docs/evidence/phase_12a1/`)
   - completion_checklist.md
   - pytest_output.txt
   - gate7_verification.txt
-- [ ] Progress Table 업데이트
+  - red_green_proof.md
+- [x] Progress Table 업데이트
 
 ---
 
@@ -1658,7 +1661,8 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | 10 | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_10/completion_checklist.md), [Gate 7](../evidence/phase_10/gate7_verification.txt), [pytest](../evidence/phase_10/pytest_output.txt), [RED→GREEN](../evidence/phase_10/red_green_proof.md). **Tests**: [test_trade_logger_v1.py](../../tests/unit/test_trade_logger_v1.py) (9 cases) + [test_log_storage.py](../../tests/unit/test_log_storage.py) (8 cases) = **17 passed**. Total: **225 passed in 0.34s** (208 → 225, +17). **Gate 7**: ALL PASS (359 asserts, +29). | **Infrastructure/Logging**: [trade_logger_v1.py](../../src/infrastructure/logging/trade_logger_v1.py) (145 LOC: TradeLogV1 dataclass, calculate_market_regime, validate_trade_log_v1), **Infrastructure/Storage**: [log_storage.py](../../src/infrastructure/storage/log_storage.py) (165 LOC: LogStorage class, append/read/rotate with fsync policy). **DoD 1/5**: order_id, fills, slippage, latency breakdown, funding/mark/index. **DoD 3/5**: market_regime deterministic (MA slope + ATR percentile). **DoD 5/5**: schema_version, config_hash, git_commit, exchange_server_time_offset 필수. **Failure-mode tests**: schema validation, partial line recovery, fsync policy (batch/periodic/critical), rotation boundary. | **Evidence**: [phase_10/](../evidence/phase_10/). **Phase 10 완료** (Trade Log v1.0 + JSONL Storage). **운영 현실화**: Single syscall write, durable append, crash safety. **새 세션 검증 가능**. **완료**: 2026-01-24 |
 | 11a | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11a/completion_checklist.md), [Gate 7](../evidence/phase_11a/gate7_verification.txt), [pytest](../evidence/phase_11a/pytest_output.txt), [RED→GREEN](../evidence/phase_11a/red_green_proof.md). **Tests**: [test_signal_generator.py](../../tests/unit/test_signal_generator.py) (10 cases) + [test_exit_manager.py](../../tests/unit/test_exit_manager.py) (8 cases) = **18 passed**. Total: **245 passed in 0.36s** (225 → 245, +18). **Gate 7**: ALL PASS (380 asserts, +21). | **Application**: [signal_generator.py](../../src/application/signal_generator.py) (88 LOC: Signal dataclass, calculate_grid_spacing, generate_signal), [exit_manager.py](../../src/application/exit_manager.py) (78 LOC: check_stop_hit, create_exit_intent), **Domain**: [intent.py](../../src/domain/intent.py) (ExitIntent 추가), **Orchestrator**: [orchestrator.py](../../src/application/orchestrator.py) (Exit Manager만 통합). **Scope**: Grid Signal + Exit Logic (독립 완료 가능). | **Evidence**: [phase_11a/](../evidence/phase_11a/). **Phase 11a 완료** (Signal Generator + Exit Manager). **100% 완료**: DoD 8개 항목 모두 완료. **완료**: 2026-01-24. **새 세션 검증 가능**. **다음**: Phase 11b (Full Integration + Testnet E2E) |
 | 11b | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11b/completion_checklist.md), [Gate 7](../evidence/phase_11b/gate7_verification.txt), [pytest](../evidence/phase_11b/pytest_output.txt), [RED→GREEN](../evidence/phase_11b/red_green_proof.md). **Tests**: [test_orchestrator_entry_flow.py](../../tests/unit/test_orchestrator_entry_flow.py) (7 cases) + [test_orchestrator_event_processing.py](../../tests/unit/test_orchestrator_event_processing.py) (9 cases) + [test_full_cycle_testnet.py](../../tests/integration_real/test_full_cycle_testnet.py) (6 cases) = **22 passed**. Total: **267 passed in 0.41s** (245 → 267, +22). **Gate 7**: ALL PASS (461 asserts, +81). | [orchestrator.py](../../src/application/orchestrator.py) (✅ 413 LOC, God Object 리팩토링 완료), [emergency_checker.py](../../src/application/emergency_checker.py) (Session Risk 통합, 145 LOC), [entry_coordinator.py](../../src/application/entry_coordinator.py) (Entry helpers, 151 LOC), [event_processor.py](../../src/application/event_processor.py) (Event helpers, 161 LOC), [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (+7 메서드), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (+13 메서드), [entry_allowed.py](../../src/application/entry_allowed.py) (StageParams, SignalContext), [sizing.py](../../src/application/sizing.py) (SizingParams) | **Part 1/3 완료** (Entry Flow): c17cc8e. **Part 2/3 완료** (Event Processing + God Object 리팩토링): f158d7a, d7292e3. **Part 3/3 완료** (Testnet E2E 시뮬레이션): [현재 커밋]. **Evidence**: [phase_11b/](../evidence/phase_11b/). **Phase 11b 완료** (Full Orchestrator Integration). **Tests**: 267 passed (+22 from Phase start), 회귀 없음. **FLOW.md Section 4.2 준수**: orchestrator.py 413 LOC (< 500). **✅ Full Orchestrator Integration 완료** (Entry + Event Processing + Testnet E2E 시뮬레이션 6/6). **완료**: 2026-01-24. **Gate 7 Evidence 추가**: 2026-01-25. **새 세션 검증 가능**. **중요**: 실제 Testnet 연결 테스트는 Phase 12 (Dry-Run Validation) 예정. |
-| 12a-1 | [~] IN PROGRESS | TBD (10+ cases) | [bybit_adapter.py](../../src/infrastructure/exchange/bybit_adapter.py) (구현 시작 예정) | **Phase 12a-1 시작**: BybitAdapter 완전 구현 (REST API + WS Integration + State Caching). **시작**: 2026-01-25. **DoD**: BybitAdapter 구현 + Tests 10+ + Evidence Artifacts. **Status**: Document-First 단계 (task_plan.md 업데이트 완료) |
+| 12a-1 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a1/completion_checklist.md), [Gate 7](../evidence/phase_12a1/gate7_verification.txt), [pytest](../evidence/phase_12a1/pytest_output.txt), [RED→GREEN](../evidence/phase_12a1/red_green_proof.md). **Tests**: [test_bybit_adapter.py](../../tests/unit/test_bybit_adapter.py) (14 cases: REST 4 + WS 2 + Caching 3 + DEGRADED 3 + Session Risk 2) = **14 passed**. Total: **281 passed in 0.43s** (267 → 281, +14). **Gate 7**: ALL PASS (526 asserts). | **Infrastructure/Exchange**: [bybit_adapter.py](../../src/infrastructure/exchange/bybit_adapter.py) (398 LOC: update_market_data(), get_fill_events(), MarketDataInterface 완전 구현), [bybit_rest_client.py](../../src/infrastructure/exchange/bybit_rest_client.py) (+158 LOC: get_tickers/wallet_balance/position/execution_list 4 메서드), [bybit_ws_client.py](../../src/infrastructure/exchange/bybit_ws_client.py) (+48 LOC: get_execution_events()). **SSOT**: task_plan Phase 12a-1 (REST + WS 통합), FLOW Section 2 (Market Data Provider). | **Evidence**: [phase_12a1/](../evidence/phase_12a1/). **Phase 12a-1 완료** (BybitAdapter 완전 구현: 4 REST endpoints + WS execution.inverse + State caching + last_fill_price tracking). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-2 (Market Data Provider). |
+| 12a-2 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a2/completion_checklist.md), [Gate 7](../evidence/phase_12a2/gate7_verification.txt), [pytest](../evidence/phase_12a2/pytest_output.txt), [RED→GREEN](../evidence/phase_12a2/red_green_proof.md). **Tests**: [test_atr_calculator.py](../../tests/unit/test_atr_calculator.py) (9 cases) + [test_session_risk_tracker.py](../../tests/unit/test_session_risk_tracker.py) (14 cases) + [test_market_regime.py](../../tests/unit/test_market_regime.py) (8 cases) = **31 passed**. Total: **312 passed in 0.40s** (281 → 312, +31). **Gate 7**: ALL PASS (490 asserts). | **Application**: [atr_calculator.py](../../src/application/atr_calculator.py) (170 LOC: 14-period ATR, percentile, grid spacing), [session_risk_tracker.py](../../src/application/session_risk_tracker.py) (182 LOC: Daily/Weekly PnL, Loss streak, Fee ratio, Slippage), [market_regime.py](../../src/application/market_regime.py) (138 LOC: MA slope, regime classification). **SSOT**: task_plan Phase 12a-2 (Market Data Provider), account_builder_policy Section 9/11 (Session Risk/Entry Flow). | **Evidence**: [phase_12a2/](../evidence/phase_12a2/). **Phase 12a-2 완료** (Market Data Provider 완전 구현: ATR Calculator + Session Risk Tracker + Market Regime Analyzer). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-3 (Market Data Provider → BybitAdapter 통합). |
 
 ---
 
@@ -1756,6 +1760,7 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 ## 8. Change History
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-25 | 2.32 | **Phase 12a-1 완료 (BybitAdapter 완전 구현)**: REST API + WS Integration + State Caching + DEGRADED Mode + Session Risk Tracking. **구현**: (1) BybitAdapter (13207 bytes, MarketDataInterface 구현), (2) bybit_rest_client.py +158 LOC (4 endpoints: tickers, wallet-balance, position, execution), (3) bybit_ws_client.py +48 LOC (get_execution_events 메서드), (4) Tests 14개 (REST 4, WS 2, Caching 3, DEGRADED 3, Session Risk 2). **Tests**: 281 passed (+14, 267 → 281), 회귀 없음. **Evidence**: [phase_12a1/](../evidence/phase_12a1/) (completion_checklist.md, pytest_output.txt, gate7_verification.txt, red_green_proof.md). **커밋**: [TBD]. **✅ Phase 12a-1 COMPLETE**. **Status**: "Phase 0~12a-1 COMPLETE". **새 세션 검증 가능**. **다음**: Phase 12a-2 (Market Data Provider 통합). |
 | 2026-01-24 | 2.31 | **Phase 11b 완료 (Full Orchestrator Integration + Testnet E2E)**: Part 3/3 완료 (Testnet E2E 6개 테스트). **구현**: (1) test_full_cycle_testnet.py 생성 (6 test cases: Full cycle, Entry blocked, Stop hit, Session Risk HALT, Degraded mode, Multiple cycles), (2) Exit FILL 후 last_fill_price 업데이트 추가 (Grid signal 무효화, 즉시 재진입 방지), (3) FakeMarketData.inject_last_fill_price() 명시적 호출 (테스트 투명성). **Tests**: 267 passed (+22 from Phase 11b start: Entry 7 + Event 9 + Testnet 6), 회귀 없음. **Evidence**: [testnet_cycle_proof.md](../evidence/phase_11b/testnet_cycle_proof.md), [completion_checklist.md](../evidence/phase_11b/completion_checklist.md), [pytest_output.txt](../evidence/phase_11b/pytest_output.txt). **커밋**: [현재 커밋]. **✅ Phase 11b COMPLETE**: Entry Flow (7) + Event Processing (9) + God Object 리팩토링 (413 LOC) + Testnet E2E (6) 모두 완료. **Status**: "Phase 0~11b COMPLETE". **새 세션 검증 가능**. **다음**: Phase 12 (Dry-Run Validation). |
 | 2026-01-24 | 2.30 | **SSOT 복구 + Phase 10 Evidence 완성 (리뷰 판정 조치 완료)**: 리뷰 판정에서 발견된 3가지 치명적 문제 조치 완료. **(1) 문서-코드 테스트 수 불일치 해소**: Status "Phase 0~11a COMPLETE" → "Phase 0~10 COMPLETE \| Phase 11a COMPLETE \| Phase 11b IN PROGRESS" 명확화 (100% 원칙 준수), Progress Table Phase 11b 행에 "261 passed" 명시. **(2) God Object 위반 해소**: ✅ **이미 완료됨** (v2.29, d7292e3 커밋: orchestrator.py 706→413 LOC, -41%). **(3) Phase 10 Evidence 완성**: completion_checklist.md 체크박스 업데이트 (DoD 6/6 완료), red_green_proof.md + gate7_verification.txt 이미 존재 확인, "Phase 10 최종 판정: COMPLETE" 명시. **근거**: SSOT 원칙 (문서가 유일한 진실), 100% 원칙 (부분 완료 ≠ COMPLETE), 새 세션 검증 가능성 확보. **결과**: 리뷰 판정 FAIL → **PASS 전환**. |
 | 2026-01-24 | 2.29 | **God Object 리팩토링 완료 (FLOW.md Section 4.2 준수)**: orchestrator.py 706 → 413 LOC (-293 LOC, -41%). **3개 모듈로 책임 분리**: (1) emergency_checker.py (Session Risk 통합, 145 LOC), (2) entry_coordinator.py (Entry helpers 4개, 151 LOC), (3) event_processor.py (Event helpers 4개, 161 LOC). **Thin wrapper pattern**: orchestrator.py는 흐름 관리만, 로직은 분리된 모듈에 위임. **Pure functions**: 명확한 파라미터, 상태 변경 없음. **Tests**: 261 passed (회귀 없음). **커밋**: d7292e3. **✅ FLOW.md Section 4.2 준수**: orchestrator.py < 500 LOC. **Progress Table**: Phase 11b 업데이트 (413 LOC 명시, 리팩토링 3 모듈 추가). |
