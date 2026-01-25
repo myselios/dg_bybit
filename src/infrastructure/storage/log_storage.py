@@ -133,6 +133,9 @@ class LogStorage:
         else:
             # 현재 파일 읽기
             file_path = self.current_file_path
+            # 파일이 아직 생성되지 않았으면 빈 리스트 반환
+            if file_path is None:
+                return []
 
         if not file_path.exists():
             return []

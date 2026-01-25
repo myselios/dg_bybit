@@ -92,19 +92,42 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> Siz
         SizingParams: Sizing 파라미터 객체
 
     Policy (Linear USDT):
-    - Max loss budget: 1% equity per trade
+    - Max loss budget: Stage별 (max_loss_usd_cap, loss_pct_cap 중 작은 값)
     - Stop distance: 3%
-    - Leverage: 3x (Stage 1)
+    - Leverage: Stage별 (Stage 1: 3x, Stage 2: 3x, Stage 3: 2x)
     - Fee rate: 0.01% (Maker)
     - Tick size: 0.5 (Bybit BTCUSDT)
     - Lot size: 1 contract (Bybit Linear BTCUSDT)
     - Contract size: 0.001 BTC per contract
+
+    Codex Review Fix #3:
+    - Stage 1 (< $300): max_loss_usd_cap=$3, loss_pct_cap=3%
+    - Stage 2 ($300~$700): max_loss_usd_cap=$20, loss_pct_cap=8%
+    - Stage 3 (>= $700): max_loss_usd_cap=$30, loss_pct_cap=6%
     """
     # Equity USDT (Linear USDT-Margined)
     equity_usdt = market_data.get_equity_usdt()
 
-    # Max loss USDT (loss budget = 1% equity per trade)
-    max_loss_usdt = equity_usdt * 0.01
+    # Stage 판별 (Policy Section 4)
+    if equity_usdt < 300:
+        # Stage 1: Expansion ($100 → $300)
+        max_loss_usd_cap = 3.0
+        loss_pct_cap = 0.03  # 3%
+        leverage = 3.0
+    elif equity_usdt < 700:
+        # Stage 2: Acceleration ($300 → $700)
+        max_loss_usd_cap = 20.0
+        loss_pct_cap = 0.08  # 8%
+        leverage = 3.0
+    else:
+        # Stage 3: Preservation ($700 → $1,000)
+        max_loss_usd_cap = 30.0
+        loss_pct_cap = 0.06  # 6%
+        leverage = 2.0
+
+    # Max loss USDT: min(usd_cap, equity * pct_cap)
+    # Codex Review Fix #3: 고정 cap과 % cap 중 작은 값 사용
+    max_loss_usdt = min(max_loss_usd_cap, equity_usdt * loss_pct_cap)
 
     # Direction (Buy → LONG, Sell → SHORT)
     direction = "LONG" if signal.side == "Buy" else "SHORT"
@@ -112,8 +135,7 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> Siz
     # Stop distance pct (3%)
     stop_distance_pct = 0.03
 
-    # Leverage (Stage 1 = 3x)
-    leverage = 3.0
+    # Leverage는 위에서 Stage별로 설정됨 (Stage 1/2: 3x, Stage 3: 2x)
 
     # Fee rate (Maker: 0.01%)
     fee_rate = 0.0001

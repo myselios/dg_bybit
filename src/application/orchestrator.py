@@ -19,7 +19,7 @@ Exports:
 
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
-from domain.state import State, Position, Direction
+from domain.state import State, Position, Direction, StopStatus
 from infrastructure.exchange.market_data_interface import MarketDataInterface
 from application.exit_manager import check_stop_hit, create_exit_intent
 from domain.intent import ExitIntent
@@ -46,6 +46,12 @@ from application.event_processor import (
 # Phase 11b: Trade Log Integration
 from infrastructure.logging.trade_logger_v1 import TradeLogV1, calculate_market_regime, validate_trade_log_v1
 from infrastructure.storage.log_storage import LogStorage
+
+# Stop Manager Integration (Codex Review Fix #1)
+from application.stop_manager import should_update_stop, determine_stop_action
+
+# KillSwitch Integration (Codex Review Fix #2)
+from infrastructure.safety.killswitch import KillSwitch
 
 
 @dataclass
@@ -79,6 +85,7 @@ class Orchestrator:
         rest_client=None,  # Phase 11b: Order placement용 (Optional, type: BybitRestClient)
         log_storage: Optional[LogStorage] = None,  # Phase 11b: Trade Log 저장용 (Optional)
         force_entry: bool = False,  # Phase 12a-4: Force Entry 모드 (테스트용)
+        killswitch: Optional[KillSwitch] = None,  # Codex Review Fix #2: Manual halt mechanism
     ):
         """
         Orchestrator 초기화
@@ -88,11 +95,13 @@ class Orchestrator:
             rest_client: Bybit REST client (Order placement용, Phase 11b)
             log_storage: LogStorage (Trade Log 저장용, Phase 11b)
             force_entry: Force Entry 모드 (테스트용, Grid spacing 무시)
+            killswitch: KillSwitch (Manual halt mechanism, Codex Review Fix #2)
         """
         self.market_data = market_data
         self.rest_client = rest_client
         self.log_storage = log_storage
         self.force_entry = force_entry
+        self.killswitch = killswitch if killswitch is not None else KillSwitch()
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
         position_data = market_data.get_position()
@@ -132,6 +141,10 @@ class Orchestrator:
         self.slippage_window_seconds = 600.0  # 10 minutes
         self.current_timestamp = None  # Slippage anomaly용
 
+        # Stop Manager 상태 (Codex Review Fix #1)
+        self.last_stop_update_at: float = 0.0  # 마지막 stop 갱신 시각
+        self.amend_fail_count: int = 0  # Amend 실패 횟수
+
     def run_tick(self) -> TickResult:
         """
         Tick 실행 (Emergency → Events → Position → Entry)
@@ -145,20 +158,41 @@ class Orchestrator:
             - Position management (stop 갱신)
             - Entry decision (signal → gate → sizing)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(">>> run_tick START")
+
         # Phase 9d: current_timestamp 초기화 (Slippage anomaly 체크용)
+        logger.info(">>> [1] get_timestamp...")
         self.current_timestamp = self.market_data.get_timestamp()
+        logger.info(f">>> [1] DONE: ts={self.current_timestamp}")
 
         execution_order = []
         halt_reason = None
         entry_blocked = False
         entry_block_reason = None
 
+        # (0a) KillSwitch check (최우선, Codex Review Fix #2)
+        logger.info(">>> [2] killswitch_check...")
+        if self.killswitch.is_halted():
+            logger.info(">>> [2] HALT: killswitch")
+            self.state = State.HALT
+            halt_reason = "manual_halt_killswitch"
+            return TickResult(
+                state=self.state,
+                execution_order=["killswitch_check"],
+                halt_reason=halt_reason,
+            )
+        logger.info(">>> [2] DONE: killswitch OK")
+
         # (0) Self-healing check (Position vs State 일관성, Phase 11b)
+        logger.info(">>> [3] self_healing_check...")
         inconsistency_reason = verify_state_consistency(
             position=self.position,
             state=self.state,
         )
         if inconsistency_reason is not None:
+            logger.info(f">>> [3] HALT: {inconsistency_reason}")
             self.state = State.HALT
             halt_reason = inconsistency_reason
             return TickResult(
@@ -166,11 +200,15 @@ class Orchestrator:
                 execution_order=["self_healing_check"],
                 halt_reason=halt_reason,
             )
+        logger.info(">>> [3] DONE: consistency OK")
 
         # (1) Emergency check (최우선)
+        logger.info(">>> [4] emergency_check...")
         execution_order.append("emergency")
         emergency_result = self._check_emergency()
+        logger.info(f">>> [4] DONE: {emergency_result['status']}")
         if emergency_result["status"] == "HALT":
+            logger.info(f">>> [4] HALT: {emergency_result['reason']}")
             self.state = State.HALT
             halt_reason = emergency_result["reason"]
             return TickResult(
@@ -180,20 +218,27 @@ class Orchestrator:
             )
 
         # (2) Events processing
+        logger.info(">>> [5] process_events...")
         execution_order.append("events")
         self._process_events()
+        logger.info(">>> [5] DONE")
 
         # (3) Position management + Exit decision
+        logger.info(">>> [6] manage_position...")
         execution_order.append("position")
         exit_intent = self._manage_position()
+        logger.info(">>> [6] DONE")
 
         # (4) Entry decision
+        logger.info(">>> [7] decide_entry...")
         execution_order.append("entry")
         entry_result = self._decide_entry()
+        logger.info(f">>> [7] DONE: blocked={entry_result['blocked']}")
         if entry_result["blocked"]:
             entry_blocked = True
             entry_block_reason = entry_result["reason"]
 
+        logger.info(">>> run_tick COMPLETE")
         return TickResult(
             state=self.state,
             execution_order=execution_order,
@@ -407,7 +452,102 @@ class Orchestrator:
 
             return intents.exit_intent
 
-        # Stop 갱신 로직은 stop_manager.py에 구현되어 있음 (미통합)
+        # Codex Review Fix #1: Stop Manager 통합
+        # FLOW Section 2.5: Stop 갱신 정책 (should_update_stop + determine_stop_action)
+        current_time = self.market_data.get_timestamp()
+
+        # Step 1: Stop 갱신 필요 여부 판단
+        if should_update_stop(
+            position_qty=self.position.qty,
+            stop_qty=self.position.qty if self.position.stop_order_id else 0,
+            last_stop_update_at=self.last_stop_update_at,
+            current_time=current_time,
+            entry_working=self.position.entry_working,
+        ):
+            # Step 2: Stop action 결정 (AMEND/CANCEL_AND_PLACE/PLACE)
+            action = determine_stop_action(
+                stop_status=self.position.stop_status,
+                amend_fail_count=self.amend_fail_count,
+            )
+
+            # Step 3: Stop 갱신 실행 (rest_client 필요)
+            if self.rest_client is not None:
+                try:
+                    # 새 stop price 계산 (Direction에 따라)
+                    # LONG: entry - (entry * 0.03), SHORT: entry + (entry * 0.03)
+                    stop_price_offset_pct = 0.03  # 3% (정책에서 가져와야 하지만 일단 고정)
+                    if self.position.direction == Direction.LONG:
+                        new_stop_price = self.position.entry_price * (1 - stop_price_offset_pct)
+                    else:
+                        new_stop_price = self.position.entry_price * (1 + stop_price_offset_pct)
+
+                    if action == "AMEND" and self.position.stop_order_id:
+                        # Amend 시도
+                        self.rest_client.amend_order(
+                            symbol="BTCUSD",
+                            order_id=self.position.stop_order_id,
+                            qty=self.position.qty,
+                            trigger_price=new_stop_price,
+                        )
+                        # Amend 성공 → 상태 업데이트
+                        self.position.stop_price = new_stop_price
+                        self.position.stop_status = StopStatus.ACTIVE
+                        self.amend_fail_count = 0
+                        self.last_stop_update_at = current_time
+
+                    elif action == "CANCEL_AND_PLACE" and self.position.stop_order_id:
+                        # Cancel 후 Place
+                        self.rest_client.cancel_order(
+                            symbol="BTCUSD",
+                            order_id=self.position.stop_order_id,
+                        )
+                        # 새 Stop 주문 발주
+                        stop_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
+                        stop_order = self.rest_client.place_order(
+                            symbol="BTCUSD",
+                            side=stop_side,
+                            qty=self.position.qty,
+                            order_type="Market",
+                            stop_loss=new_stop_price,
+                            reduce_only=True,
+                            position_idx=0,
+                        )
+                        # 상태 업데이트
+                        self.position.stop_order_id = stop_order["orderId"]
+                        self.position.stop_price = new_stop_price
+                        self.position.stop_status = StopStatus.ACTIVE
+                        self.amend_fail_count = 0
+                        self.last_stop_update_at = current_time
+
+                    elif action == "PLACE":
+                        # Stop 없음 → 새로 설치 (복구)
+                        stop_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
+                        stop_order = self.rest_client.place_order(
+                            symbol="BTCUSD",
+                            side=stop_side,
+                            qty=self.position.qty,
+                            order_type="Market",
+                            stop_loss=new_stop_price,
+                            reduce_only=True,
+                            position_idx=0,
+                        )
+                        # 상태 업데이트
+                        self.position.stop_order_id = stop_order["orderId"]
+                        self.position.stop_price = new_stop_price
+                        self.position.stop_status = StopStatus.ACTIVE
+                        self.position.stop_recovery_fail_count = 0
+                        self.last_stop_update_at = current_time
+
+                except Exception as e:
+                    # Stop 갱신 실패 → amend_fail_count 증가
+                    self.amend_fail_count += 1
+                    self.position.stop_recovery_fail_count += 1
+
+                    # 3회 실패 → ERROR 상태
+                    if self.position.stop_recovery_fail_count >= 3:
+                        self.position.stop_status = StopStatus.ERROR
+                        # ERROR 상태는 run_tick에서 HALT로 전환됨
+
         return None
 
     def _decide_entry(self) -> dict:
@@ -428,24 +568,35 @@ class Orchestrator:
 
         Phase 11b: Full Entry Flow 구현
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Step 1: FLAT 상태 확인
+        logger.info(f">>> decide_entry Step 1: state={self.state}")
         if self.state != State.FLAT:
+            logger.info(">>> BLOCKED: state_not_flat")
             return {"blocked": True, "reason": "state_not_flat"}
 
         # Step 2: degraded_mode 체크
+        logger.info(">>> decide_entry Step 2: degraded_mode check")
         ws_degraded = self.market_data.is_ws_degraded()
         if ws_degraded:
+            logger.info(">>> BLOCKED: degraded_mode")
             return {"blocked": True, "reason": "degraded_mode"}
 
         degraded_timeout = self.market_data.is_degraded_timeout()
         if degraded_timeout:
+            logger.info(">>> BLOCKED: degraded_mode_timeout")
             self.state = State.HALT
             return {"blocked": True, "reason": "degraded_mode_timeout"}
 
         # Step 3: Signal generation
+        logger.info(">>> decide_entry Step 3: signal generation")
         # ATR 가져오기 (Grid spacing 계산용)
         atr = self.market_data.get_atr()
+        logger.info(f">>> ATR: {atr}")
         if atr is None:
+            logger.info(">>> BLOCKED: atr_unavailable")
             return {"blocked": True, "reason": "atr_unavailable"}
 
         # Grid spacing 계산 (ATR * 2.0)
@@ -458,6 +609,7 @@ class Orchestrator:
         last_fill_price = self.market_data.get_last_fill_price()
 
         # Signal 생성 (Grid up/down)
+        logger.info(f">>> Generating signal: price={current_price}, last_fill={last_fill_price}, spacing={self.grid_spacing}, force_entry={self.force_entry}")
         signal: Optional[Signal] = generate_signal(
             current_price=current_price,
             last_fill_price=last_fill_price,
@@ -465,9 +617,11 @@ class Orchestrator:
             qty=0,  # Sizing에서 계산
             force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
         )
+        logger.info(f">>> Signal: {signal}")
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)
         if signal is None:
+            logger.info(">>> BLOCKED: no_signal")
             return {"blocked": True, "reason": "no_signal"}
 
         # Step 4: Entry gates 검증
@@ -476,10 +630,13 @@ class Orchestrator:
         atr_pct_24h = self.market_data.get_atr_pct_24h()
 
         # Sizing 먼저 계산 (EV gate용 qty 필요)
+        logger.info(">>> decide_entry Step 4: sizing")
         sizing_params = build_sizing_params(signal=signal, market_data=self.market_data)
         sizing_result: SizingResult = calculate_contracts(params=sizing_params)
+        logger.info(f">>> Sizing result: contracts={sizing_result.contracts}, reason={sizing_result.reject_reason}")
 
         if sizing_result.contracts == 0:
+            logger.info(f">>> BLOCKED: {sizing_result.reject_reason}")
             return {"blocked": True, "reason": sizing_result.reject_reason}
 
         # Signal에 qty 업데이트
@@ -494,6 +651,7 @@ class Orchestrator:
         current_time = self.market_data.get_timestamp()
 
         # Entry gates 검증
+        logger.info(">>> decide_entry Step 5: entry gates")
         entry_decision: EntryDecision = check_entry_allowed(
             state=self.state,
             stage=stage,
@@ -505,9 +663,11 @@ class Orchestrator:
             cooldown_until=cooldown_until,
             current_time=current_time,
         )
+        logger.info(f">>> Entry decision: allowed={entry_decision.allowed}, reason={entry_decision.reject_reason}")
 
         # Gate 거절 시 차단
         if not entry_decision.allowed:
+            logger.info(f">>> BLOCKED: {entry_decision.reject_reason}")
             return {"blocked": True, "reason": entry_decision.reject_reason}
 
         # Step 5: Position sizing (이미 Step 4에서 계산 완료)

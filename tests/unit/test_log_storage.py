@@ -20,15 +20,27 @@ Failure-mode tests:
 import pytest
 import os
 import json
-import tempfile
+import shutil
 from pathlib import Path
 
 
 @pytest.fixture
 def temp_log_dir():
-    """임시 로그 디렉토리 생성"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+    """
+    임시 로그 디렉토리 생성 (Codex Review Fix #4)
+
+    tempfile.TemporaryDirectory 대신 로컬 디렉터리 사용
+    (환경 제약으로 temp 디렉터리 접근 불가)
+    """
+    # 로컬 temp 디렉터리 사용
+    tmpdir = Path("./logs/test_temp")
+    tmpdir.mkdir(parents=True, exist_ok=True)
+
+    yield tmpdir
+
+    # Cleanup
+    if tmpdir.exists():
+        shutil.rmtree(tmpdir)
 
 
 # Test 1: append_trade_log_v1() - 기본 append 동작

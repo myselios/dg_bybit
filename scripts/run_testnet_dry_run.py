@@ -109,8 +109,24 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
     log_storage = LogStorage(log_dir=log_dir)
 
     # REST/WS 클라이언트 초기화 (실제 Testnet 연결)
-    rest_client = BybitRestClient(testnet=True)
-    ws_client = BybitWsClient(testnet=True)
+    import os
+    api_key = os.getenv("BYBIT_TESTNET_API_KEY")
+    api_secret = os.getenv("BYBIT_TESTNET_API_SECRET")
+
+    if not api_key or not api_secret:
+        logger.error("❌ BYBIT_TESTNET_API_KEY and BYBIT_TESTNET_API_SECRET required in .env")
+        return
+
+    rest_client = BybitRestClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        base_url="https://api-testnet.bybit.com",
+    )
+    ws_client = BybitWsClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        wss_url="wss://stream-testnet.bybit.com/v5/private",
+    )
 
     # BybitAdapter 초기화 (Phase 12a-2 통합)
     bybit_adapter = BybitAdapter(
@@ -127,6 +143,11 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
         force_entry=force_entry,  # Phase 12a-4: Force Entry 모드 전달
     )
 
+    # Market data 초기 로드 (equity, mark price 조회)
+    logger.info("📊 Loading initial market data...")
+    bybit_adapter.update_market_data()
+    logger.info(f"✅ Equity: ${bybit_adapter.get_equity_usdt():.2f} USDT")
+
     # Monitor 초기화
     monitor = DryRunMonitor()
 
@@ -138,6 +159,7 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
     max_duration_seconds = max_duration_hours * 3600
 
     try:
+        logger.info("🔄 Starting main loop...")
         while monitor.total_trades < target_trades:
             # 시간 제한 체크
             if time.time() - start_time > max_duration_seconds:
@@ -145,12 +167,20 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
                 break
 
             # Tick 실행
-            result = orchestrator.run_tick()
-            current_state = result.get("state", State.FLAT)
+            logger.debug(f"Tick #{monitor.total_trades+1}")
+            try:
+                result = orchestrator.run_tick()
+                logger.debug(f"Tick result: state={result.state}")
+                current_state = result.state
+            except Exception as e:
+                logger.error(f"❌ Tick execution failed: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                break
 
             # HALT 감지
             if current_state == State.HALT:
-                halt_reason = result.get("halt_reason", "Unknown")
+                halt_reason = result.halt_reason or "Unknown"
                 monitor.log_halt(halt_reason)
                 logger.error(f"🚨 HALT detected: {halt_reason}")
                 # HALT 발생 시 중단 (또는 복구 로직 추가 가능)
@@ -166,9 +196,8 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
                     pnl_usd = last_trade.get("realized_pnl_usd", 0.0)
                     monitor.log_cycle_complete(pnl_usd)
 
-            # Stop loss hit 감지 (transition에서 stop_manager.stop_hit 확인)
-            # Note: 실제로는 orchestrator result에 stop_hit 플래그 추가 필요
-            if result.get("stop_hit", False):
+            # Stop loss hit 감지 (exit_intent 확인)
+            if result.exit_intent and result.exit_intent.reason == "STOP_LOSS":
                 monitor.log_stop_hit()
 
             # Previous state 업데이트
