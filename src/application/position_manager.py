@@ -17,8 +17,8 @@ FLOW_REF: docs/constitution/FLOW.md#1 (Last verified: 2026-01-23)
 from typing import Optional
 import time
 
-from domain.state import State, Position, StopStatus
-from domain.intent import TransitionIntents, StopIntent, HaltIntent
+from src.domain.state import State, Position, StopStatus
+from src.domain.intent import TransitionIntents, StopIntent, HaltIntent
 
 
 def manage_stop_status(

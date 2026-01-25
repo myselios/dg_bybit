@@ -2,7 +2,7 @@
 tests/unit/test_session_risk.py
 Session Risk Policy 테스트 (15 cases)
 
-SSOT: task_plan.md Phase 9a
+SSOT: docs/plans/task_plan.md Phase 9a
 
 요구사항:
 1. Daily Loss Cap (3 cases):
@@ -24,7 +24,7 @@ SSOT: task_plan.md Phase 9a
 """
 
 import pytest
-from application.session_risk import (
+from src.application.session_risk import (
     SessionRiskStatus,
     check_daily_loss_cap,
     check_weekly_loss_cap,

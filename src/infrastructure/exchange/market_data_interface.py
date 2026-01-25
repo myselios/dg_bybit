@@ -59,7 +59,7 @@ class MarketDataInterface(Protocol):
 
     def get_equity_btc(self) -> float:
         """
-        계정 Equity (BTC 단위).
+        계정 Equity (BTC 단위) — DEPRECATED, Linear USDT 전환 후 제거 예정.
 
         Returns:
             float: Account equity in BTC (e.g., 0.0025)
@@ -67,6 +67,24 @@ class MarketDataInterface(Protocol):
         Used by:
             - balance anomaly 검증 (emergency.py)
             - equity <= 0 → HALT
+
+        Note: Linear USDT 전환 후 get_equity_usdt() 사용 권장
+        """
+        ...
+
+    def get_equity_usdt(self) -> float:
+        """
+        계정 Equity (USDT 단위) — Linear USDT-Margined.
+
+        Returns:
+            float: Account equity in USDT (e.g., 1000.0)
+
+        Used by:
+            - Sizing calculation (entry_coordinator.py)
+            - Balance anomaly 검증 (emergency.py)
+            - equity <= 0 → HALT
+
+        SSOT: ADR-0002 (Inverse to Linear USDT Migration)
         """
         ...
 

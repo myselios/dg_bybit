@@ -20,9 +20,9 @@ Test Coverage (5~10 cases):
 5. test_orchestrator_degraded_timeout_triggers_halt (degraded 60s → HALT)
 """
 
-from application.orchestrator import Orchestrator, TickResult
-from domain.state import State
-from infrastructure.exchange.fake_market_data import FakeMarketData
+from src.application.orchestrator import Orchestrator, TickResult
+from src.domain.state import State
+from src.infrastructure.exchange.fake_market_data import FakeMarketData
 
 
 def test_orchestrator_tick_order_emergency_first():

@@ -18,10 +18,10 @@ Design:
 - Return typed dataclasses (StageParams, SignalContext, SizingParams)
 """
 
-from application.entry_allowed import StageParams, SignalContext
-from application.signal_generator import Signal
-from application.sizing import SizingParams
-from infrastructure.exchange.market_data_interface import MarketDataInterface
+from src.application.entry_allowed import StageParams, SignalContext
+from src.application.signal_generator import Signal
+from src.application.sizing import SizingParams
+from src.infrastructure.exchange.market_data_interface import MarketDataInterface
 
 
 def get_stage_params() -> StageParams:
@@ -82,28 +82,29 @@ def build_signal_context(signal: Signal, grid_spacing: float) -> SignalContext:
 
 def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> SizingParams:
     """
-    Sizing 파라미터 생성
+    Sizing 파라미터 생성 (Linear USDT)
 
     Args:
         signal: Signal 객체 (signal_generator.Signal)
-        market_data: Market data interface (equity_btc 필요)
+        market_data: Market data interface (equity_usdt 필요)
 
     Returns:
         SizingParams: Sizing 파라미터 객체
 
-    Policy:
+    Policy (Linear USDT):
     - Max loss budget: 1% equity per trade
     - Stop distance: 3%
     - Leverage: 3x (Stage 1)
     - Fee rate: 0.01% (Maker)
-    - Tick size: 0.5 (Bybit BTCUSD)
-    - Lot size: 1 (Bybit BTCUSD)
+    - Tick size: 0.5 (Bybit BTCUSDT)
+    - Lot size: 1 contract (Bybit Linear BTCUSDT)
+    - Contract size: 0.001 BTC per contract
     """
-    # Equity BTC
-    equity_btc = market_data.get_equity_btc()
+    # Equity USDT (Linear USDT-Margined)
+    equity_usdt = market_data.get_equity_usdt()
 
-    # Max loss BTC (loss budget = 1% equity per trade)
-    max_loss_btc = equity_btc * 0.01
+    # Max loss USDT (loss budget = 1% equity per trade)
+    max_loss_usdt = equity_usdt * 0.01
 
     # Direction (Buy → LONG, Sell → SHORT)
     direction = "LONG" if signal.side == "Buy" else "SHORT"
@@ -117,20 +118,22 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> Siz
     # Fee rate (Maker: 0.01%)
     fee_rate = 0.0001
 
-    # Tick/Lot size (Bybit BTCUSD)
+    # Tick/Lot size (Bybit Linear BTCUSDT)
     tick_size = 0.5
     qty_step = 1
+    contract_size = 0.001  # 1 contract = 0.001 BTC
 
     return SizingParams(
-        max_loss_btc=max_loss_btc,
+        max_loss_usdt=max_loss_usdt,
         entry_price_usd=signal.price,
         stop_distance_pct=stop_distance_pct,
         leverage=leverage,
-        equity_btc=equity_btc,
+        equity_usdt=equity_usdt,
         fee_rate=fee_rate,
         direction=direction,
         qty_step=qty_step,
         tick_size=tick_size,
+        contract_size=contract_size,
     )
 
 

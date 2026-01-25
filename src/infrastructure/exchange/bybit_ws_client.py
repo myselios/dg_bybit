@@ -29,14 +29,14 @@ from collections import deque
 import websocket  # websocket-client 라이브러리
 
 # FatalConfigError는 bybit_rest_client에서 import
-from infrastructure.exchange.bybit_rest_client import FatalConfigError
+from src.infrastructure.exchange.bybit_rest_client import FatalConfigError
 
 
 class BybitWsClient:
     """
     Bybit WebSocket Client (골격만, Contract tests only)
 
-    SSOT: task_plan.md Phase 7
+    SSOT: docs/plans/task_plan.md Phase 7
     - subscribe topic 정확성 (execution.inverse)
     - disconnect/reconnect → DEGRADED 플래그
     - ping-pong timeout 처리
@@ -114,7 +114,7 @@ class BybitWsClient:
         Returns:
             Dict: Subscribe payload
 
-        SSOT: task_plan.md Phase 7 - subscribe topic 정확성
+        SSOT: docs/plans/task_plan.md Phase 7 - subscribe topic 정확성
         """
         return {
             "op": "subscribe",
@@ -125,7 +125,7 @@ class BybitWsClient:
         """
         Disconnect 이벤트 처리 (DEGRADED 플래그 설정)
 
-        SSOT: task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
+        SSOT: docs/plans/task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
         """
         self._degraded = True
         self._degraded_entered_at = self.clock()
@@ -134,7 +134,7 @@ class BybitWsClient:
         """
         Reconnect 이벤트 처리 (DEGRADED 플래그 해제)
 
-        SSOT: task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
+        SSOT: docs/plans/task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
         """
         self._degraded = False
         self._degraded_entered_at = None
@@ -161,7 +161,7 @@ class BybitWsClient:
         """
         Pong 수신 이벤트 처리
 
-        SSOT: task_plan.md Phase 7 - ping-pong timeout 처리
+        SSOT: docs/plans/task_plan.md Phase 7 - ping-pong timeout 처리
         """
         self._last_pong_at = self.clock()
 
@@ -169,7 +169,7 @@ class BybitWsClient:
         """
         Pong timeout 체크 (timeout 발생 시 DEGRADED)
 
-        SSOT: task_plan.md Phase 7 - ping-pong timeout 처리
+        SSOT: docs/plans/task_plan.md Phase 7 - ping-pong timeout 처리
         Bybit private stream 요구사항: max_active_time
         """
         if self._last_pong_at is None:
@@ -190,7 +190,7 @@ class BybitWsClient:
         Args:
             message: WS 메시지
 
-        SSOT: task_plan.md Phase 7 - WS queue maxsize + overflow 정책
+        SSOT: docs/plans/task_plan.md Phase 7 - WS queue maxsize + overflow 정책
         실거래 함정 1: 큐가 무한히 쌓이면 메모리 터짐
         """
         if len(self._message_queue) >= self.queue_maxsize:
@@ -387,7 +387,7 @@ class BybitWsClient:
             ws: WebSocketApp 인스턴스
             error: Exception
 
-        SSOT: task_plan.md Phase 7 - error 발생 시 DEGRADED
+        SSOT: docs/plans/task_plan.md Phase 7 - error 발생 시 DEGRADED
         """
         self._degraded = True
         if self._degraded_entered_at is None:
@@ -404,7 +404,7 @@ class BybitWsClient:
             close_status_code: Close status code
             close_msg: Close message
 
-        SSOT: task_plan.md Phase 7 - close 발생 시 DEGRADED
+        SSOT: docs/plans/task_plan.md Phase 7 - close 발생 시 DEGRADED
         """
         self._degraded = True
         if self._degraded_entered_at is None:
@@ -419,7 +419,7 @@ class BybitWsClient:
         Args:
             on_message_callback: 메시지 수신 콜백 (Optional)
 
-        SSOT: task_plan.md Phase 8 - Thread 모델
+        SSOT: docs/plans/task_plan.md Phase 8 - Thread 모델
         - Main Thread: start() → WS Thread 시작
         - WS Thread: connect → auth → subscribe → recv_loop
         - Ping Thread: 20초마다 ping 전송
@@ -452,7 +452,7 @@ class BybitWsClient:
         """
         WebSocket 연결 종료 (thread join timeout=5.0)
 
-        SSOT: task_plan.md Phase 8 - stop() 메서드
+        SSOT: docs/plans/task_plan.md Phase 8 - stop() 메서드
         """
         if not self._running:
             return
@@ -484,6 +484,53 @@ class BybitWsClient:
         Returns:
             bool: 연결/인증/구독 모두 완료되면 True
 
-        SSOT: task_plan.md Phase 8 - is_connected() 메서드
+        SSOT: docs/plans/task_plan.md Phase 8 - is_connected() 메서드
         """
         return self._running and self._authenticated and self._subscribed
+
+    # ========================================================================
+    # Phase 12a-1: Execution Event Retrieval
+    # ========================================================================
+
+    def get_execution_events(self) -> list:
+        """
+        WS로 수신한 execution event 목록 반환 (소비 후 clear)
+
+        Returns:
+            list: execution event 목록 (dict 형식)
+                [
+                    {
+                        "symbol": "BTCUSD",
+                        "orderId": "abc123",
+                        "orderLinkId": "grid_xyz_l",
+                        "side": "Buy",
+                        "execType": "Trade",
+                        "execQty": "100",
+                        "execPrice": "49800.00",
+                        "orderQty": "100",
+                        "execFee": "0.00001",
+                        "execTime": "1706000000000"
+                    },
+                    ...
+                ]
+
+        SSOT: docs/plans/task_plan.md Phase 12a-1 - WebSocket Integration
+        """
+        events = []
+
+        # Queue에서 모든 메시지 가져오기 (FIFO 순서)
+        while self._message_queue:
+            try:
+                msg = self._message_queue.popleft()
+
+                # execution.inverse topic 필터링
+                if msg.get("topic") == "execution.inverse":
+                    data = msg.get("data", [])
+                    # data는 list 형식 (1개 이상의 execution event)
+                    for event in data:
+                        events.append(event)
+            except IndexError:
+                # Queue가 비어있으면 종료
+                break
+
+        return events

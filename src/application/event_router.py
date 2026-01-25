@@ -13,14 +13,14 @@ Event Router — Stateless Thin Wrapper
 
 from typing import Optional, Tuple
 
-from domain.state import (
+from src.domain.state import (
     State,
     ExecutionEvent,
     Position,
     PendingOrder
 )
-from domain.intent import TransitionIntents
-from application.transition import transition
+from src.domain.intent import TransitionIntents
+from src.application.transition import transition
 
 
 class EventRouter:

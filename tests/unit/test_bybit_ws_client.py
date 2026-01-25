@@ -30,7 +30,7 @@ def test_subscribe_topic_correctness_inverse():
     """
     Subscribe topic 정확성 (execution.inverse)
 
-    SSOT: task_plan.md Phase 7 - subscribe topic 정확성
+    SSOT: docs/plans/task_plan.md Phase 7 - subscribe topic 정확성
 
     검증:
     - Inverse futures는 execution.inverse topic 사용
@@ -64,7 +64,7 @@ def test_disconnect_triggers_degraded_flag():
     """
     Disconnect → DEGRADED 플래그 설정
 
-    SSOT: task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
+    SSOT: docs/plans/task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
 
     검증:
     - WS 연결 끊김 → is_degraded() = True
@@ -96,7 +96,7 @@ def test_reconnect_clears_degraded_flag():
     """
     Reconnect → DEGRADED 플래그 해제
 
-    SSOT: task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
+    SSOT: docs/plans/task_plan.md Phase 7 - disconnect/reconnect 시 DEGRADED 플래그 설정
 
     검증:
     - Disconnect → DEGRADED = True
@@ -130,7 +130,7 @@ def test_ping_pong_timeout_triggers_degraded():
     """
     Ping-pong timeout → DEGRADED 플래그
 
-    SSOT: task_plan.md Phase 7 - ping-pong timeout 처리
+    SSOT: docs/plans/task_plan.md Phase 7 - ping-pong timeout 처리
 
     검증:
     - 마지막 pong 수신 후 20초 경과 → DEGRADED
@@ -168,7 +168,7 @@ def test_ws_queue_maxsize_overflow_policy():
     """
     WS queue maxsize + overflow 정책 (실거래 함정 1)
 
-    SSOT: task_plan.md Phase 7 - WS queue maxsize + overflow 정책 구현
+    SSOT: docs/plans/task_plan.md Phase 7 - WS queue maxsize + overflow 정책 구현
 
     검증:
     - 큐 maxsize 설정 (예: 1000)
@@ -213,7 +213,7 @@ def test_testnet_wss_url_enforced():
     """
     Testnet WSS URL 강제 assert (실거래 함정 3)
 
-    SSOT: task_plan.md Phase 7 - testnet base_url 강제 assert
+    SSOT: docs/plans/task_plan.md Phase 7 - testnet base_url 강제 assert
 
     검증:
     - Mainnet WSS URL → FatalConfigError
@@ -249,7 +249,7 @@ def test_missing_api_key_prevents_ws_start():
     """
     API key 누락 → WS client 시작 거부 (fail-fast)
 
-    SSOT: task_plan.md Phase 7 - 키 누락 시 프로세스 시작 거부
+    SSOT: docs/plans/task_plan.md Phase 7 - 키 누락 시 프로세스 시작 거부
 
     검증:
     - API key 누락 → FatalConfigError (프로세스 시작 불가)

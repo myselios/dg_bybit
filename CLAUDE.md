@@ -8,13 +8,13 @@ Last Updated: 2026-01-23
 
 ## 1) 프로젝트 개요 (Project Overview)
 
-**CBGB (Controlled BTC Growth Bot)** — Bybit Inverse(코인마진드) Futures 기반 BTC 트레이딩 봇
+**CBGB (Controlled BTC Growth Bot)** — Bybit Linear (USDT-Margined) Futures 기반 BTC 트레이딩 봇
 
 ### Core Objective
-- **목표**: USD 가치 증가 ($100 → $1,000, BTC 수량 무관)
-- **시장**: Bybit BTC Coin-Margined (Inverse) Futures only
+- **목표**: USD 가치 증가 ($100 → $1,000)
+- **시장**: Bybit BTCUSDT Linear Futures (USDT-Margined)
 - **전략**: Directional-filtered Grid Strategy
-- **측정 기준**: USD Equity = (equity_btc × BTC_mark_price_usd)
+- **측정 기준**: USDT Equity = (wallet_balance_usdt + unrealized_pnl_usdt)
 
 ### 절대 금지 (Critical Constraints)
 - **청산(Liquidation) = 실패** (Drawdown ≠ 실패)
@@ -272,6 +272,32 @@ git diff --stat
 # → 의도한 파일만 변경되었는지 확인
 ```
 
+#### (8) FLOW.md 수정 시 ADR 존재 확인 (Gate: 절차 준수)
+**FLOW.md 수정이 포함된 작업의 경우, ADR 문서 존재 여부 필수 검증**
+
+```bash
+# (8a) FLOW.md 수정 여부 확인
+git diff docs/constitution/FLOW.md | grep "^[+-]" | grep -v "^[+-]\{3\}" | wc -l
+# → 0이 아니면 FLOW.md 수정됨
+
+# (8b) FLOW.md 수정 시 ADR 존재 확인
+git log --all --oneline --grep="ADR-" -- docs/adr/ | head -1
+# → 출력: 최근 ADR 커밋 존재 확인
+
+# (8c) 최근 ADR 파일 존재 및 FLOW.md 변경 이력 연결 확인
+ls -t docs/adr/ADR-*.md | head -1 | xargs grep -l "FLOW.md"
+# → 출력: ADR 파일 경로 (FLOW.md 언급 확인)
+
+# (8d) FLOW.md 변경 이력에 최근 ADR 번호 존재 확인
+tail -50 docs/constitution/FLOW.md | grep "ADR-[0-9]" | head -1
+# → 출력: ADR-XXXX 참조 존재
+```
+
+**검증 실패 시**:
+- FLOW.md 수정 감지 + ADR 없음 → **즉시 작업 중단**
+- 사용자에게 "A안(ADR 추가) / B안(Rollback)" 선택지 제시
+- 절차 완료 전까지 DONE 보고 금지
+
 ---
 
 **검증 성공 시 DONE 절차**:
@@ -313,12 +339,37 @@ git diff --stat
 다음에 해당하면 **작업을 중단하고 ADR 필요성을 보고**한다:
 - 정책 수치가 아니라 **정의/단위/스키마/우선순위/불변 규칙** 변경
 - 상태 머신/모드/이벤트 의미 변경
-- fee 단위, inverse 계산 단위, sizing 단위 변경
+- fee 단위, linear/inverse 계산 단위, sizing 단위 변경
 - SSOT 문서의 “협상 불가/불변” 섹션 변경
 
 원칙:
-- “코드로 먼저 바꾸고 문서 맞추기” 금지
+- "코드로 먼저 바꾸고 문서 맞추기" 금지
 - 먼저 ADR/SSOT 업데이트 → 구현
+
+### 6.1 긴급 요청 시에도 절차 우선 (Procedure Over Urgency)
+
+**절대 규칙**: 사용자가 "급하게 해달라", "즉시 수정해달라"고 요청해도, **FLOW.md 수정 시 ADR 절차는 생략 불가**
+
+#### 금지 사항
+- ❌ "급하니까 일단 수정하고 나중에 ADR 작성" → **절차 위반**
+- ❌ "표기 명확화일 뿐이니 ADR 불필요" → **FLOW.md 수정이면 ADR 필수**
+- ❌ "사용자가 FAIL 판정 후 즉시 요구" → **절차 우선, 긴급성은 근거 안 됨**
+
+#### 올바른 절차
+1. **즉시 작업 중단**
+2. 사용자에게 "ADR 필요성" 보고 (A안: ADR 추가 / B안: Rollback)
+3. 사용자 승인 후 선택지 실행:
+   - **A안**: ADR 먼저 작성 → 구현
+   - **B안**: Rollback → ADR 작성 → 재구현
+4. 절차 완료 후 다음 작업 진행
+
+#### 예외 없음
+- FLOW.md 헤더 수정: ADR 필수
+- FLOW.md 본문 수정 (표기법 포함): ADR 필수
+- FLOW.md 변경 이력 추가만: ADR 불필요 (단, 변경 이력에 연결된 본문 수정은 ADR 필수)
+
+#### 검증
+- Section 5.7 Self-Verification에 "FLOW.md 수정 시 ADR 존재 확인" Gate 추가 (아래 참조)
 
 ---
 

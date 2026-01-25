@@ -2,7 +2,7 @@
 tests/integration_real/test_rate_limit_handling.py
 시나리오 4: Rate limit 강제 발생 → backoff 동작
 
-SSOT: task_plan.md Phase 8 - Testnet Validation Scenario 4
+SSOT: docs/plans/task_plan.md Phase 8 - Testnet Validation Scenario 4
 
 요구사항:
 - 짧은 시간 내 다수 요청 → retCode 10006 발생 (Bybit 공식 rate limit 신호)
@@ -25,7 +25,7 @@ export $(cat .env | xargs) && pytest -v -m testnet tests/integration_real/test_r
 import time
 import uuid
 import pytest
-from infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
+from src.infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
 
 
 @pytest.fixture

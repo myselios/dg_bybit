@@ -16,18 +16,18 @@ FLOW_REF: docs/constitution/FLOW.md#2.5 (Last verified: 2026-01-19)
 from typing import Optional, Tuple
 from dataclasses import replace
 
-from domain.state import (
+from src.domain.state import (
     State,
     StopStatus,
     Direction,
     Position,
     PendingOrder
 )
-from domain.events import (
+from src.domain.events import (
     EventType,
     ExecutionEvent,
 )
-from domain.intent import (
+from src.domain.intent import (
     TransitionIntents,
     StopIntent,
     HaltIntent

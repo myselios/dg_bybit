@@ -18,10 +18,10 @@ import pytest
 from unittest.mock import Mock, MagicMock, call
 from typing import Dict, Any, List, Optional
 
-from infrastructure.exchange.bybit_adapter import BybitAdapter
-from infrastructure.exchange.bybit_rest_client import BybitRestClient
-from infrastructure.exchange.bybit_ws_client import BybitWsClient
-from domain.events import ExecutionEvent, EventType
+from src.infrastructure.exchange.bybit_adapter import BybitAdapter
+from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
+from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
+from src.domain.events import ExecutionEvent, EventType
 
 
 class TestBybitAdapterRestIntegration:
@@ -53,18 +53,19 @@ class TestBybitAdapterRestIntegration:
 
         # Assert
         assert mark_price == 50000.50
-        rest_client.get_tickers.assert_called_once_with(category="inverse", symbol="BTCUSD")
+        rest_client.get_tickers.assert_called_once_with(category="linear", symbol="BTCUSDT")
 
-    def test_get_equity_btc_from_wallet_balance(self):
-        """GET /v5/account/wallet-balance → get_equity_btc()"""
+    def test_get_equity_usdt_from_wallet_balance(self):
+        """GET /v5/account/wallet-balance → get_equity_usdt() (Linear USDT)"""
         # Arrange
         rest_client = MagicMock()
         ws_client = MagicMock()
 
-        # Bybit REST 응답
+        # Bybit REST 응답 (UNIFIED 계정 구조, Linear USDT)
         rest_client.get_wallet_balance.return_value = {
             "result": {
                 "list": [{
+                    "totalEquity": "1000.50",  # USDT equity
                     "coin": [{
                         "coin": "BTC",
                         "equity": "0.0025",
@@ -79,11 +80,11 @@ class TestBybitAdapterRestIntegration:
 
         # Act
         adapter.update_market_data()
-        equity_btc = adapter.get_equity_btc()
+        equity_usdt = adapter.get_equity_usdt()
 
         # Assert
-        assert equity_btc == 0.0025
-        rest_client.get_wallet_balance.assert_called_once_with(accountType="CONTRACT", coin="BTC")
+        assert equity_usdt == 1000.50
+        rest_client.get_wallet_balance.assert_called_once_with(accountType="UNIFIED", coin="BTC")
 
     def test_get_index_price_and_funding_rate(self):
         """GET /v5/market/tickers → get_index_price(), get_funding_rate()"""
@@ -146,14 +147,14 @@ class TestBybitAdapterWebSocketIntegration:
     """WebSocket event → ExecutionEvent 변환"""
 
     def test_fill_event_conversion_from_ws(self):
-        """WS execution.inverse → ExecutionEvent(FILL)"""
+        """WS execution.linear → ExecutionEvent(FILL)"""
         # Arrange
         rest_client = MagicMock()
         ws_client = MagicMock()
 
-        # WebSocket FILL event (Bybit execution.inverse 구조)
+        # WebSocket FILL event (Bybit execution.linear 구조)
         ws_fill_event = {
-            "topic": "execution.inverse",
+            "topic": "execution.linear",
             "data": [{
                 "symbol": "BTCUSD",
                 "orderId": "abc123",

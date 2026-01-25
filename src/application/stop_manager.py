@@ -19,7 +19,7 @@ Exports:
 """
 
 from typing import Tuple
-from domain.state import StopStatus
+from src.domain.state import StopStatus
 
 
 def should_update_stop(

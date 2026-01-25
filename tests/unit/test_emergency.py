@@ -21,8 +21,8 @@ Execution:
 """
 
 import time
-from infrastructure.exchange.fake_market_data import FakeMarketData
-from application.emergency import check_emergency, check_recovery
+from src.infrastructure.exchange.fake_market_data import FakeMarketData
+from src.application.emergency import check_emergency, check_recovery
 
 
 def test_price_drop_1m_exceeds_threshold_enters_cooldown():

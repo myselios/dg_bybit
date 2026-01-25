@@ -31,17 +31,24 @@ class FakeMarketData:
     Implements MarketDataInterface with injectable state.
     """
 
-    def __init__(self, current_price: float = 42000.0, equity_btc: float = 0.0025):
+    def __init__(
+        self,
+        current_price: float = 42000.0,
+        equity_btc: float = 0.0025,
+        equity_usdt: Optional[float] = None,
+    ):
         """
         Initialize with safe defaults (no emergency triggers).
 
         Args:
             current_price: Mark price (USD, default 42000.0)
-            equity_btc: Equity (BTC, default 0.0025)
+            equity_btc: Equity (BTC, default 0.0025) — DEPRECATED, Linear USDT 전환 후 제거
+            equity_usdt: Equity (USDT, Linear) — 지정 시 이 값 사용, 미지정 시 equity_btc * current_price
 
         Defaults:
           - mark_price: 42000.0 (USD)
           - equity_btc: 0.0025 (safe, > 0)
+          - equity_usdt: None (auto-calculated from equity_btc)
           - rest_latency_p95_1m: 0.15 (safe, < 5.0s)
           - ws_last_heartbeat_ts: current time (fresh)
           - ws_event_drop_count: 0 (no drops)
@@ -51,6 +58,7 @@ class FakeMarketData:
         """
         self._mark_price = current_price
         self._equity_btc = equity_btc
+        self._equity_usdt = equity_usdt if equity_usdt is not None else (equity_btc * current_price)
         self._rest_latency_p95_1m = 0.15
         self._ws_last_heartbeat_ts = time.time()
         self._ws_event_drop_count = 0
@@ -91,8 +99,14 @@ class FakeMarketData:
         return self._mark_price
 
     def get_equity_btc(self) -> float:
-        """계정 Equity (BTC)."""
+        """계정 Equity (BTC) — DEPRECATED."""
         return self._equity_btc
+
+    def get_equity_usdt(self) -> float:
+        """계정 Equity (USDT) — Linear USDT-Margined."""
+        # Linear USDT: equity_usdt = equity_btc * mark_price (근사)
+        # 하지만 Fake에서는 직접 값 저장 (테스트 제어 편의성)
+        return getattr(self, '_equity_usdt', self._equity_btc * self._mark_price)
 
     def get_rest_latency_p95_1m(self) -> float:
         """REST latency p95 (seconds)."""

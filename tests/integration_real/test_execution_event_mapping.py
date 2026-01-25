@@ -2,7 +2,7 @@
 tests/integration_real/test_execution_event_mapping.py
 시나리오 3: 체결 이벤트 수신 → 도메인 이벤트 매핑 성공
 
-SSOT: task_plan.md Phase 8 - Testnet Validation Scenario 3
+SSOT: docs/plans/task_plan.md Phase 8 - Testnet Validation Scenario 3
 
 요구사항:
 - 주문 체결 발생
@@ -23,8 +23,8 @@ pytest -v -m testnet tests/integration_real/test_execution_event_mapping.py
 
 import time
 import pytest
-from infrastructure.exchange.bybit_ws_client import BybitWsClient
-from infrastructure.exchange.bybit_rest_client import BybitRestClient
+from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
+from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
 
 
 @pytest.mark.testnet

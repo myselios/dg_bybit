@@ -23,10 +23,10 @@ Note:
 import pytest
 import tempfile
 from pathlib import Path
-from application.orchestrator import Orchestrator
-from infrastructure.exchange.fake_market_data import FakeMarketData
-from infrastructure.storage.log_storage import LogStorage
-from domain.state import State, Direction
+from src.application.orchestrator import Orchestrator
+from src.infrastructure.exchange.fake_market_data import FakeMarketData
+from src.infrastructure.storage.log_storage import LogStorage
+from src.domain.state import State, Direction
 
 
 class MockRestClient:
@@ -94,7 +94,7 @@ def test_full_cycle_success():
         - Position closed
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(50200.0)  # Grid down: 50000 = 50200 - 200 (Buy signal → LONG)
     fake_data.inject_trades_today(0)
@@ -200,7 +200,7 @@ def test_full_cycle_entry_blocked():
         - Entry blocked: True
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     fake_data.inject_atr_pct_24h(0.01)  # 1% < 2% (ATR gate 거절)
@@ -245,7 +245,7 @@ def test_full_cycle_stop_hit():
         - Exit intent created (stop_loss_hit)
     """
     # Given
-    fake_data = FakeMarketData(current_price=48400.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=48400.0, equity_usdt=1000.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # Manual setup: IN_POSITION
@@ -290,7 +290,7 @@ def test_full_cycle_session_risk_halt():
         - Halt reason: daily_loss_cap_exceeded
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data._daily_realized_pnl_usd = -7.0  # -$7 USD (> -5% equity = -$6.25)
 
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
@@ -327,7 +327,7 @@ def test_full_cycle_degraded_mode():
         - Block reason: degraded_mode
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     fake_data.inject_atr_pct_24h(0.03)
@@ -371,7 +371,7 @@ def test_multiple_cycles_success():
         - 총 20개 주문 (Entry 10 + Exit 10)
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_atr_pct_24h(0.03)
     fake_data.inject_trades_today(0)

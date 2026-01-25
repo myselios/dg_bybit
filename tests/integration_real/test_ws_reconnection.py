@@ -2,7 +2,7 @@
 tests/integration_real/test_ws_reconnection.py
 시나리오 5: WS 강제 disconnect → reconnect + DEGRADED 타이머
 
-SSOT: task_plan.md Phase 8 - Testnet Validation Scenario 5
+SSOT: docs/plans/task_plan.md Phase 8 - Testnet Validation Scenario 5
 
 요구사항:
 - WS 연결 강제 종료
@@ -20,7 +20,7 @@ pytest -v -m testnet tests/integration_real/test_ws_reconnection.py
 
 import time
 import pytest
-from infrastructure.exchange.bybit_ws_client import BybitWsClient
+from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
 
 
 @pytest.mark.testnet

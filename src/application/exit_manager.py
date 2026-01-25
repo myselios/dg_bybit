@@ -2,7 +2,7 @@
 application/exit_manager.py
 Exit Manager — Stop Loss 도달 확인 및 Exit 주문 발주
 
-SSOT: task_plan.md Phase 11
+SSOT: docs/plans/task_plan.md Phase 11
 
 책임:
 1. check_stop_hit(): Stop loss 도달 확인 (LONG/SHORT별)
@@ -14,8 +14,8 @@ Exports:
 """
 
 from typing import Optional
-from domain.state import Position, Direction
-from domain.intent import TransitionIntents, ExitIntent
+from src.domain.state import Position, Direction
+from src.domain.intent import TransitionIntents, ExitIntent
 
 
 def check_stop_hit(current_price: float, position: Position) -> bool:

@@ -19,9 +19,9 @@ Test Coverage:
 """
 
 import pytest
-from application.orchestrator import Orchestrator
-from infrastructure.exchange.fake_market_data import FakeMarketData
-from domain.state import State, Position, Direction
+from src.application.orchestrator import Orchestrator
+from src.infrastructure.exchange.fake_market_data import FakeMarketData
+from src.domain.state import State, Position, Direction
 
 
 class MockRestClient:

@@ -9,9 +9,9 @@
 
 import pytest
 
-from infrastructure.exchange.fake_exchange import FakeExchange, DuplicateOrderError
-from domain.state import State, StopStatus, Direction, EventType, PendingOrder
-from application.event_router import EventRouter
+from src.infrastructure.exchange.fake_exchange import FakeExchange, DuplicateOrderError
+from src.domain.state import State, StopStatus, Direction, EventType, PendingOrder
+from src.application.event_router import EventRouter
 
 
 class TestBasicIntegration:

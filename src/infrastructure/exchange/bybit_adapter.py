@@ -21,12 +21,12 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 
-from infrastructure.exchange.bybit_rest_client import BybitRestClient
-from infrastructure.exchange.bybit_ws_client import BybitWsClient
-from domain.events import ExecutionEvent, EventType
-from application.atr_calculator import ATRCalculator, Kline as ATRKline
-from application.session_risk_tracker import SessionRiskTracker, Trade, FillEvent
-from application.market_regime import MarketRegimeAnalyzer, Kline as RegimeKline
+from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
+from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
+from src.domain.events import ExecutionEvent, EventType
+from src.application.atr_calculator import ATRCalculator, Kline as ATRKline
+from src.application.session_risk_tracker import SessionRiskTracker, Trade, FillEvent
+from src.application.market_regime import MarketRegimeAnalyzer, Kline as RegimeKline
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class BybitAdapter:
 
     역할:
     - REST API로 시장/계정 정보 조회 (mark_price, equity, position, trade history)
-    - WebSocket으로 실시간 체결 정보 수신 (execution.inverse)
+    - WebSocket으로 실시간 체결 정보 수신 (execution.linear)
     - MarketDataInterface 모든 메서드 구현 (캐싱)
     """
 
@@ -70,7 +70,8 @@ class BybitAdapter:
 
         # 상태 캐싱
         self._mark_price: float = 0.0
-        self._equity_btc: float = 0.0
+        self._equity_btc: float = 0.0  # DEPRECATED (Linear USDT 전환 후 제거 예정)
+        self._equity_usdt: float = 0.0  # Linear USDT-Margined equity
         self._last_update_ts: float = 0.0
 
         # WS health tracking
@@ -111,8 +112,13 @@ class BybitAdapter:
         return self._mark_price
 
     def get_equity_btc(self) -> float:
-        """계정 Equity (BTC 단위)"""
+        """계정 Equity (BTC 단위) — DEPRECATED"""
         return self._equity_btc
+
+    def get_equity_usdt(self) -> float:
+        """계정 Equity (USDT 단위) — Linear USDT-Margined"""
+        # Linear USDT: Wallet balance API에서 totalEquity (USDT) 직접 파싱
+        return getattr(self, '_equity_usdt', 0.0)
 
     def get_rest_latency_p95_1m(self) -> float:
         """REST API latency p95 (1분 윈도우, seconds)"""
@@ -240,7 +246,7 @@ class BybitAdapter:
         """
         try:
             # 1. Mark price, Index price, Funding rate 조회
-            tickers_response = self.rest_client.get_tickers(category="inverse", symbol="BTCUSD")
+            tickers_response = self.rest_client.get_tickers(category="linear", symbol="BTCUSDT")
             result = tickers_response.get("result", {})
             ticker_list = result.get("list", [])
             if ticker_list:
@@ -249,26 +255,32 @@ class BybitAdapter:
                 self._index_price = float(ticker.get("indexPrice", 0.0))
                 self._funding_rate = float(ticker.get("fundingRate", 0.0001))
 
-            # 2. Equity 조회
-            wallet_response = self.rest_client.get_wallet_balance(accountType="CONTRACT", coin="BTC")
+            # 2. Equity 조회 (Linear USDT: UNIFIED 계정)
+            wallet_response = self.rest_client.get_wallet_balance(accountType="UNIFIED", coin="BTC")
             result = wallet_response.get("result", {})
             wallet_list = result.get("list", [])
             if wallet_list:
-                coin_list = wallet_list[0].get("coin", [])
+                wallet_data = wallet_list[0]
+                # Linear USDT: totalEquity (USDT 단위)
+                self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
+
+                # BTC equity (DEPRECATED, 호환성 유지)
+                coin_list = wallet_data.get("coin", [])
                 for coin_data in coin_list:
                     if coin_data.get("coin") == "BTC":
-                        self._equity_btc = float(coin_data.get("equity", 0.0))
+                        equity_str = coin_data.get("equity", "0")
+                        self._equity_btc = float(equity_str) if equity_str else 0.0
                         break
 
             # 3. Position 조회
-            position_response = self.rest_client.get_position(category="inverse", symbol="BTCUSD")
+            position_response = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
             result = position_response.get("result", {})
             position_list = result.get("list", [])
             if position_list:
                 self._current_position = position_list[0]
 
             # 4. Trade history 조회 (SessionRiskTracker 사용)
-            execution_response = self.rest_client.get_execution_list(category="inverse", symbol="BTCUSD", limit=50)
+            execution_response = self.rest_client.get_execution_list(category="linear", symbol="BTCUSDT", limit=50)
             result = execution_response.get("result", {})
             trade_list = result.get("list", [])
 
@@ -293,8 +305,8 @@ class BybitAdapter:
 
             # 5. Kline 조회 (ATR/Regime 계산용)
             kline_response = self.rest_client.get_kline(
-                category="inverse",
-                symbol="BTCUSD",
+                category="linear",
+                symbol="BTCUSDT",
                 interval="60",  # 1-hour
                 limit=200  # 14-period ATR + 20-period MA + buffer
             )

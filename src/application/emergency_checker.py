@@ -19,8 +19,8 @@ Design:
 """
 
 from typing import Optional
-from infrastructure.exchange.market_data_interface import MarketDataInterface
-from application.session_risk import (
+from src.infrastructure.exchange.market_data_interface import MarketDataInterface
+from src.application.session_risk import (
     check_daily_loss_cap,
     check_weekly_loss_cap,
     check_loss_streak_kill,

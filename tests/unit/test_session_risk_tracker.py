@@ -17,7 +17,7 @@ import pytest
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
-from application.session_risk_tracker import SessionRiskTracker, Trade, FillEvent
+from src.application.session_risk_tracker import SessionRiskTracker, Trade, FillEvent
 
 
 class TestSessionRiskTrackerDailyPnL:

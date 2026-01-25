@@ -10,8 +10,8 @@ DoD:
 """
 
 import pytest
-from domain.state import Position, Direction, StopStatus
-from application.exit_manager import check_stop_hit, create_exit_intent
+from src.domain.state import Position, Direction, StopStatus
+from src.application.exit_manager import check_stop_hit, create_exit_intent
 
 
 # Test 1: LONG 포지션에서 stop price 도달

@@ -2,7 +2,7 @@
 tests/integration_real/test_testnet_order_flow.py
 시나리오 2: 소액 주문 발주→취소 성공 (idempotency 포함)
 
-SSOT: task_plan.md Phase 8 - Testnet Validation Scenario 2
+SSOT: docs/plans/task_plan.md Phase 8 - Testnet Validation Scenario 2
 
 요구사항:
 - place_entry_order() 호출 → orderLinkId 생성
@@ -25,7 +25,7 @@ export $(cat .env | xargs) && pytest -v -m testnet tests/integration_real/test_t
 import time
 import uuid
 import pytest
-from infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
+from src.infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
 
 
 @pytest.fixture

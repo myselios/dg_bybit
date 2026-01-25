@@ -21,7 +21,7 @@ Test Coverage:
 6. winrate_gate_enforcement (N < 10: backtest만, 10-30: soft gate, 30+: hard gate)
 """
 
-from application.metrics_tracker import (
+from src.application.metrics_tracker import (
     calculate_winrate,
     update_streak_on_closed_trade,
     apply_streak_multiplier,

@@ -2,7 +2,7 @@
 application/session_risk.py
 Session Risk Policy (Phase 9a)
 
-SSOT: task_plan.md Phase 9a
+SSOT: docs/plans/task_plan.md Phase 9a
 
 책임:
 - Daily Loss Cap (일일 손실 상한 5%)
@@ -58,7 +58,7 @@ def check_daily_loss_cap(
     Returns:
         SessionRiskStatus
 
-    SSOT: task_plan.md Phase 9a
+    SSOT: docs/plans/task_plan.md Phase 9a
     - Trigger: daily_pnl <= -daily_loss_cap_pct% equity
     - Action: HALT + COOLDOWN (다음날 UTC 0시까지)
     """
@@ -103,7 +103,7 @@ def check_weekly_loss_cap(
     Returns:
         SessionRiskStatus
 
-    SSOT: task_plan.md Phase 9a
+    SSOT: docs/plans/task_plan.md Phase 9a
     - Trigger: weekly_pnl <= -weekly_loss_cap_pct% equity
     - Action: COOLDOWN (7일)
     """
@@ -141,7 +141,7 @@ def check_loss_streak_kill(
     Returns:
         SessionRiskStatus
 
-    SSOT: task_plan.md Phase 9a
+    SSOT: docs/plans/task_plan.md Phase 9a
     - 3연패: HALT (당일 종료, 다음날 UTC 0시까지)
     - 5연패: COOLDOWN (72h)
     """
@@ -192,7 +192,7 @@ def check_fee_anomaly(
     Returns:
         SessionRiskStatus
 
-    SSOT: task_plan.md Phase 9a
+    SSOT: docs/plans/task_plan.md Phase 9a
     - Fee spike: fee_ratio > threshold, 2회 연속 → HALT 30분
     """
     # 최소 2개 필요
@@ -235,7 +235,7 @@ def check_slippage_anomaly(
     Returns:
         SessionRiskStatus
 
-    SSOT: task_plan.md Phase 9a
+    SSOT: docs/plans/task_plan.md Phase 9a
     - Slippage spike: |slippage_usd| > threshold, 3회/window → HALT 60분
     """
     # window 내의 spike 카운트

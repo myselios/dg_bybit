@@ -17,8 +17,8 @@ Implementation Status: Phase 0.5 골격 (Phase 1+에서 단계별 구현 예정)
 
 from typing import Dict, Any
 
-from domain.intent import TransitionIntents
-from application.emergency import evaluate as emergency_evaluate
+from src.domain.intent import TransitionIntents
+from src.application.emergency import evaluate as emergency_evaluate
 
 
 def tick(snapshot: Dict[str, Any]) -> TransitionIntents:

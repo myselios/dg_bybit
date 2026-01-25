@@ -36,15 +36,16 @@ Version: 2.2
 
 ## 1. 용어/단위 정의 (Definitions)
 
-### 1.1 계좌/가격
-- `equity_btc` = `wallet_balance_btc + unrealized_pnl_btc`  (Bybit equity)
-- `btc_price_usd` = current mark price (USD)
-- `equity_usd` = `equity_btc * btc_price_usd`  (display / stage only)
+### 1.1 계좌/가격 (Linear USDT)
+- `equity_usdt` = `wallet_balance_usdt + unrealized_pnl_usdt`  (Bybit equity, USDT 기준)
+- `btc_price_usd` = current mark price (USD, display용)
+- **Note**: Linear Futures는 USDT-Margined이므로 equity는 USDT 단위
 
-### 1.2 Inverse 계약 단위
-- Inverse 특성: `1 contract = 1 USD notional`
-- `position_notional_usd = contracts`
-- `estimated_fee_usd = contracts * fee_rate` (price cancels out)
+### 1.2 Linear 계약 단위 (USDT-Margined)
+- Linear 특성: `1 contract = 1 coin` (e.g., BTCUSDT에서 1 contract = 0.001 BTC)
+- `position_notional_usdt = qty * entry_price_usd`
+- `estimated_fee_usdt = qty * entry_price_usd * fee_rate`
+- **Bybit Linear BTCUSDT contract size**: 0.001 BTC per contract
 
 ### 1.3 시간/카운터 스냅샷
 - Stage는 **신규 진입 시도 시점(ENTRY evaluation time)** 에만 계산한다.
@@ -208,31 +209,29 @@ Anti-flap (ENTRY evaluation time only):
 
 ---
 
-## 6. Loss Budget (BTC percent with USD cap) — ADR Required (definition)
+## 6. Loss Budget (USDT percent with USD cap) — ADR Required (definition)
 
-Because Bybit Inverse is BTC-margined, loss budget is defined in BTC with a USD cap.
+**Linear USDT-Margined**: Loss budget is defined in USDT (직접 계산, 환산 불필요).
 
 Definitions:
-- equity_btc = wallet_balance_btc + unrealized_pnl_btc
-- btc_price_usd = current_mark_price
-- equity_usd = equity_btc * btc_price_usd (display)
+- equity_usdt = wallet_balance_usdt + unrealized_pnl_usdt (Bybit equity)
 
 Stage USD caps:
 - Stage 1: max_loss_usd_cap = $3
 - Stage 2: max_loss_usd_cap = $20
 - Stage 3: max_loss_usd_cap = $30
 
-BTC percentage caps:
+USDT percentage caps:
 - Stage 1: pct_cap = 3%
 - Stage 2: pct_cap = 8%
 - Stage 3: pct_cap = 6%
 
 Compute:
-- max_loss_btc = min(equity_btc * pct_cap, max_loss_usd_cap / btc_price_usd)
+- max_loss_usdt = min(equity_usdt * pct_cap, max_loss_usd_cap)
 
 Rule:
-- This `max_loss_btc` is the only loss budget used by sizing.
-- USD is display/logging only.
+- This `max_loss_usdt` is the only loss budget used by sizing.
+- **Linear 장점**: 환산 불필요 (USDT = USD 1:1 근사)
 
 ---
 
@@ -270,14 +269,15 @@ Auto-recovery (COOLDOWN only):
 
 ---
 
-## 8. Fees Policy (Inverse) — ADR Required (units), Tunable (rates/ratios)
+## 8. Fees Policy (Linear USDT) — ADR Required (units), Tunable (rates/ratios)
 
 ### 8.1 Fee rates (Tunables)
 - maker_fee_rate = 0.0001
 - taker_fee_rate = 0.0006
 
-### 8.2 Estimation (ADR Required)
-- estimated_fee_usd = contracts * fee_rate
+### 8.2 Estimation (ADR Required - Linear)
+- estimated_fee_usdt = qty * entry_price_usd * fee_rate
+- **Linear 특성**: Fee는 notional value에 비례 (qty × price × fee_rate)
 
 ### 8.3 EV Gate (Tunables per stage)
 - Reject if: expected_profit_usd < estimated_fee_usd * K(stage)
@@ -305,7 +305,7 @@ If 3 consecutive maker timeouts for the same signal:
 
 ---
 
-## 10. Position Sizing (Bybit Inverse) — ADR Required (math), Tunables (bounds)
+## 10. Position Sizing (Bybit Linear USDT) — ADR Required (math), Tunables (bounds)
 
 ### 10.1 Step A: Stop Distance (Grid Strategy)
 Inputs:
@@ -320,25 +320,29 @@ Fallback:
 Reject:
 - if stop_distance_pct <= 0 or missing => REJECT
 
-### 10.2 Step B: Compute contracts from loss budget
-Inverse property:
-- loss_btc_at_stop ≈ (contracts / entry_price_usd) * stop_distance_pct
+### 10.2 Step B: Compute qty from loss budget (Linear)
+**Linear property**:
+- loss_usdt_at_stop = qty * entry_price_usd * stop_distance_pct
 
 Rearrange:
-- contracts = (max_loss_btc * entry_price_usd) / stop_distance_pct
+- qty = max_loss_usdt / (entry_price_usd * stop_distance_pct)
+
+**Bybit Linear BTCUSDT contract size**: 0.001 BTC per contract
+- contracts = floor(qty / 0.001)
+- qty = contracts * 0.001  (실제 거래량)
 
 Constraints:
-- contracts >= 1
+- contracts >= 1 (최소 1 contract = 0.001 BTC)
 - contracts = floor(contracts)
 
-### 10.3 Step C: Margin feasibility (BTC-denominated)
+### 10.3 Step C: Margin feasibility (USDT-denominated)
 Definitions:
-- contracts_to_btc = contracts / entry_price_usd
-- required_margin_btc = contracts_to_btc / leverage
-- fee_buffer_btc = contracts_to_btc * maker_fee_rate * 2  (entry+exit)
+- notional_usdt = qty * entry_price_usd
+- required_margin_usdt = notional_usdt / leverage
+- fee_buffer_usdt = notional_usdt * maker_fee_rate * 2  (entry+exit)
 
 Feasibility:
-- if required_margin_btc + fee_buffer_btc > equity_btc => REJECT
+- if required_margin_usdt + fee_buffer_usdt > equity_usdt => REJECT
 
 ### 10.4 Step D: Liquidation safety buffer (no fake formula)
 Preferred:

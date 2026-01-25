@@ -2,7 +2,7 @@
 
 **문서 성격**: 불변 헌법 (Constitution)
 **변경 규칙**: 이 문서를 수정하려면 ADR(Architecture Decision Record) 필수
-**우선순위**: STRATEGY.md / RISK.md / task_plan.md보다 상위
+**우선순위**: STRATEGY.md / RISK.md / docs/plans/task_plan.md보다 상위
 
 ---
 
@@ -2467,7 +2467,7 @@ pytest tests/oracles/ -v
 **헌법 규칙**: 모든 작업은 **문서 리뷰 → 문서 업데이트 → 구현** 순서로 진행한다.
 
 **문제**: 코드를 먼저 작성하고 나중에 문서를 업데이트하면:
-- 작업 진행 상태가 불명확 (task_plan.md Progress Table 불일치)
+- 작업 진행 상태가 불명확 (docs/plans/task_plan.md Progress Table 불일치)
 - SSOT 원칙 위반 (문서가 Single Source of Truth가 아니게 됨)
 - 증거 없는 완료 보고 (Evidence Artifacts 누락)
 - 다음 Phase 시작 시 혼란 (어디까지 완료되었는지 불명확)
@@ -2476,11 +2476,11 @@ pytest tests/oracles/ -v
 
 **Phase/Task 시작 시**:
 ```
-1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, task_plan.md)
+1. SSOT 3문서 읽기 (FLOW.md, account_builder_policy.md, docs/plans/task_plan.md)
    ↓
-2. task_plan.md에서 TODO 항목 확인
+2. docs/plans/task_plan.md에서 TODO 항목 확인
    ↓
-3. ⚠️ task_plan.md Progress Table 업데이트
+3. ⚠️ docs/plans/task_plan.md Progress Table 업데이트
    - 상태: [ ] TODO → [~] IN PROGRESS
    - Last Updated 갱신
    ↓
@@ -2492,7 +2492,7 @@ pytest tests/oracles/ -v
    ↓
 7. Evidence Artifacts 생성 (docs/evidence/phase_N/)
    ↓
-8. ⚠️ task_plan.md Progress Table 업데이트
+8. ⚠️ docs/plans/task_plan.md Progress Table 업데이트
    - 상태: [~] IN PROGRESS → [x] DONE
    - Evidence 링크 추가
    - Last Updated 갱신
@@ -2500,7 +2500,7 @@ pytest tests/oracles/ -v
 
 **절대 금지**:
 - 코드 구현 후 문서 업데이트 누락
-- task_plan.md 업데이트 없이 다음 Phase 진행
+- docs/plans/task_plan.md 업데이트 없이 다음 Phase 진행
 - Evidence Artifacts 없이 DONE 보고
 
 #### 강제 규칙
@@ -2512,13 +2512,13 @@ pytest tests/oracles/ -v
 
 **DONE Check** (Phase/Task 완료 시):
 1. Evidence Artifacts 존재 확인 (`docs/evidence/phase_N/` 디렉토리)
-2. task_plan.md Progress Table에 DONE 표시 + Evidence 링크
+2. docs/plans/task_plan.md Progress Table에 DONE 표시 + Evidence 링크
 3. Last Updated 갱신
 4. **위 3가지 중 1개라도 누락 → DONE 인정 불가**
 
 **검증 명령**:
 ```bash
-# (A) task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
+# (A) docs/plans/task_plan.md 최근 수정 시각 확인 (작업 중이면 최근이어야 함)
 stat -c %y docs/plans/task_plan.md
 
 # (B) Evidence 디렉토리 존재 확인 (Phase N 완료 시)
@@ -2530,7 +2530,7 @@ grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
 ```
 
 **위반 시 즉시 Rollback**:
-- 코드 구현했으나 task_plan.md 미업데이트 → `git restore`로 즉시 원복
+- 코드 구현했으나 docs/plans/task_plan.md 미업데이트 → `git restore`로 즉시 원복
 - Evidence 없이 DONE 보고 → DONE 무효 처리, 재작업 필요
 
 **참조**:
@@ -2543,6 +2543,15 @@ grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
 **현재 버전**: FLOW v1.11 (2026-01-25)
 
 **변경 이력**:
+- v1.12 (2026-01-25): SSOT 경로 표기 통일 (축약 참조 제거) (ADR-0010)
+  - **헤더 수정**: `task_plan.md` → `docs/plans/task_plan.md` (정확 경로 명시)
+  - **본문 수정**: 13건 축약 참조 → 정확 경로로 통일
+  - **코드/테스트 수정**: 60건 `SSOT: task_plan.md` → `SSOT: docs/plans/task_plan.md`
+  - **백업 파일 정리**: docs/constitution/FLOW.md.{new.backup,v1.10.bak} 삭제 (SSOT 오염 방지)
+  - **검증 규칙**: 축약 참조 0건 강제 (rg로 자동 검증)
+  - 실거래 영향: 없음 (표기법 통일만, 로직 변경 없음)
+  - 참조: ADR-0010
+
 - v1.11 (2026-01-25): SSOT 중복 제거 (문서 정리 + Stop Loss 참조 정렬) (ADR-0009)
   - **Section 10.2 중복 제거**: 38개 → 1개 (문서 크기 51.4% 감소, 5401줄 → 2626줄)
   - **Stop Loss 정의 통합**: Section 4.5를 SSOT로 지정 (주문 계약), 갱신 정책은 "Stop Loss 갱신 규칙" 섹션 참조로 정리
@@ -2553,7 +2562,7 @@ grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
 
 - v1.10 (2026-01-23): 문서 우선 작업 흐름 강제 (Document-First Workflow)
   - **Section 10.2 추가**: 모든 작업은 문서 리뷰 → 문서 업데이트 → 구현 순서 강제
-  - Pre-flight Check: Phase 시작 전 task_plan.md 상태 확인 필수
+  - Pre-flight Check: Phase 시작 전 docs/plans/task_plan.md 상태 확인 필수
   - DONE Check: Evidence Artifacts + Progress Table 업데이트 + Last Updated 갱신 필수
   - 위반 시 즉시 Rollback 규칙 추가
   - 참조: CLAUDE.md Section 5.6, 5.7
@@ -2632,4 +2641,4 @@ grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
 **다음 변경 시 필수 사항**:
 1. ADR 문서 작성 (`docs/adr/ADR-XXXX-{title}.md`)
 2. 버전 번호 증가 (v1.3 → v1.4 or v2.0)
-3. task_plan.md의 "Definition of DONE"에 새 규칙 반영
+3. docs/plans/task_plan.md의 "Definition of DONE"에 새 규칙 반영

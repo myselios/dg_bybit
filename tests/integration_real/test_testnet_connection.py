@@ -2,7 +2,7 @@
 tests/integration_real/test_testnet_connection.py
 시나리오 1: 연결/인증/구독 성공 + heartbeat 정상
 
-SSOT: task_plan.md Phase 8 - Testnet Validation Scenario 1
+SSOT: docs/plans/task_plan.md Phase 8 - Testnet Validation Scenario 1
 
 요구사항:
 - wss://stream-testnet.bybit.com/v5/private 연결
@@ -20,7 +20,7 @@ pytest -v -m testnet tests/integration_real/test_testnet_connection.py
 
 import time
 import pytest
-from infrastructure.exchange.bybit_ws_client import BybitWsClient
+from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
 
 
 @pytest.mark.testnet

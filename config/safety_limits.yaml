@@ -2,7 +2,7 @@
 # Safety Limits Configuration (Dry-run 4개 상한)
 # Last Updated: 2026-01-23
 
-# SSOT: task_plan.md Phase 9c
+# SSOT: docs/plans/task_plan.md Phase 9c
 # Purpose: Mainnet/Testnet 분리, dry-run 상한 설정
 
 ---

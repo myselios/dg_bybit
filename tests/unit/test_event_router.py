@@ -11,7 +11,7 @@ Gate 3 통과 조건:
 
 import pytest
 
-from domain.state import (
+from src.domain.state import (
     State,
     StopStatus,
     Direction,
@@ -20,8 +20,8 @@ from domain.state import (
     Position,
     PendingOrder
 )
-from application.event_router import EventRouter
-from application.transition import transition
+from src.application.event_router import EventRouter
+from src.application.transition import transition
 
 
 class TestEventRouterGate3:

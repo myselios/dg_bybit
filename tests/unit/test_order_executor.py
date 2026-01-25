@@ -23,7 +23,7 @@ Test Coverage:
 8. cancel_order_by_order_link_id (취소 성공)
 """
 
-from application.order_executor import (
+from src.application.order_executor import (
     place_entry_order,
     place_stop_loss,
     amend_stop_loss,
@@ -33,7 +33,7 @@ from application.order_executor import (
     DuplicateOrderError,
     AmendNotSupported,
 )
-from domain.ids import validate_order_link_id
+from src.domain.ids import validate_order_link_id
 
 
 def test_place_entry_order_success():

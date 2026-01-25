@@ -18,7 +18,7 @@ Test Coverage:
 5. apply_fee_spike_tightening_no_change_when_inactive (no change)
 """
 
-from application.fee_verification import (
+from src.application.fee_verification import (
     estimate_fee_usd,
     verify_fee_post_trade,
     apply_fee_spike_tightening,

@@ -14,7 +14,7 @@ SSOT:
 import pytest
 from typing import List
 
-from application.market_regime import MarketRegimeAnalyzer, Kline
+from src.application.market_regime import MarketRegimeAnalyzer, Kline
 
 
 class TestMarketRegimeMASlope:

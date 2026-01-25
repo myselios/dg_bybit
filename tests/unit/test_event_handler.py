@@ -22,13 +22,13 @@ Test Coverage:
 7. execute_intents_halt_cancels_all_orders (HaltIntent + cancel)
 """
 
-from application.event_handler import (
+from src.application.event_handler import (
     handle_execution_event,
     execute_intents,
 )
-from domain.state import State, Position, PendingOrder, StopStatus, Direction
-from domain.events import ExecutionEvent, EventType
-from domain.intent import (
+from src.domain.state import State, Position, PendingOrder, StopStatus, Direction
+from src.domain.events import ExecutionEvent, EventType
+from src.domain.intent import (
     TransitionIntents,
     StopIntent,
     HaltIntent,

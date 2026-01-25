@@ -33,7 +33,7 @@ def test_generate_signature_is_deterministic():
     """
     서명 생성이 deterministic (동일 입력 → 동일 서명)
 
-    SSOT: task_plan.md Phase 7 - 서명 생성이 deterministic
+    SSOT: docs/plans/task_plan.md Phase 7 - 서명 생성이 deterministic
 
     검증:
     - 동일한 timestamp + params → 동일한 서명
@@ -71,7 +71,7 @@ def test_place_order_payload_satisfies_bybit_spec():
     """
     Place order payload가 Bybit 스펙 만족
 
-    SSOT: task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
+    SSOT: docs/plans/task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
 
     검증:
     - 필수 필드: symbol, side, orderType, qty, timeInForce
@@ -130,7 +130,7 @@ def test_order_link_id_max_length_36_chars():
     """
     orderLinkId <= 36자 검증 (Bybit 스펙)
 
-    SSOT: task_plan.md Phase 7 - orderLinkId<=36 등
+    SSOT: docs/plans/task_plan.md Phase 7 - orderLinkId<=36 등
 
     검증:
     - orderLinkId > 36자 → ValueError
@@ -180,7 +180,7 @@ def test_rate_limit_headers_parsed_correctly():
     """
     Rate limit 헤더 처리 로직 (가짜 헤더 주입)
 
-    SSOT: task_plan.md Phase 7 - Rate limit 헤더 처리 로직
+    SSOT: docs/plans/task_plan.md Phase 7 - Rate limit 헤더 처리 로직
 
     검증:
     - X-Bapi-Limit-Status 파싱
@@ -230,7 +230,7 @@ def test_retcode_10006_triggers_backoff():
     """
     retCode 10006 → backoff 동작
 
-    SSOT: task_plan.md Phase 7 - retCode 10006 → backoff 동작
+    SSOT: docs/plans/task_plan.md Phase 7 - retCode 10006 → backoff 동작
 
     검증:
     - retCode 10006 (rate limit exceeded)
@@ -283,7 +283,7 @@ def test_timeout_triggers_retry():
     """
     Timeout → retry 동작
 
-    SSOT: task_plan.md Phase 7 - Timeout/retry 정책
+    SSOT: docs/plans/task_plan.md Phase 7 - Timeout/retry 정책
 
     검증:
     - Timeout 발생 시 재시도
@@ -328,7 +328,7 @@ def test_testnet_base_url_enforced():
     """
     Testnet base_url 강제 assert (mainnet 접근 차단)
 
-    SSOT: task_plan.md Phase 7 - testnet base_url 강제 assert
+    SSOT: docs/plans/task_plan.md Phase 7 - testnet base_url 강제 assert
 
     검증:
     - Mainnet URL → FatalConfigError
@@ -364,7 +364,7 @@ def test_missing_api_key_prevents_process_start():
     """
     API key 누락 → 프로세스 시작 거부 (fail-fast)
 
-    SSOT: task_plan.md Phase 7 - 키 누락 시 프로세스 시작 거부
+    SSOT: docs/plans/task_plan.md Phase 7 - 키 누락 시 프로세스 시작 거부
 
     검증:
     - API key 누락 → FatalConfigError (프로세스 시작 불가)
@@ -398,7 +398,7 @@ def test_clock_injection_for_deterministic_timestamp():
     """
     Clock 주입 (deterministic timestamp)
 
-    SSOT: task_plan.md Phase 7 - Clock 주입 (fake clock 테스트 가능)
+    SSOT: docs/plans/task_plan.md Phase 7 - Clock 주입 (fake clock 테스트 가능)
 
     검증:
     - Fake clock 주입 시 timestamp가 고정
@@ -435,7 +435,7 @@ def test_cancel_order_payload_satisfies_bybit_spec():
     """
     Cancel order payload가 Bybit 스펙 만족
 
-    SSOT: task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
+    SSOT: docs/plans/task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
 
     검증:
     - 필수 필드: symbol, orderId (또는 orderLinkId)

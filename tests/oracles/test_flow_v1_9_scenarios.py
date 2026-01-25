@@ -19,10 +19,10 @@ NOTE:
 
 import unittest
 
-from domain.state import State, Position, StopStatus, Direction
-from domain.events import ExecutionEvent, EventType
-from adapter.ws_event_processor import WSEventProcessor
-from application.position_manager import manage_stop_status
+from src.domain.state import State, Position, StopStatus, Direction
+from src.domain.events import ExecutionEvent, EventType
+from src.adapter.ws_event_processor import WSEventProcessor
+from src.application.position_manager import manage_stop_status
 
 
 class TestFlowV19Scenarios(unittest.TestCase):

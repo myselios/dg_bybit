@@ -1,22 +1,22 @@
 """
 src/application/sizing.py
-Position sizing (FLOW Section 3.4, Policy Section 10)
+Position sizing (FLOW Section 3.4, Policy Section 10) — Linear USDT
 
 Purpose:
-- Contracts 계산 (loss budget 기반, Direction별 정확한 공식)
-- Margin feasibility 검증 (BTC-denominated)
+- Qty/Contracts 계산 (loss budget 기반, Linear 공식)
+- Margin feasibility 검증 (USDT-denominated)
 - Tick/Lot size 보정 + 재검증
 - Min contracts 검증
 
 SSOT:
-- FLOW.md Section 3.4: Position Sizing (Direction별 정확한 공식)
-- FLOW.md Section 3.4: Margin Calculation (BTC-denominated)
-- FLOW.md Section 3.4: Tick/Lot Size 준수
-- FLOW.md Section 7: Sizing Double-Check (Margin vs Loss)
+- FLOW.md Section 3.4: Position Sizing (Linear 공식)
+- account_builder_policy.md Section 10: Position Sizing (Bybit Linear USDT)
+- ADR-0002: Inverse to Linear USDT Migration
 
 Design Decisions:
-- Direction별 정확한 공식 사용 (stop_distance >= 3%)
-- 근사 공식은 사용하지 않음 (정확성 우선)
+- Linear 공식: loss_usdt = qty * price * stop_distance_pct
+- Bybit Linear BTCUSDT contract size: 0.001 BTC per contract
+- USDT-denominated (환산 불필요)
 - Margin vs Loss budget: 둘 중 작은 값 선택
 - Tick/Lot 보정 후 재검증 필수
 """
@@ -28,28 +28,30 @@ import math
 @dataclass
 class SizingParams:
     """
-    Sizing 파라미터
+    Sizing 파라미터 (Linear USDT)
 
     Attributes:
-        max_loss_btc: 최대 손실 (BTC)
+        max_loss_usdt: 최대 손실 (USDT)
         entry_price_usd: 진입가 (USD)
         stop_distance_pct: Stop 거리 (pct, 예: 0.03 = 3%)
         leverage: 레버리지 (예: 3.0)
-        equity_btc: 현재 equity (BTC)
+        equity_usdt: 현재 equity (USDT)
         fee_rate: 수수료율 (예: 0.0001)
-        direction: "LONG" or "SHORT"
-        qty_step: Lot size (예: 1)
-        tick_size: Tick size (예: 0.5)
+        direction: "LONG" or "SHORT" (Linear에서는 영향 없음, 호환성 유지)
+        qty_step: Lot size (예: 1 contract)
+        tick_size: Tick size (예: 0.5 USD)
+        contract_size: Contract size in BTC (Bybit Linear BTCUSDT: 0.001 BTC)
     """
-    max_loss_btc: float
+    max_loss_usdt: float
     entry_price_usd: float
     stop_distance_pct: float
     leverage: float
-    equity_btc: float
+    equity_usdt: float
     fee_rate: float
     direction: str
     qty_step: int
     tick_size: float
+    contract_size: float = 0.001  # Bybit Linear BTCUSDT default
 
 
 @dataclass
@@ -67,74 +69,74 @@ class SizingResult:
 
 def calculate_contracts(params: SizingParams) -> SizingResult:
     """
-    Position sizing (loss budget + margin 제약)
+    Position sizing (loss budget + margin 제약) — Linear USDT
 
     Args:
         params: SizingParams
-            - max_loss_btc: 최대 손실 (BTC)
+            - max_loss_usdt: 최대 손실 (USDT)
             - entry_price_usd: 진입가 (USD)
             - stop_distance_pct: Stop 거리 (pct, 예: 0.03 = 3%)
             - leverage: 레버리지 (예: 3.0)
-            - equity_btc: 현재 equity (BTC)
+            - equity_usdt: 현재 equity (USDT)
             - fee_rate: 수수료율 (예: 0.0001)
-            - direction: "LONG" or "SHORT"
+            - direction: "LONG" or "SHORT" (Linear에서는 영향 없음)
             - qty_step: Lot size (예: 1)
             - tick_size: Tick size (예: 0.5)
+            - contract_size: Contract size in BTC (기본: 0.001)
 
     Returns:
         SizingResult: contracts + reject_reason
 
     Steps:
-        1. Loss budget 기준 contracts 계산 (Direction별 정확한 공식)
-        2. Margin 기준 contracts 계산
+        1. Loss budget 기준 qty 계산 (Linear 공식)
+        2. Margin 기준 qty 계산
         3. min(loss_based, margin_based)
-        4. Tick/Lot size 보정
-        5. 보정 후 재검증 (margin feasibility)
-        6. 최소 수량 검증
+        4. Qty → Contracts 변환 (contract_size 기준)
+        5. Tick/Lot size 보정
+        6. 보정 후 재검증 (margin feasibility)
+        7. 최소 수량 검증
 
-    FLOW Section 3.4, 7
+    Linear Formula:
+        loss_usdt_at_stop = qty * entry_price * stop_distance_pct
+        qty = max_loss_usdt / (entry_price * stop_distance_pct)
+
+    SSOT: account_builder_policy.md Section 10, ADR-0002
     """
-    # Step 1: Loss budget 기준 contracts 계산
-    if params.direction == "LONG":
-        # LONG: contracts = (max_loss_btc × entry × (1 - d)) / d
-        contracts_from_loss = (
-            params.max_loss_btc
-            * params.entry_price_usd
-            * (1 - params.stop_distance_pct)
-        ) / params.stop_distance_pct
-    else:  # SHORT
-        # SHORT: contracts = (max_loss_btc × entry × (1 + d)) / d
-        contracts_from_loss = (
-            params.max_loss_btc
-            * params.entry_price_usd
-            * (1 + params.stop_distance_pct)
-        ) / params.stop_distance_pct
+    # Step 1: Loss budget 기준 qty 계산 (Linear 공식)
+    # loss_usdt = qty * entry_price * stop_distance_pct
+    # qty = max_loss_usdt / (entry_price * stop_distance_pct)
+    qty_from_loss = params.max_loss_usdt / (
+        params.entry_price_usd * params.stop_distance_pct
+    )
 
-    # Step 2: Margin 기준 contracts 계산
-    # available_btc = equity_btc * 0.8 (80%만 사용, buffer)
-    # max_position_value_btc = available_btc * leverage
-    # contracts_from_margin = max_position_value_btc * entry_price
-    available_btc = params.equity_btc * 0.8
-    max_position_value_btc = available_btc * params.leverage
-    contracts_from_margin = max_position_value_btc * params.entry_price_usd
+    # Step 2: Margin 기준 qty 계산
+    # available_usdt = equity_usdt * 0.8 (80%만 사용, buffer)
+    # max_notional_usdt = available_usdt * leverage
+    # qty_from_margin = max_notional_usdt / entry_price
+    available_usdt = params.equity_usdt * 0.8
+    max_notional_usdt = available_usdt * params.leverage
+    qty_from_margin = max_notional_usdt / params.entry_price_usd
 
     # Step 3: 둘 중 작은 값
-    contracts = min(contracts_from_loss, contracts_from_margin)
-    contracts = int(contracts)  # floor
+    qty = min(qty_from_loss, qty_from_margin)
 
-    # Step 4: Tick/Lot size 보정
+    # Step 4: Qty → Contracts 변환 (Bybit Linear BTCUSDT: 1 contract = 0.001 BTC)
+    contracts = int(qty / params.contract_size)
+
+    # Step 5: Tick/Lot size 보정
     contracts = int(contracts / params.qty_step) * params.qty_step
 
-    # Step 5: 최소 수량 검증
+    # Step 6: 최소 수량 검증
     if contracts < params.qty_step:
         return SizingResult(contracts=0, reject_reason="qty_below_minimum")
 
-    # Step 6: 보정 후 재검증 (margin feasibility)
-    position_value_btc = contracts / params.entry_price_usd
-    required_margin_btc = position_value_btc / params.leverage
-    fee_buffer_btc = position_value_btc * params.fee_rate * 2
+    # Step 7: 보정 후 재검증 (margin feasibility, USDT-denominated)
+    actual_qty = contracts * params.contract_size
+    notional_usdt = actual_qty * params.entry_price_usd
+    required_margin_usdt = notional_usdt / params.leverage
+    fee_buffer_usdt = notional_usdt * params.fee_rate * 2  # entry + exit
 
-    if required_margin_btc + fee_buffer_btc > params.equity_btc:
+    if required_margin_usdt + fee_buffer_usdt > params.equity_usdt:
         return SizingResult(contracts=0, reject_reason="margin_insufficient")
 
     # 성공

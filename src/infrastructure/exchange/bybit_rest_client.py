@@ -30,7 +30,7 @@ class FatalConfigError(Exception):
     """
     설정 오류 (프로세스 시작 불가)
 
-    SSOT: task_plan.md Phase 7 - 키 누락 시 프로세스 시작 거부
+    SSOT: docs/plans/task_plan.md Phase 7 - 키 누락 시 프로세스 시작 거부
     """
 
     pass
@@ -40,7 +40,7 @@ class RateLimitError(Exception):
     """
     Rate limit 초과
 
-    SSOT: task_plan.md Phase 7 - retCode 10006 → backoff 동작
+    SSOT: docs/plans/task_plan.md Phase 7 - retCode 10006 → backoff 동작
     """
 
     def __init__(self, message: str, retry_after: Optional[float] = None):
@@ -52,7 +52,7 @@ class BybitRestClient:
     """
     Bybit REST API Client (골격만, Contract tests only)
 
-    SSOT: task_plan.md Phase 7
+    SSOT: docs/plans/task_plan.md Phase 7
     - 서명 생성 deterministic
     - Bybit 스펙 만족 (payload 검증)
     - Rate limit 헤더 처리 (X-Bapi-*)
@@ -113,7 +113,7 @@ class BybitRestClient:
         Returns:
             int: timestamp (ms)
 
-        SSOT: task_plan.md Phase 7 - Clock 주입 (determinism)
+        SSOT: docs/plans/task_plan.md Phase 7 - Clock 주입 (determinism)
         """
         return int(self.clock() * 1000)
 
@@ -128,7 +128,7 @@ class BybitRestClient:
         Returns:
             str: HMAC SHA256 서명
 
-        SSOT: task_plan.md Phase 7 - 서명 생성이 deterministic
+        SSOT: docs/plans/task_plan.md Phase 7 - 서명 생성이 deterministic
         """
         # Bybit 서명 스펙: timestamp + api_key + params_str
         # params_str: 알파벳 순으로 정렬된 key=value 문자열
@@ -151,7 +151,7 @@ class BybitRestClient:
         Args:
             headers: 응답 헤더
 
-        SSOT: task_plan.md Phase 7 - Rate limit 헤더 처리 로직
+        SSOT: docs/plans/task_plan.md Phase 7 - Rate limit 헤더 처리 로직
         """
         remaining = headers.get("X-Bapi-Limit-Status")
         reset_timestamp = headers.get("X-Bapi-Limit-Reset-Timestamp")
@@ -278,7 +278,7 @@ class BybitRestClient:
             ValueError: orderLinkId > 36자 또는 Limit 주문에 price 없음
             RateLimitError: Rate limit 초과
 
-        SSOT: task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
+        SSOT: docs/plans/task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
         """
         # orderLinkId <= 36자 검증
         if len(order_link_id) > 36:
@@ -320,7 +320,7 @@ class BybitRestClient:
         Returns:
             Dict: 응답 JSON
 
-        SSOT: task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
+        SSOT: docs/plans/task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
         """
         params = {
             "category": "inverse",
@@ -359,7 +359,7 @@ class BybitRestClient:
                     }
                 }
 
-        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        SSOT: docs/plans/task_plan.md Phase 12a-1 - REST API Integration
         """
         params = {
             "category": category,
@@ -395,7 +395,7 @@ class BybitRestClient:
                     }
                 }
 
-        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        SSOT: docs/plans/task_plan.md Phase 12a-1 - REST API Integration
         """
         params = {
             "accountType": accountType,
@@ -430,7 +430,7 @@ class BybitRestClient:
                     }
                 }
 
-        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        SSOT: docs/plans/task_plan.md Phase 12a-1 - REST API Integration
         """
         params = {
             "category": category,
@@ -464,7 +464,7 @@ class BybitRestClient:
                     }
                 }
 
-        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        SSOT: docs/plans/task_plan.md Phase 12a-1 - REST API Integration
         """
         params = {
             "category": category,
@@ -509,7 +509,7 @@ class BybitRestClient:
                     }
                 }
 
-        SSOT: task_plan.md Phase 12a-2 - Market Data Provider 통합
+        SSOT: docs/plans/task_plan.md Phase 12a-2 - Market Data Provider 통합
         """
         params = {
             "category": category,

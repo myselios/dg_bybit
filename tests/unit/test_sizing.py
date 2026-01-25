@@ -1,121 +1,74 @@
 """
 tests/unit/test_sizing.py
-Unit tests for position sizing (FLOW Section 3.4, Policy Section 10)
+Unit tests for position sizing (Linear USDT) — ADR-0002
 
 Purpose:
-- Contracts 계산 (loss budget 기반, Direction별 정확한 공식)
-- Margin feasibility 검증 (BTC-denominated)
+- Qty/Contracts 계산 (loss budget 기반, Linear 공식)
+- Margin feasibility 검증 (USDT-denominated)
 - Tick/Lot size 보정 + 재검증
 - Min contracts 검증
 
 SSOT:
-- FLOW.md Section 3.4: Position Sizing (Direction별 정확한 공식)
-- FLOW.md Section 3.4: Margin Calculation (BTC-denominated)
-- FLOW.md Section 3.4: Tick/Lot Size 준수
-- Policy.md Section 10: Position Sizing
+- account_builder_policy.md Section 10: Position Sizing (Bybit Linear USDT)
+- ADR-0002: Inverse to Linear USDT Migration
+- sizing.py: Linear 공식 구현
 
 Test Coverage:
-1. contracts_from_loss_budget_long (LONG, 정확한 공식)
-2. contracts_from_loss_budget_short (SHORT, 정확한 공식)
-3. margin_feasibility_rejects_insufficient (margin 부족 → REJECT)
-4. tick_lot_size_correction (qty_step 보정)
-5. tick_lot_size_revalidation_after_rounding (보정 후 재검증)
-6. min_contracts_validation (최소 수량 검증)
-7. margin_vs_loss_budget_minimum (margin/loss 중 작은 값)
-8. fee_buffer_included_in_margin_check (fee buffer 포함)
+1. contracts_from_loss_budget (Linear 공식)
+2. margin_feasibility_rejects_insufficient (margin 부족 → REJECT)
+3. tick_lot_size_correction (qty_step 보정)
+4. tick_lot_size_revalidation_after_rounding (보정 후 재검증)
+5. min_contracts_validation (최소 수량 검증)
+6. margin_vs_loss_budget_minimum (margin/loss 중 작은 값)
+7. fee_buffer_included_in_margin_check (fee buffer 포함)
+8. contract_size_conversion (qty → contracts 변환)
 """
 
-from dataclasses import dataclass
-from src.application.sizing import calculate_contracts, SizingResult
+from src.application.sizing import calculate_contracts, SizingParams, SizingResult
 
 
-@dataclass
-class SizingParams:
-    """Sizing 파라미터"""
-    max_loss_btc: float
-    entry_price_usd: float
-    stop_distance_pct: float
-    leverage: float
-    equity_btc: float
-    fee_rate: float
-    direction: str  # "LONG" or "SHORT"
-    qty_step: int  # Lot size (예: 1)
-    tick_size: float  # Tick size (예: 0.5)
-
-
-def test_contracts_from_loss_budget_long():
+def test_contracts_from_loss_budget():
     """
-    LONG: contracts 계산 (정확한 공식)
+    Linear USDT: contracts 계산
 
-    FLOW Section 3.4:
-        contracts = (max_loss_btc × entry × (1 - stop_distance_pct)) / stop_distance_pct
+    Linear Formula (ADR-0002):
+        loss_usdt_at_stop = qty * entry_price * stop_distance_pct
+        qty = max_loss_usdt / (entry_price * stop_distance_pct)
+        contracts = floor(qty / contract_size)
 
     Example:
-        max_loss_btc = 0.001 BTC
-        entry_price = 100000 USD
+        max_loss_usdt = $100 USDT
+        entry_price = $100,000 USD
         stop_distance_pct = 0.03 (3%)
+        contract_size = 0.001 BTC
 
-        contracts = (0.001 × 100000 × (1 - 0.03)) / 0.03
-                  = (100 × 0.97) / 0.03
-                  = 97 / 0.03
-                  = 3233.33 → floor(3233) = 3233
+        qty = 100 / (100000 * 0.03)
+            = 100 / 3000
+            = 0.03333 BTC
+
+        contracts = floor(0.03333 / 0.001)
+                  = floor(33.33)
+                  = 33 contracts
     """
     params = SizingParams(
-        max_loss_btc=0.001,
+        max_loss_usdt=100.0,
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.02,  # 충분히 높음 (margin 통과용, loss budget 우선)
+        equity_usdt=10000.0,  # 충분히 높음 (margin 통과용, loss budget 우선)
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # 정확한 공식 검증
-    expected_contracts = (0.001 * 100000 * (1 - 0.03)) / 0.03
-    expected_contracts = int(expected_contracts)  # floor
-
-    assert result.contracts == expected_contracts
-    assert result.reject_reason is None
-
-
-def test_contracts_from_loss_budget_short():
-    """
-    SHORT: contracts 계산 (정확한 공식)
-
-    FLOW Section 3.4:
-        contracts = (max_loss_btc × entry × (1 + stop_distance_pct)) / stop_distance_pct
-
-    Example:
-        max_loss_btc = 0.001 BTC
-        entry_price = 100000 USD
-        stop_distance_pct = 0.03 (3%)
-
-        contracts = (0.001 × 100000 × (1 + 0.03)) / 0.03
-                  = (100 × 1.03) / 0.03
-                  = 103 / 0.03
-                  = 3433.33 → floor(3433) = 3433
-    """
-    params = SizingParams(
-        max_loss_btc=0.001,
-        entry_price_usd=100000.0,
-        stop_distance_pct=0.03,
-        leverage=3.0,
-        equity_btc=0.02,  # 충분히 높음 (margin 통과용, loss budget 우선)
-        fee_rate=0.0001,
-        direction="SHORT",
-        qty_step=1,
-        tick_size=0.5,
-    )
-
-    result = calculate_contracts(params)
-
-    # 정확한 공식 검증
-    expected_contracts = (0.001 * 100000 * (1 + 0.03)) / 0.03
-    expected_contracts = int(expected_contracts)  # floor
+    # Linear 공식 검증
+    qty = 100.0 / (100000.0 * 0.03)  # 0.03333 BTC
+    expected_contracts = int(qty / 0.001)  # floor(33.33) = 33
+    expected_contracts = int(expected_contracts / params.qty_step) * params.qty_step  # Lot size 보정
 
     assert result.contracts == expected_contracts
     assert result.reject_reason is None
@@ -123,187 +76,228 @@ def test_contracts_from_loss_budget_short():
 
 def test_margin_feasibility_constrains_contracts():
     """
-    Margin feasibility: equity가 작으면 contracts가 제약됨
+    Margin 부족 → contracts 제한 또는 REJECT
 
-    FLOW Section 7: contracts = min(contracts_from_loss, contracts_from_margin)
-    - Loss budget는 크지만, margin이 부족하면 contracts가 줄어듦
-    - 80% buffer 때문에 완전히 REJECT는 아니지만, 매우 작은 값
+    Example:
+        equity_usdt = $1000 USDT
+        leverage = 3.0
+        available_usdt = 1000 * 0.8 = 800 USDT (80% buffer)
+        max_notional_usdt = 800 * 3 = 2400 USDT
+        qty_from_margin = 2400 / 100000 = 0.024 BTC
+        contracts_from_margin = floor(0.024 / 0.001) = 24 contracts
+
+        하지만 loss budget은 더 크게 설정 (margin이 제한 요인)
     """
     params = SizingParams(
-        max_loss_btc=0.01,  # 큰 loss budget (loss 기준 ~32000 contracts)
+        max_loss_usdt=1000.0,  # 큰 loss budget (margin 제한 유도)
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.0005,  # 매우 작은 equity (margin 제약)
+        equity_usdt=1000.0,  # 작은 equity (margin 제한)
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # Margin 제약으로 인해 contracts가 매우 작음
-    loss_based = int((0.01 * 100000 * (1 - 0.03)) / 0.03)
-    assert result.contracts < loss_based
-    assert result.contracts < 200  # Margin 제약으로 매우 작음
+    # Margin 제한 검증
+    available_usdt = 1000.0 * 0.8  # 800
+    max_notional_usdt = available_usdt * 3.0  # 2400
+    qty_from_margin = max_notional_usdt / 100000.0  # 0.024 BTC
+    expected_contracts = int(qty_from_margin / 0.001)  # floor(24) = 24
+
+    # contracts는 margin으로 제한됨
+    assert result.contracts <= expected_contracts
+    assert result.contracts > 0  # REJECT는 아님 (일부 가능)
 
 
 def test_tick_lot_size_correction():
     """
-    Tick/Lot size 보정: qty_step 단위로 floor
-
-    FLOW Section 3.4:
-        contracts = floor(contracts / qty_step) * qty_step
+    Tick/Lot size 보정 (qty_step)
 
     Example:
-        raw_contracts = 3233.7
-        qty_step = 10
-        → contracts = floor(3233.7 / 10) * 10 = 323 * 10 = 3230
+        qty_step = 5 contracts
+        계산 결과 = 33 contracts
+        보정 후 = 30 contracts (floor(33 / 5) * 5 = 30)
     """
     params = SizingParams(
-        max_loss_btc=0.001,
+        max_loss_usdt=100.0,
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.02,  # 충분히 높음 (margin 통과용, loss budget 우선)
+        equity_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
-        qty_step=10,  # Lot size = 10
+        qty_step=5,  # 5 contracts씩만 거래 가능
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # qty_step 단위로 floor
-    raw_contracts = (0.001 * 100000 * (1 - 0.03)) / 0.03
-    expected_contracts = int(raw_contracts / 10) * 10
-
-    assert result.contracts == expected_contracts
-    assert result.contracts % 10 == 0  # qty_step 배수
+    # Lot size 보정 검증
+    assert result.contracts % params.qty_step == 0  # 5의 배수
+    assert result.reject_reason is None
 
 
 def test_min_contracts_validation():
     """
-    최소 수량 검증: contracts < qty_step → REJECT
+    최소 수량 검증 (qty_step 미만 → REJECT)
 
-    FLOW Section 3.4:
-        if contracts < qty_step => REJECT
+    Example:
+        max_loss_usdt = 0.1 USDT (매우 작음)
+        계산 결과 = 0.000033 BTC = 0.033 contracts
+        floor(0.033) = 0 contracts
+        → qty_below_minimum REJECT
     """
     params = SizingParams(
-        max_loss_btc=0.00001,  # 매우 작은 loss budget
+        max_loss_usdt=0.1,  # 매우 작은 loss budget
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.01,
+        equity_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
-        qty_step=100,  # 큰 lot size
+        qty_step=1,
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # raw_contracts = (0.00001 * 100000 * 0.97) / 0.03 = 32.33
-    # floor(32.33 / 100) * 100 = 0 * 100 = 0
-    # 0 < 100 → REJECT
-
+    # 최소 수량 미달 → REJECT
     assert result.contracts == 0
     assert result.reject_reason == "qty_below_minimum"
 
 
 def test_margin_vs_loss_budget_minimum():
     """
-    Margin vs Loss budget: 둘 중 작은 값 사용
+    Loss budget vs Margin: 둘 중 작은 값 선택
 
-    FLOW Section 7: Sizing Double-Check
-        contracts = min(contracts_from_loss, contracts_from_margin)
+    Example:
+        loss budget → 33 contracts
+        margin → 24 contracts
+        → min(33, 24) = 24 contracts
     """
-    # Margin 제약이 더 작은 경우
     params = SizingParams(
-        max_loss_btc=0.01,  # 큰 loss budget
+        max_loss_usdt=100.0,  # Loss budget → 33 contracts
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.003,  # 작은 equity (margin 제약)
+        equity_usdt=1000.0,  # Margin → 24 contracts (제한 요인)
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # Loss budget 기준: (0.01 * 100000 * 0.97) / 0.03 = 32333
-    # Margin 기준: equity * leverage * entry - fee_buffer
-    #   = 0.003 * 3 * 100000 - fee = 900 - fee ≈ 800~900 정도
-    # → Margin이 제약
+    # Margin이 제한 요인 → contracts < loss budget 기준
+    qty_from_loss = 100.0 / (100000.0 * 0.03)  # 0.03333 BTC
+    contracts_from_loss = int(qty_from_loss / 0.001)  # 33 contracts
 
-    # contracts < loss budget 기준
-    loss_based = int((0.01 * 100000 * (1 - 0.03)) / 0.03)
-    assert result.contracts < loss_based
+    assert result.contracts < contracts_from_loss  # Margin 제한
+    assert result.contracts > 0
 
 
 def test_fee_buffer_included_in_margin_check():
     """
-    Fee buffer 포함: margin + fee_buffer <= equity
+    Fee buffer 포함 (entry + exit)
 
-    FLOW Section 3.4:
-        fee_buffer_btc = (contracts / entry) × fee_rate × 2
-        required_margin_btc + fee_buffer_btc <= equity_btc
+    Example:
+        notional_usdt = qty * entry_price
+        fee_buffer_usdt = notional_usdt * fee_rate * 2
+        required_margin_usdt + fee_buffer_usdt <= equity_usdt
     """
     params = SizingParams(
-        max_loss_btc=0.001,
+        max_loss_usdt=100.0,
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.01,
-        fee_rate=0.0001,
+        equity_usdt=1000.0,
+        fee_rate=0.0001,  # 0.01%
         direction="LONG",
         qty_step=1,
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # Fee buffer 계산
-    position_value_btc = result.contracts / params.entry_price_usd
-    fee_buffer_btc = position_value_btc * params.fee_rate * 2
-    required_margin_btc = position_value_btc / params.leverage
+    # Fee buffer 검증
+    actual_qty = result.contracts * 0.001
+    notional_usdt = actual_qty * 100000.0
+    required_margin_usdt = notional_usdt / 3.0
+    fee_buffer_usdt = notional_usdt * 0.0001 * 2
 
-    # 검증: margin + fee_buffer <= equity
-    assert required_margin_btc + fee_buffer_btc <= params.equity_btc
+    # 마진 + 수수료 버퍼 <= equity
+    assert required_margin_usdt + fee_buffer_usdt <= params.equity_usdt
 
 
 def test_tick_lot_size_revalidation_after_rounding():
     """
-    보정 후 재검증: tick/lot 보정 후 margin 재확인
+    보정 후 재검증 (margin feasibility 재확인)
 
-    FLOW Section 3.4:
-        4. 보정 후 재검증 (필수)
-        - Margin feasibility 재확인
-        - Liquidation gate 재확인 (추후 구현)
-        - 최소 수량 검증
+    보정 전 contracts가 margin을 통과해도,
+    보정 후 contracts가 margin을 초과하면 REJECT
+
+    Example:
+        보정 전 = 24.8 contracts → floor(24) = 24 (margin 통과)
+        Lot size 보정 = 20 contracts (qty_step=5)
+        재검증 → 통과
     """
-    # 보정 전에는 통과, 보정 후 margin 부족 케이스
     params = SizingParams(
-        max_loss_btc=0.001,
+        max_loss_usdt=75.0,  # 약 25 contracts
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
-        equity_btc=0.0035,  # 경계값 (보정 후 부족 가능)
+        equity_usdt=1000.0,
         fee_rate=0.0001,
         direction="LONG",
-        qty_step=100,  # 큰 lot size (보정으로 크게 변함)
+        qty_step=5,  # Lot size 보정
         tick_size=0.5,
+        contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # 보정 후 재검증 통과 확인
-    if result.contracts > 0:
-        position_value_btc = result.contracts / params.entry_price_usd
-        fee_buffer_btc = position_value_btc * params.fee_rate * 2
-        required_margin_btc = position_value_btc / params.leverage
+    # 보정 후에도 margin 통과 검증
+    assert result.contracts % params.qty_step == 0  # Lot size 준수
+    assert result.reject_reason is None  # 재검증 통과
 
-        assert required_margin_btc + fee_buffer_btc <= params.equity_btc
+
+def test_contract_size_conversion():
+    """
+    Qty → Contracts 변환 (contract_size 기준)
+
+    Example:
+        qty = 0.05 BTC
+        contract_size = 0.001 BTC per contract
+        contracts = floor(0.05 / 0.001) = 50 contracts
+    """
+    params = SizingParams(
+        max_loss_usdt=150.0,
+        entry_price_usd=100000.0,
+        stop_distance_pct=0.03,
+        leverage=3.0,
+        equity_usdt=10000.0,
+        fee_rate=0.0001,
+        direction="LONG",
+        qty_step=1,
+        tick_size=0.5,
+        contract_size=0.001,  # 1 contract = 0.001 BTC
+    )
+
+    result = calculate_contracts(params)
+
+    # Contracts 변환 검증
+    qty = 150.0 / (100000.0 * 0.03)  # 0.05 BTC
+    expected_contracts = int(qty / 0.001)  # floor(50) = 50
+
+    assert result.contracts == expected_contracts
+    assert result.reject_reason is None

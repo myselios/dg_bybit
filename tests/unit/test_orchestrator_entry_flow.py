@@ -17,9 +17,9 @@ Test Coverage:
 """
 
 import pytest
-from application.orchestrator import Orchestrator
-from infrastructure.exchange.fake_market_data import FakeMarketData
-from domain.state import State
+from src.application.orchestrator import Orchestrator
+from src.infrastructure.exchange.fake_market_data import FakeMarketData
+from src.domain.state import State
 
 
 class MockRestClient:
@@ -84,7 +84,7 @@ def test_entry_flow_success():
         - Order placement: 1 order placed
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)  # Linear USDT
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     fake_data.inject_trades_today(0)
@@ -128,7 +128,7 @@ def test_entry_blocked_state_not_flat():
         - Reason: state_not_flat
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
 
@@ -173,7 +173,7 @@ def test_entry_blocked_degraded_mode():
         - Reason: degraded_mode
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.set_ws_degraded(degraded=True)
 
     mock_rest_client = MockRestClient()
@@ -209,7 +209,7 @@ def test_entry_blocked_no_signal():
         - Reason: no_signal
     """
     # Given
-    fake_data = FakeMarketData(current_price=49900.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=49900.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     # Current price = 49900, Grid up = 49800 + 200 = 50000, Grid down = 49800 - 200 = 49600
@@ -247,7 +247,7 @@ def test_entry_blocked_gate_reject():
         - Reason: atr_too_low
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     fake_data.inject_atr_pct_24h(0.01)  # 1% (ATR gate 거절: < 2%)
@@ -330,7 +330,7 @@ def test_entry_blocked_rest_client_unavailable():
         - Reason: rest_client_unavailable
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     fake_data.inject_atr_pct_24h(0.03)
