@@ -86,6 +86,7 @@ def check_entry_allowed(
     position_mode: str,
     cooldown_until: float | None,
     current_time: float | None = None,
+    force_entry: bool = False,
 ) -> EntryDecision:
     """
     Entry gates 검증 (8 gates)
@@ -100,52 +101,59 @@ def check_entry_allowed(
         position_mode: Position mode ("MergedSingle" = one-way, "BothSide" = hedge)
         cooldown_until: COOLDOWN timeout 시각 (None이면 cooldown 아님)
         current_time: 현재 시각 (cooldown 검증용)
+        force_entry: Force Entry 모드 (테스트용, 일부 gates 우회)
 
     Returns:
         EntryDecision: 진입 허용 여부 + 거절 사유
 
     Gate 순서:
-        1) HALT 상태 → REJECT
-        2a) COOLDOWN (timeout 전) → REJECT
-        2b) max_trades_per_day 초과 → REJECT
+        1) HALT 상태 → REJECT (force_entry에서도 유지)
+        2a) COOLDOWN (timeout 전) → REJECT (force_entry에서 우회)
+        2b) max_trades_per_day 초과 → REJECT (force_entry에서 우회)
         3) stage params 검증 (현재는 생략, 추후 확장)
-        4) ATR < 임계치 → REJECT
-        5) EV gate (expected_profit < fee * K) → REJECT
-        6) maker-only 위반 → REJECT
+        4) ATR < 임계치 → REJECT (force_entry에서 우회)
+        5) EV gate (expected_profit < fee * K) → REJECT (force_entry에서 우회)
+        6) maker-only 위반 → REJECT (force_entry에서 우회)
         7) winrate gate (현재는 생략, 추후 확장)
-        8) one-way mode 위반 → REJECT
+        8) one-way mode 위반 → REJECT (force_entry에서도 유지)
 
     FLOW Section 2: Gate 순서는 고정 (Policy/Flow 충돌 금지)
+    Phase 12a-4: force_entry 모드 지원 (Testnet 자동 거래용)
     """
-    # Gate 1: HALT 상태
+    # Gate 1: HALT 상태 (force_entry에서도 유지)
     if state == State.HALT:
         return EntryDecision(allowed=False, reject_reason="state_halt")
 
-    # Gate 2a: COOLDOWN timeout 전
-    if state == State.COOLDOWN:
-        if cooldown_until is not None and current_time is not None:
-            if current_time < cooldown_until:
-                return EntryDecision(allowed=False, reject_reason="cooldown_active")
+    # Gate 2a: COOLDOWN timeout 전 (force_entry에서 우회)
+    if not force_entry:
+        if state == State.COOLDOWN:
+            if cooldown_until is not None and current_time is not None:
+                if current_time < cooldown_until:
+                    return EntryDecision(allowed=False, reject_reason="cooldown_active")
 
-    # Gate 2b: max_trades_per_day 초과
-    if trades_today >= stage.max_trades_per_day:
-        return EntryDecision(allowed=False, reject_reason="max_trades_per_day_exceeded")
+    # Gate 2b: max_trades_per_day 초과 (force_entry에서 우회)
+    if not force_entry:
+        if trades_today >= stage.max_trades_per_day:
+            return EntryDecision(allowed=False, reject_reason="max_trades_per_day_exceeded")
 
     # Gate 3: stage params 검증 (현재는 생략)
     # TODO: leverage 검증, loss budget 검증 등
 
-    # Gate 4: ATR < 임계치
-    if atr_pct_24h < stage.atr_pct_24h_min:
-        return EntryDecision(allowed=False, reject_reason="atr_too_low")
+    # Gate 4: ATR < 임계치 (force_entry에서 우회)
+    if not force_entry:
+        if atr_pct_24h < stage.atr_pct_24h_min:
+            return EntryDecision(allowed=False, reject_reason="atr_too_low")
 
-    # Gate 5: EV gate
-    min_expected_profit = signal.estimated_fee_usd * stage.ev_fee_multiple_k
-    if signal.expected_profit_usd < min_expected_profit:
-        return EntryDecision(allowed=False, reject_reason="ev_insufficient")
+    # Gate 5: EV gate (force_entry에서 우회)
+    if not force_entry:
+        min_expected_profit = signal.estimated_fee_usd * stage.ev_fee_multiple_k
+        if signal.expected_profit_usd < min_expected_profit:
+            return EntryDecision(allowed=False, reject_reason="ev_insufficient")
 
-    # Gate 6: maker-only 위반
-    if stage.maker_only_default and not signal.is_maker:
-        return EntryDecision(allowed=False, reject_reason="maker_only_violation")
+    # Gate 6: maker-only 위반 (force_entry에서 우회)
+    if not force_entry:
+        if stage.maker_only_default and not signal.is_maker:
+            return EntryDecision(allowed=False, reject_reason="maker_only_violation")
 
     # Gate 7: winrate gate (현재는 생략)
     # TODO: soft gate (size 감소), hard gate (HALT)

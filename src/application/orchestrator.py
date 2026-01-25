@@ -662,6 +662,7 @@ class Orchestrator:
             position_mode=position_mode,
             cooldown_until=cooldown_until,
             current_time=current_time,
+            force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
         )
         logger.info(f">>> Entry decision: allowed={entry_decision.allowed}, reason={entry_decision.reject_reason}")
 
@@ -683,19 +684,26 @@ class Orchestrator:
             self.current_signal_id = generate_signal_id()
 
             # Entry order 발주 (Limit order, Maker)
+            # TEMPORARY DEBUG: Use 1 contract to test
+            test_qty = 1
+            logger.info(f">>> Placing order: symbol=BTCUSDT, side={signal.side}, qty={test_qty} (calculated: {contracts}), price={signal.price}")
             order_result = self.rest_client.place_order(
-                symbol="BTCUSD",
+                symbol="BTCUSDT",  # Linear USDT Futures (ADR-0002)
                 side=signal.side,  # "Buy" or "Sell"
                 order_type="Limit",
-                qty=contracts,
-                price=signal.price,
+                qty=str(test_qty),  # Bybit requires string
+                price=str(signal.price),  # Bybit requires string
                 time_in_force="PostOnly",  # Maker-only
                 order_link_id=f"entry_{self.current_signal_id}",
+                category="linear",  # Linear USDT Futures
             )
+            logger.info(f">>> Order result: {order_result}")
 
-            # Order ID 저장
-            order_id = order_result["orderId"]
-            order_link_id = order_result["orderLinkId"]
+            # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
+            result = order_result.get("result", {})
+            order_id = result.get("orderId")
+            order_link_id = result.get("orderLinkId")
+            logger.info(f">>> Order placed: order_id={order_id}, order_link_id={order_link_id}")
 
         except Exception as e:
             # Order placement 실패 → 차단
