@@ -1,0 +1,16 @@
+=== FLOW.md v1.10 → v1.11 변경 요약 ===
+
+Before:
+5401 docs/constitution/FLOW.md
+38
+
+After:
+2635 docs/constitution/FLOW.md
+1
+
+변경 사항:
+1. Section 10.2 중복 제거: 38개 → 1개
+2. 문서 크기 감소: 5401줄 → 2626줄 (51.4% 감소)
+3. Section 4.5 SSOT 표기 추가
+4. Stop 관리 규칙 중복 제거 (참조로 대체)
+5. 버전 업데이트: v1.10 → v1.11
