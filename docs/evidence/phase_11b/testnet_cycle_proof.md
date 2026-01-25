@@ -150,4 +150,65 @@ assert orchestrator.state == State.FLAT
 
 **Phase 11b COMPLETE**: Full Orchestrator Integration + Testnet E2E 완료
 
+## Trade Log Integration (gpt.md Problem #3)
+
+**Date**: 2026-01-25
+**Commit**: b436d8e
+
+### Changes
+1. **FakeMarketData**: Added Trade Log generation methods
+   - get_funding_rate() → 0.0001 (default)
+   - get_index_price() → mark_price
+   - get_ma_slope_pct() → 0.05 (5%, ranging market)
+   - get_atr_percentile() → 40.0 (low volatility)
+   - get_exchange_server_time_offset_ms() → 10.0ms
+
+2. **Orchestrator**: Trade Log v1.0 Integration
+   - __init__: Added log_storage parameter (Optional[LogStorage])
+   - _process_events(): Generate Trade Log on Exit FILL → FLAT
+   - _log_completed_trade(): Create TradeLogV1 with all required fields
+
+3. **test_full_cycle_testnet.py**: Trade Log Verification
+   - Initialize LogStorage with tempfile.mkdtemp()
+   - Verify Trade Log creation (len == 1)
+   - Assert log fields: order_id, market_regime, schema_version, fills
+
+### Test Result
+```bash
+$ pytest -xvs tests/integration_real/test_full_cycle_testnet.py::test_full_cycle_success
+tests/integration_real/test_full_cycle_testnet.py::test_full_cycle_success PASSED
+```
+
+### Trade Log Example
+```json
+{
+  "order_id": "mock_order_2",
+  "fills": [{"price": 48400.0, "qty": 100, "fee": 0.0, "timestamp": 1737000000.0}],
+  "slippage_usd": 0.0,
+  "latency_rest_ms": 0.0,
+  "latency_ws_ms": 0.0,
+  "latency_total_ms": 0.0,
+  "funding_rate": 0.0001,
+  "mark_price": 48400.0,
+  "index_price": 48400.0,
+  "orderbook_snapshot": {},
+  "market_regime": "ranging",
+  "schema_version": "1.0",
+  "config_hash": "test_config_hash",
+  "git_commit": "test_git_commit",
+  "exchange_server_time_offset_ms": 10.0
+}
+```
+
+## Final Summary
+
+**Phase 11b COMPLETE**: Full Orchestrator Integration + Exit Order Placement + Trade Log Integration
+
+**Commits**:
+- d7292e3: God Object Refactoring (706→413 LOC)
+- 3d181f5: Exit Order Placement + Manual State fix
+- b436d8e: Trade Log Integration
+
+**Test Results**: 267 passed, 15 deselected (no regressions)
+
 **Next Phase**: Phase 12 - Dry-Run Validation (실제 Testnet 연결)

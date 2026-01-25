@@ -148,8 +148,48 @@ $ pytest -q
 - [x] src/application/orchestrator.py (706→413 LOC)
 - [x] docs/plans/task_plan.md (v2.29→v2.30)
 
+## gpt.md Review (Post-Implementation Verification)
+
+**Date**: 2026-01-25
+**Initial Verdict**: FAIL (3 problems identified)
+
+### Problem #1: Exit Order Placement Missing ✅ FIXED
+**Issue**: DoD required "Stop hit → Place exit order" but implementation only created ExitIntent without placing actual order.
+
+**Fix**: Commit 3d181f5
+- Added Exit order placement in `_manage_position()`
+- Market order for immediate execution
+- State transition to EXIT_PENDING
+- Proper pending_order tracking
+
+### Problem #2: Manual State Manipulation ✅ FIXED
+**Issue**: Tests used manual `orchestrator.state = State.EXIT_PENDING` which bypasses state machine.
+
+**Fix**: Commit 3d181f5
+- Removed all manual State assignments in test_full_cycle_testnet.py
+- Tests now verify actual orchestrator behavior
+- Added assertions for Exit order placement verification
+
+### Problem #3: Trade Log Integration Missing ✅ FIXED
+**Issue**: DoD required "Trade log 정상 기록 (Phase 10 로깅 인프라 사용)" but no TradeLogV1 usage found.
+
+**Fix**: Commit b436d8e
+- FakeMarketData: Added Trade Log generation methods (funding_rate, index_price, ma_slope_pct, atr_percentile, exchange_server_time_offset_ms)
+- Orchestrator: Integrated Trade Log v1.0 (log_storage parameter, _log_completed_trade method)
+- Exit FILL → FLAT transition now generates Trade Log
+- test_full_cycle_success: Added LogStorage initialization and Trade Log verification
+
+**Final Verdict**: ✅ PASS (All 3 problems fixed)
+
 ## Conclusion
 
-**Phase 11b COMPLETE**: All DoD items satisfied, all gates passed, all tests passing.
+**Phase 11b COMPLETE**: All DoD items satisfied, all gates passed, all tests passing, gpt.md review PASS.
+
+**Final Commits**:
+- d7292e3: God Object Refactoring
+- 3d181f5: Exit Order Placement + Manual State fix
+- b436d8e: Trade Log Integration
+
+**Test Results**: 267 passed, 15 deselected (no regressions)
 
 **Ready for**: Phase 12 - Dry-Run Validation (실제 Testnet 연결)
