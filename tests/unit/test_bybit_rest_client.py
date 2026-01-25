@@ -114,16 +114,19 @@ def test_place_order_payload_satisfies_bybit_spec():
 
         # Then: 요청 payload 검증
         call_kwargs = mock_post.call_args.kwargs
-        request_json = call_kwargs.get("json", {})
+        # POST 요청은 data= 키에 JSON 문자열로 전송됨 (V5 API)
+        request_data = call_kwargs.get("data", "{}")
+        import json
+        request_json = json.loads(request_data)
 
         # 필수 필드 존재
         assert request_json["symbol"] == "BTCUSD"
         assert request_json["side"] == "Buy"
         assert request_json["orderType"] == "Market"  # Default
-        assert request_json["qty"] == 100
+        assert request_json["qty"] == "100"  # V5 API: qty는 string
         assert request_json["timeInForce"] == "GoodTillCancel"  # Default
         assert request_json["orderLinkId"] == order_link_id
-        assert request_json["category"] == "inverse"  # 코인마진드
+        assert request_json["category"] == "linear"  # Default (V5 Linear USDT)
 
 
 def test_order_link_id_max_length_36_chars():
@@ -474,9 +477,12 @@ def test_cancel_order_payload_satisfies_bybit_spec():
 
         # Then: 요청 payload 검증
         call_kwargs = mock_post.call_args.kwargs
-        request_json = call_kwargs.get("json", {})
+        # POST 요청은 data= 키에 JSON 문자열로 전송됨 (V5 API)
+        request_data = call_kwargs.get("data", "{}")
+        import json
+        request_json = json.loads(request_data)
 
         # 필수 필드 존재
         assert request_json["symbol"] == "BTCUSD"
         assert request_json["orderId"] == "test_order_123"
-        assert request_json["category"] == "inverse"
+        assert request_json["category"] == "linear"  # Default (V5 Linear USDT)

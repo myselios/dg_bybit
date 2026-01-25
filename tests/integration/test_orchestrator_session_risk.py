@@ -52,6 +52,11 @@ class FakeMarketDataWithSessionRisk(MarketDataInterface):
     def get_equity_btc(self) -> float:
         return self.equity_btc
 
+    def get_equity_usdt(self) -> float:
+        """계정 Equity (USDT) — Linear USDT-Margined"""
+        # Linear USDT: equity_usdt = equity_btc * mark_price (근사)
+        return self.equity_btc * self.btc_mark_price_usd
+
     def get_btc_mark_price_usd(self) -> float:
         return self.btc_mark_price_usd
 
@@ -95,6 +100,10 @@ class FakeMarketDataWithSessionRisk(MarketDataInterface):
 
     def get_slippage_history(self) -> Optional[List[Dict[str, Any]]]:
         return self.slippage_history if self.slippage_history else None
+
+    def get_position(self) -> Dict[str, Any]:
+        """현재 Position 정보 (Default: 포지션 없음)"""
+        return {"size": "0", "side": "None", "avgPrice": "0"}
 
 
 def test_daily_loss_cap_triggers_halt():

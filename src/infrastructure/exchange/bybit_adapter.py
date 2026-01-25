@@ -207,6 +207,13 @@ class BybitAdapter:
         """Position mode ('MergedSingle' = one-way, 'BothSide' = hedge)"""
         return self._position_mode
 
+    def get_position(self) -> Dict[str, Any]:
+        """현재 Position 정보 (Bybit API 구조)"""
+        if self._current_position is None:
+            # Position 없음 (size = 0)
+            return {"size": "0", "side": "None", "avgPrice": "0"}
+        return self._current_position
+
     # ========== Phase 11b: Trade Log Integration ==========
 
     def get_funding_rate(self) -> float:
@@ -283,6 +290,14 @@ class BybitAdapter:
             execution_response = self.rest_client.get_execution_list(category="linear", symbol="BTCUSDT", limit=50)
             result = execution_response.get("result", {})
             trade_list = result.get("list", [])
+
+            # 4.1. Last fill price 설정 (Grid 기준점)
+            if trade_list:
+                # 가장 최근 체결 (list[0])의 execPrice 사용
+                latest_exec = trade_list[0]
+                exec_price_str = latest_exec.get("execPrice")
+                if exec_price_str:
+                    self._last_fill_price = float(exec_price_str)
 
             # Trade 객체로 변환 (SessionRiskTracker용)
             trades = []

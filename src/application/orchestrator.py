@@ -90,8 +90,31 @@ class Orchestrator:
         self.market_data = market_data
         self.rest_client = rest_client
         self.log_storage = log_storage
-        self.state = State.FLAT
-        self.position: Optional[Position] = None
+
+        # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
+        position_data = market_data.get_position()
+        position_size = float(position_data.get("size", "0"))
+
+        if position_size > 0:
+            # Position 존재 → State.IN_POSITION
+            position_side = position_data.get("side", "None")
+            avg_price = float(position_data.get("avgPrice", "0") or "0")
+
+            # Direction 매핑 (Bybit "Buy"/"Sell" → Domain Direction)
+            direction = Direction.LONG if position_side == "Buy" else Direction.SHORT
+
+            # Position 객체 생성 (recovery 시 signal_id는 "recovered")
+            self.position = Position(
+                direction=direction,
+                qty=position_size,
+                entry_price=avg_price,
+                signal_id="recovered",
+            )
+            self.state = State.IN_POSITION
+        else:
+            # Position 없음 → State.FLAT
+            self.state = State.FLAT
+            self.position = None
 
         # Phase 11b: Entry Flow tracking
         self.pending_order: Optional[dict] = None  # Pending order 정보 (FILL event 매칭용)

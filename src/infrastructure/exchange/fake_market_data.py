@@ -412,6 +412,16 @@ class FakeMarketData:
         """Position mode ('MergedSingle' = one-way, 'BothSide' = hedge)."""
         return self._position_mode
 
+    def get_position(self) -> Dict[str, Any]:
+        """
+        현재 Position 정보 (Bybit API 구조).
+
+        Returns:
+            Dict[str, Any]: Position data (Default: size=0, 포지션 없음)
+        """
+        # Default: 포지션 없음
+        return {"size": "0", "side": "None", "avgPrice": "0"}
+
     # ========== Phase 11b: Test Injection Methods ==========
 
     def inject_atr(self, atr: float):

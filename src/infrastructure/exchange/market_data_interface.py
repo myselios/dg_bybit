@@ -326,3 +326,18 @@ class MarketDataInterface(Protocol):
             - Entry gate (one-way mode 검증)
         """
         ...
+
+    def get_position(self) -> Dict[str, Any]:
+        """
+        현재 Position 정보 (Bybit API 구조).
+
+        Returns:
+            Dict[str, Any]: Position data
+                - size: Position size (BTC 단위, "0"이면 포지션 없음)
+                - side: "Buy", "Sell", "None"
+                - avgPrice: Average entry price
+
+        Used by:
+            - Orchestrator startup (position recovery)
+        """
+        ...
