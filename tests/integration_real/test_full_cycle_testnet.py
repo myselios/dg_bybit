@@ -41,26 +41,39 @@ class MockRestClient:
         self,
         symbol: str,
         side: str,
-        qty: int,
+        qty: str,
         order_link_id: str,
         order_type: str = "Market",
         time_in_force: str = "GoodTillCancel",
-        price: float = None,
+        price: str = None,
+        category: str = "linear",
     ):
         """Mock place_order method (matches bybit_rest_client.py signature)"""
         if self.should_fail:
             raise Exception("Order placement failed (mock)")
 
         self.order_counter += 1
+        order_id = f"mock_order_{self.order_counter}"
+        # Convert qty/price to numeric for test access
+        qty_btc = float(qty) if qty else None
+        price_numeric = float(price) if price else None
+        # Calculate contracts from BTC qty (contract_size = 0.001 BTC)
+        contracts = round(qty_btc * 1000) if qty_btc else None
         order = {
-            "orderId": f"mock_order_{self.order_counter}",
-            "orderLinkId": order_link_id,
+            "result": {
+                "orderId": order_id,
+                "orderLinkId": order_link_id,
+            },
+            "orderId": order_id,  # Top-level for test access
+            "orderLinkId": order_link_id,  # Top-level for test access
             "symbol": symbol,
             "side": side,
             "orderType": order_type,
-            "qty": qty,
-            "price": price,
+            "qty": contracts,  # Store as int contracts for inject_fill_event compatibility
+            "qty_btc": qty_btc,  # Also store BTC qty for reference
+            "price": price_numeric,  # Store as float for test access
             "timeInForce": time_in_force,
+            "category": category,
         }
         self.orders.append(order)
         return order

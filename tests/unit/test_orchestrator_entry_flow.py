@@ -34,24 +34,30 @@ class MockRestClient:
         symbol: str,
         side: str,
         order_type: str,
-        qty: int,
-        price: float,
+        qty: str,
+        price: str,
         time_in_force: str,
         order_link_id: str,
+        category: str = "linear",
     ):
         """Mock place_order method"""
         if self.should_fail:
             raise Exception("Order placement failed (mock)")
 
         order = {
-            "orderId": "mock_order_123",
-            "orderLinkId": order_link_id,
+            "result": {
+                "orderId": "mock_order_123",
+                "orderLinkId": order_link_id,
+            },
+            "orderId": "mock_order_123",  # Top-level for test access
+            "orderLinkId": order_link_id,  # Top-level for test access
             "symbol": symbol,
             "side": side,
             "orderType": order_type,
             "qty": qty,
             "price": price,
             "timeInForce": time_in_force,
+            "category": category,
         }
         self.orders.append(order)
         return order
