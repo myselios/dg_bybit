@@ -170,7 +170,15 @@ rm -rf <untracked_files>
   - Last Updated 갱신
   - Progress Table에서 TODO→DOING→DONE 업데이트
   - Evidence에 (테스트 경로 + 구현 경로 + 가능하면 커밋 해시) 기록
+  - **⚠️ Phase DONE 시 Section 2.2 → 2.1 이동 (필수, Gate 9 검증 대상)**:
+    1. Section 2.2 "Planned (Phase N+ 예정, 아직 미생성)"에서 해당 Phase 파일 목록 **삭제**
+    2. Section 2.1 "Implemented (Phase 0-N 완료, 실제 존재)"에 **추가** (주석에 Phase 번호 명시, 예: `# (Phase 10)`)
+    3. Section 2.2 주석 갱신 ("Phase N+ 예정" → "Phase N+1+ 예정")
+    4. Status Line 동기화 ("Phase 0~N COMPLETE" 또는 "Phase 0~N COMPLETE, Phase N+1 IN PROGRESS")
+- **위 5가지 모두 완료해야 DONE 인정** (부분 갱신 = 미완료)
 - 문서 업데이트가 없으면 DONE 인정하지 않는다
+
+**근거**: ADR-0011 (Section 2.1/2.2 동기화 규칙 명시화 + Gate 9 추가)
 
 ### 5.7 Self-Verification Before DONE (완료 보고 전 필수 검증)
 **"DONE" 체크 / 완료 보고 전 반드시 아래 검증을 통과해야 한다.**
@@ -298,12 +306,54 @@ tail -50 docs/constitution/FLOW.md | grep "ADR-[0-9]" | head -1
 - 사용자에게 "A안(ADR 추가) / B안(Rollback)" 선택지 제시
 - 절차 완료 전까지 DONE 보고 금지
 
+#### (9) Section 2.1/2.2 동기화 검증 (Gate: SSOT 문서 일관성)
+**Phase DONE 시 task_plan.md 내부 일관성 필수 검증 (ADR-0011)**
+
+```bash
+# (9a) Progress Table DONE Phase가 Section 2.2에 남아있는지 확인
+done_phases=$(grep "^| [0-9]" docs/plans/task_plan.md | grep -E "DONE|\[x\]" | awk '{print $2}')
+for phase in $done_phases; do
+  if sed -n '/### 2.2 Planned/,/^##/p' docs/plans/task_plan.md | grep -q "Phase $phase"; then
+    echo "FAIL: Phase $phase is DONE but still in Section 2.2 Planned"
+    exit 1
+  fi
+done
+# → 출력: 비어있음 (DONE Phase는 Section 2.2에 없어야 함)
+
+# (9b) Section 2.1 파일이 실제로 존재하는지 확인
+section21_files=$(sed -n '/### 2.1 Implemented/,/### 2.2 Planned/p' docs/plans/task_plan.md | grep -oE "[a-z_]+\.py")
+for f in $section21_files; do
+  if ! find src tests -name "$f" 2>/dev/null | grep -q .; then
+    echo "FAIL: $f in Section 2.1 but not in repo"
+    exit 1
+  fi
+done
+# → 출력: 비어있음 (모든 파일 존재 확인)
+
+# (9c) Status Line vs Progress Table 최종 Phase 일치 확인
+status_phase=$(head -5 docs/plans/task_plan.md | grep "Status:" | grep -oE "Phase [0-9a-]+ COMPLETE" | tail -1 | awk '{print $2}')
+table_phase=$(grep "^| [0-9]" docs/plans/task_plan.md | grep -E "DONE|\[x\]" | tail -1 | awk '{print $2}')
+[ "$status_phase" == "$table_phase" ] || echo "FAIL: Status ($status_phase) vs Table ($table_phase) mismatch"
+# → 출력: 비어있음 (일치)
+```
+
+**자동 검증 스크립트** (권장):
+```bash
+./scripts/verify_task_plan_consistency.sh
+# → ✅ Gate 9: ALL PASS
+```
+
+**검증 실패 시**:
+- Section 2.1/2.2 불일치 감지 → **즉시 작업 중단**
+- Section 5.6 절차 재확인 (Phase DONE 시 4단계)
+- 절차 완료 전까지 DONE 보고 금지
+
 ---
 
 **검증 성공 시 DONE 절차**:
 1. **Evidence Artifacts 생성** (필수, 새 세션 검증 가능하도록)
    - `docs/evidence/phase_N/` 디렉토리 생성
-   - `gate7_verification.txt` (Section 5.7 커맨드 7개 출력 전문 저장)
+   - `gate9_verification.txt` (Section 5.7 커맨드 9개 출력 전문 저장)
    - `pytest_output.txt` (pytest -q 실행 결과 저장)
    - `red_green_proof.md` (RED→GREEN 재현 증거 작성)
    - `completion_checklist.md` (DoD 자체 검증 체크리스트 작성)

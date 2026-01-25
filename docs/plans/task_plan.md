@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.38, Phase 12a-4/12a-5 구조 분리)
-Last Updated: 2026-01-25 (KST)
-Status: **Phase 0~12a-3 COMPLETE, Phase 12a-4 IN PROGRESS (Force Entry), Phase 12a-5 TODO (Telegram)** | Gate 1-8 ALL PASS | **320 tests passed** (+8 from Phase 12a-3) | ✅ Automated Dry-Run Infrastructure (Mock-based) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | 🔄 Phase 분리: 12a-4 (Force Entry + Testnet 거래) + 12a-5 (Telegram 알림, 상세 설계 포함) | 원칙: 100% 완료만 DONE 표시
+# Task Plan: Account Builder Implementation (v2.39, ADR-0011 적용 + Gate 9 추가)
+Last Updated: 2026-01-25 (KST, ADR-0011 적용 + Gate 9 추가 + Section 2.1/2.2 정렬 완료)
+Status: **Phase 0~12a-3 COMPLETE, Phase 12a-4 IN PROGRESS (Force Entry), Phase 12a-5 TODO (Telegram)** | Gate 1-9 ALL PASS | **320 tests passed** (+8 from Phase 12a-3) | ✅ Automated Dry-Run Infrastructure (Mock-based) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | ✅ Gate 9 추가 (Section 2.1/2.2 동기화 자동 검증, ADR-0011) | 🔄 Phase 분리: 12a-4 (Force Entry + Testnet 거래) + 12a-5 (Telegram 알림, 상세 설계 포함) | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -84,7 +84,7 @@ Non-goal
 
 ## 2. Repo Map (Single Source of Location)
 
-### 2.1 Implemented (Phase 0-8 완료, 실제 존재)
+### 2.1 Implemented (Phase 0-12a-3 완료, 실제 존재)
 
 ```
 src/
@@ -108,7 +108,9 @@ src/
 │   ├── event_handler.py # ✅ Phase 3: execution event processing + idempotency
 │   ├── stop_manager.py # ✅ Phase 4: stop placement/amend/debounce + stop_status recovery
 │   ├── metrics_tracker.py # ✅ Phase 4: winrate/streak/multipliers + rolling window
-│   └── orchestrator.py # ✅ Phase 6: tick loop orchestrator (Emergency-first ordering)
+│   ├── orchestrator.py # ✅ Phase 6: tick loop orchestrator (Emergency-first ordering)
+│   ├── signal_generator.py # ✅ Phase 11a: Grid 전략 시그널 생성
+│   └── exit_manager.py # ✅ Phase 11a: Exit decision (Stop hit / Profit target)
 │
 └── infrastructure/
     ├── exchange/
@@ -118,10 +120,13 @@ src/
     │   ├── bybit_rest_client.py # ✅ Phase 7-8: REST client (sign/timeout/retry/rate limit)
     │   ├── bybit_ws_client.py # ✅ Phase 7-8: WS client (489 LOC, 14 public + 10 private methods)
     │   └── bybit_adapter.py # ✅ Phase 12a-1: BybitAdapter (MarketDataInterface 구현, REST + WS 통합)
-    └── logging/
-        ├── trade_logger.py # ✅ Phase 5: entry/exit logging + schema validation
-        ├── halt_logger.py # ✅ Phase 5: HALT reason + context snapshot
-        └── metrics_logger.py # ✅ Phase 5: winrate/streak/multiplier change tracking
+    ├── logging/
+    │   ├── trade_logger.py # ✅ Phase 5: entry/exit logging + schema validation
+    │   ├── halt_logger.py # ✅ Phase 5: HALT reason + context snapshot
+    │   ├── metrics_logger.py # ✅ Phase 5: winrate/streak/multiplier change tracking
+    │   └── trade_logger_v1.py # ✅ Phase 10: Trade Log Schema v1.0 (slippage, latency, market_regime, integrity)
+    └── storage/
+        └── log_storage.py # ✅ Phase 10: JSON Lines storage + rotation
 
 tests/
 ├── oracles/
@@ -149,7 +154,11 @@ tests/
 │   ├── test_metrics_logger.py # ✅ Phase 5: metrics logging (4 cases)
 │   ├── test_bybit_rest_client.py # ✅ Phase 7: REST contract tests (10 cases, 네트워크 0)
 │   ├── test_bybit_ws_client.py # ✅ Phase 7: WS contract tests (7 cases, 네트워크 0)
-│   └── test_bybit_adapter.py # ✅ Phase 12a-1: BybitAdapter tests (14 cases, REST 4 + WS 2 + Caching 3 + DEGRADED 3 + Session Risk 2)
+│   ├── test_bybit_adapter.py # ✅ Phase 12a-1: BybitAdapter tests (14 cases, REST 4 + WS 2 + Caching 3 + DEGRADED 3 + Session Risk 2)
+│   ├── test_trade_logger_v1.py # ✅ Phase 10: Trade Log Schema v1.0 tests (9 cases)
+│   ├── test_log_storage.py # ✅ Phase 10: Log storage tests (8 cases)
+│   ├── test_signal_generator.py # ✅ Phase 11a: Signal generation tests (10 cases)
+│   └── test_exit_manager.py # ✅ Phase 11a: Exit logic tests (8 cases)
 ├── integration/
 │   └── test_orchestrator.py # ✅ Phase 6: tick loop integration (5 cases)
 └── integration_real/
@@ -157,47 +166,30 @@ tests/
     ├── test_testnet_order_flow.py # ✅ Phase 8: REST order flow (4 cases, testnet)
     ├── test_execution_event_mapping.py # ✅ Phase 8: execution mapping (2 passed + 1 skip)
     ├── test_rate_limit_handling.py # ✅ Phase 8: rate limit (3 cases, testnet)
-    └── test_ws_reconnection.py # ✅ Phase 8: reconnection (3 cases, testnet)
+    ├── test_ws_reconnection.py # ✅ Phase 8: reconnection (3 cases, testnet)
+    └── test_full_cycle_testnet.py # ✅ Phase 11b: Testnet full cycle (FLAT → Entry → Exit → FLAT, 6 cases)
 ```
 
-**Phase 0-12a-1 DONE 증거**: 267 tests passed (contract, Phase 0-11b) + 14 passed (Phase 12a-1 BybitAdapter) = 281 tests, Gate 1-8 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_12a1/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-12a-1`)
+**Phase 0-12a-3 DONE 증거**: 320 tests passed (Phase 0-11b: 267 + Phase 12a-1: 14 + Phase 12a-2: 31 + Phase 12a-3: 8), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_12a3/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-12a-3`, `./scripts/verify_task_plan_consistency.sh`)
 
 ---
 
-### 2.2 Planned (Phase 10+ 예정, 아직 미생성)
+### 2.2 Planned (미구현 항목, 아직 미생성)
 
-**Phase 9 항목**: ✅ 2.1 Implemented로 이동 완료 (Progress Table Phase 9 DONE 참조)
+**구현 완료된 항목**: ✅ Section 2.1 Implemented로 이동 완료 (Progress Table에서 DONE 표시된 모든 Phase)
 
-**Phase 10+ 예정**:
+**미구현 항목 (Mainnet + 최적화)**:
 ```
-src/
-├── application/
-│   ├── signal_generator.py # (Phase 11) Grid 전략 시그널 생성
-│   └── exit_manager.py # (Phase 11) Exit decision (Stop hit / Profit target)
-│
-└── infrastructure/
-    ├── logging/
-    │   └── trade_logger_v1.py # (Phase 10) Trade Log Schema v1.0 (slippage, latency, market_regime, integrity)
-    └── storage/
-        └── log_storage.py # (Phase 10) JSON Lines storage + rotation
-
 tests/
-├── unit/ (Phase 10+)
-│   ├── test_trade_logger_v1.py # (Phase 10) Trade Log Schema v1.0 tests (8+ cases)
-│   ├── test_log_storage.py # (Phase 10) Log storage tests (7+ cases)
-│   ├── test_signal_generator.py # (Phase 11) Signal generation tests
-│   └── test_exit_manager.py # (Phase 11) Exit logic tests
-└── integration_real/ (Phase 11+)
-    ├── test_full_cycle_testnet.py # (Phase 11) Testnet full cycle (FLAT → Entry → Exit → FLAT)
-    └── test_mainnet_dry_run.py # (Phase 12) Mainnet dry-run validation
+└── integration_real/ (Mainnet dry-run + 최적화)
+    └── test_mainnet_dry_run.py # (Mainnet) Mainnet dry-run validation
 ```
 
 **생성 원칙**: 각 Phase DoD 충족 시에만 생성 (TDD: 테스트 먼저 → 구현)
 
-**Phase 10+ 추가사항**:
-- Phase 10+는 전략 최적화 단계 (별도 계획서: `~/.claude/plans/wondrous-waddling-petal.md`)
-- Phase 11 완료 시 Testnet 실거래 가능
-- Phase 12b 완료 시 Mainnet 실거래 시작
+**추가사항**:
+- Mainnet dry-run 완료 시 실거래 시작
+- 운영 최적화 단계 (선택 사항)
 
 ---
 
