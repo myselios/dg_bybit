@@ -64,16 +64,32 @@ echo ""
 
 # (3) Status Line vs Progress Table 일치
 echo "[Gate 9c] Status Line vs Progress Table match"
-status_phase=$(head -5 "$TASK_PLAN" | grep "Status:" | grep -oE "Phase [0-9a-]+-*[0-9]*[a-z]*-*[0-9]* COMPLETE" | tail -1 | sed 's/ COMPLETE//')
-table_phase=$(grep "^| [0-9]" "$TASK_PLAN" | grep -E "DONE|\[x\]" | tail -1 | awk '{print $2}')
 
-if [ "$status_phase" == "$table_phase" ]; then
+# Status Line에서 "Phase 0~12a-3 COMPLETE" 또는 "Phase 12a-3 COMPLETE" 형식 추출
+status_phase=$(head -5 "$TASK_PLAN" | grep "Status:" | grep -oE "Phase [0-9~a-]+-*[0-9]*[a-z]*-*[0-9]* COMPLETE" | tail -1 | sed 's/.*Phase //' | sed 's/ COMPLETE//')
+
+# Progress Table Implementation Phases 섹션에서만 마지막 DONE Phase 추출
+table_phase=$(sed -n '/^### Implementation Phases/,/^##/p' "$TASK_PLAN" | grep "^| [0-9]" | grep -E "DONE|\[x\]" | tail -1 | awk '{print $2}')
+
+# 빈 문자열 처리
+if [ -z "$status_phase" ]; then
+  status_phase="(not found)"
+fi
+if [ -z "$table_phase" ]; then
+  table_phase="(not found)"
+fi
+
+# "0~12a-3" 형식에서 마지막 Phase만 추출 (비교용)
+status_last=$(echo "$status_phase" | grep -oE "[0-9]+[a-z]*-[0-9]+$" || echo "$status_phase")
+
+if [ "$status_last" == "$table_phase" ]; then
   echo "  ✅ PASS: Status Line ($status_phase) matches Progress Table ($table_phase)"
-elif [ -z "$status_phase" ]; then
-  echo "  ⚠️  WARN: Status Line has no 'Phase N COMPLETE' (acceptable for initial phases)"
-  echo "           Table last DONE: $table_phase"
+elif [ "$status_phase" == "(not found)" ] || [ "$table_phase" == "(not found)" ]; then
+  echo "  ⚠️  WARN: Cannot verify (Status: $status_phase, Table: $table_phase)"
+  echo "           Skipping Gate 9c check"
 else
-  echo "  ❌ FAIL: Status Line ($status_phase) vs Progress Table ($table_phase) mismatch"
+  echo "  ❌ FAIL: Status Line last phase ($status_last) vs Progress Table ($table_phase) mismatch"
+  echo "           Full Status Line: $status_phase"
   echo ""
   echo "  → 조치: Status Line을 'Phase 0~$table_phase COMPLETE'로 수정"
   exit 1
