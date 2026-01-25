@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.30, Phase 11b COMPLETE)
-Last Updated: 2026-01-24 (KST)
-Status: **Phase 0~11b COMPLETE** | Gate 1-8 ALL PASS | **267 tests passed** (+22 from Phase 11b start) | ✅ God Object 위반 해소: orchestrator.py 413 LOC (< 500) | ✅ Full Orchestrator Integration + Testnet E2E (6/6) | 원칙: 100% 완료만 DONE 표시
+# Task Plan: Account Builder Implementation (v2.31, Phase 12a-1 IN PROGRESS)
+Last Updated: 2026-01-25 (KST)
+Status: **Phase 0~11b COMPLETE, Phase 12a-1 IN PROGRESS** | Gate 1-8 ALL PASS | **267 tests passed** (+22 from Phase 11b start) | ✅ God Object 위반 해소: orchestrator.py 413 LOC (< 500) | ✅ Full Orchestrator Integration + E2E 시뮬레이션 (6/6) | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -1145,29 +1145,169 @@ Goal: Full orchestrator cycle 완성 → **Testnet 실거래 가능**
 
 **⚠️ 중요**: Phase 12 완료 시 **Mainnet 실거래 가능** (최소 금액으로 시작)
 
-Goal: Testnet → Mainnet 전환 준비 + Dry-run 검증 → **실거래 시작**
+Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완료**
 
-#### Scope
+**구현 방식**: Full Automated (BybitAdapter + Automated Dry-Run Infrastructure)
 
-**Phase 12a: Testnet Dry-Run** (2-3일):
-1. Testnet에서 30-50회 거래 실행
-2. Session Risk 발동 증거 확보 (1회 이상)
-3. Stop loss / Fee tracking / Slippage tracking 정상 작동 확인
-4. 로그 완전성 검증 (모든 거래 기록됨)
+---
 
-**Phase 12b: Mainnet Dry-Run** (1-2일):
-1. Mainnet API credentials 설정
-2. safety_limits.yaml 설정 (mainnet_enabled: true)
-3. 초기 equity: **$100** (최소 금액으로 시작)
-4. 초기 50회 거래 제한 (첫 주 5 trades/day)
-5. Kill Switch 발동 증거 확인
-6. 실행 결함 0건 검증
+#### Phase 12a-1: BybitAdapter 완전 구현 (1-2일)
 
-#### DoD (Definition of Done)
+**Goal**: BybitRestClient + BybitWsClient → MarketDataInterface 변환
 
-**Phase 12a (Testnet Dry-Run)**:
+**Scope**:
+1. **REST API Integration**:
+   - GET /v5/market/tickers (Mark price, Index price, Funding rate 조회)
+   - GET /v5/account/wallet-balance (Equity 조회)
+   - GET /v5/position/list (Current position 조회)
+   - GET /v5/execution/list (Trade history 조회 → PnL/Loss streak 계산)
+
+2. **WebSocket Integration**:
+   - `execution.inverse` topic subscribe (FILL event 수신)
+   - WS heartbeat monitoring (degraded 감지)
+   - Event queue processing (FILL → domain ExecutionEvent 변환)
+
+3. **State Caching**:
+   - mark_price, equity, position 캐싱 (1초마다 REST 업데이트)
+   - last_fill_price 추적 (FILL event로 업데이트)
+   - trades_today 카운터 (UTC boundary에서 리셋)
+
+**DoD**:
+- [ ] BybitAdapter 구현 (`src/infrastructure/exchange/bybit_adapter.py`)
+  - MarketDataInterface 모든 메서드 구현
+  - REST API 통합 (4 endpoints)
+  - WebSocket event 처리 (execution.inverse)
+  - State caching + 1초마다 업데이트
+- [ ] Tests: `tests/unit/test_bybit_adapter.py` (10+ cases)
+  - REST API 응답 → MarketDataInterface 변환
+  - WebSocket event → ExecutionEvent 변환
+  - Caching 동작 검증
+  - DEGRADED 모드 전환 검증
+- [ ] Evidence Artifacts (`docs/evidence/phase_12a1/`)
+  - completion_checklist.md
+  - pytest_output.txt
+  - gate7_verification.txt
+- [ ] Progress Table 업데이트
+
+---
+
+#### Phase 12a-2: Market Data Provider 구현 (1-2일)
+
+**Goal**: ATR 계산 + Session Risk tracking + Trade history 분석
+
+**Scope**:
+1. **ATR Calculator** (`src/application/atr_calculator.py`):
+   - Kline 데이터 조회 (GET /v5/market/kline)
+   - ATR 계산 (14-period ATR)
+   - ATR percentile 계산 (rolling 100-period)
+
+2. **Session Risk Tracker** (`src/application/session_risk_tracker.py`):
+   - Daily/Weekly PnL 추적 (UTC boundary 인식)
+   - Loss streak 계산 (Trade history 기반)
+   - Fee ratio history 추적
+   - Slippage history 추적 (10분 윈도우)
+
+3. **Market Regime Analyzer** (`src/application/market_regime.py`):
+   - MA slope 계산 (Kline 데이터 기반)
+   - ATR percentile 기반 regime 분류
+   - Phase 11b Trade Log 통합
+
+**DoD**:
+- [ ] ATR Calculator 구현
+  - calculate_atr(): Kline → ATR (14-period)
+  - calculate_atr_percentile(): Rolling 100-period percentile
+  - calculate_grid_spacing(): ATR * multiplier
+- [ ] Session Risk Tracker 구현
+  - track_daily_pnl(): Trade history → Daily PnL
+  - track_weekly_pnl(): Trade history → Weekly PnL
+  - calculate_loss_streak(): Trade history → Loss streak
+  - track_fee_ratio(): Fill events → Fee ratio history
+  - track_slippage(): Fill events → Slippage history
+- [ ] Market Regime Analyzer 구현
+  - calculate_ma_slope(): Kline → MA slope
+  - classify_regime(): MA slope + ATR percentile → regime
+- [ ] Tests: `tests/unit/test_atr_calculator.py` (8+ cases)
+- [ ] Tests: `tests/unit/test_session_risk_tracker.py` (12+ cases)
+- [ ] Tests: `tests/unit/test_market_regime.py` (5+ cases)
+- [ ] BybitAdapter 통합 (위 3개 모듈 사용)
+- [ ] Evidence Artifacts (`docs/evidence/phase_12a2/`)
+- [ ] Progress Table 업데이트
+
+---
+
+#### Phase 12a-3: Automated Dry-Run Infrastructure (1일)
+
+**Goal**: 자동화된 Dry-Run 실행 인프라 구축
+
+**Scope**:
+1. **Dry-Run Orchestrator** (`scripts/run_testnet_dry_run.py`):
+   - Orchestrator + BybitAdapter 통합
+   - Tick loop 실행 (1초마다)
+   - State 전환 감지 (FLAT → Entry → Exit → FLAT)
+   - HALT 감지 및 복구
+
+2. **Dry-Run Monitor** (`src/application/dry_run_monitor.py`):
+   - 거래 통계 추적 (Total trades, Win/Loss, PnL)
+   - Session Risk 발동 감지 (Daily cap, Loss streak)
+   - Stop loss hit 카운트
+   - 실시간 로그 출력
+
+3. **Evidence Generator** (`scripts/generate_dry_run_report.py`):
+   - Trade Log 분석
+   - Session Risk 검증
+   - DoD Checklist 자동 생성
+   - Testnet UI 스크린샷 가이드
+
+**DoD**:
+- [ ] run_testnet_dry_run.py 구현
+  - Orchestrator + BybitAdapter 초기화
+  - Tick loop (target_trades까지 실행)
+  - State transition 감지
+  - HALT handling
+  - Graceful shutdown (Ctrl+C 처리)
+- [ ] DryRunMonitor 구현
+  - log_cycle_complete(): Full cycle 완료 기록
+  - log_halt(): HALT 발생 기록
+  - log_stop_hit(): Stop loss hit 기록
+  - print_summary(): 통계 요약 출력
+- [ ] generate_dry_run_report.py 구현
+  - Trade Log 파일 분석
+  - Session Risk 검증
+  - completion_checklist.md 자동 생성
+- [ ] Tests: `tests/integration/test_dry_run_orchestrator.py` (5+ cases)
+- [ ] Evidence Artifacts (`docs/evidence/phase_12a3/`)
+- [ ] Progress Table 업데이트
+
+---
+
+#### Phase 12a-4: Testnet 자동 거래 실행 (2-3일)
+
+**Goal**: Testnet에서 30-50회 거래 자동 실행 + DoD 검증
+
+**Scope**:
+1. **Testnet 설정**:
+   - API credentials 설정 (.env)
+   - Testnet equity 확인 (0.01 BTC 이상)
+   - Safety limits 설정 (testnet_max_trades: 50)
+
+2. **자동 거래 실행**:
+   - `python scripts/run_testnet_dry_run.py --target-trades 30`
+   - 실시간 모니터링 (tail -f logs/testnet_dry_run.log)
+   - Session Risk 발동 대기 (Daily cap 또는 Loss streak)
+
+3. **검증 및 Evidence**:
+   - Trade Log 완전성 검증 (30회 == 30 logs)
+   - Session Risk 발동 증거 (1회 이상)
+   - Stop loss 작동 증거 (5회 이상)
+   - Bybit Testnet UI 스크린샷
+
+**DoD**:
+- [ ] Testnet 설정 완료
+  - .env 파일 작성 (BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET=true)
+  - Testnet equity >= 0.01 BTC 확인
+  - safety_limits.yaml 설정 (testnet_max_trades: 50)
 - [ ] Testnet 30-50회 거래 실행
-  - Full cycle (Entry → Exit) 30회 이상 성공
+  - Full cycle (FLAT → Entry → Exit → FLAT) 30회 이상 성공
   - Session Risk 발동 증거 1회 이상 (Daily cap / Weekly cap / Loss streak)
   - Stop loss 정상 작동 확인 (최소 5회)
   - Fee tracking 정상 작동 (모든 거래에서 fee 기록)
@@ -1181,45 +1321,256 @@ Goal: Testnet → Mainnet 전환 준비 + Dry-run 검증 → **실거래 시작*
   - 거래 요약 (총 거래, winrate, profit/loss)
   - Session Risk 발동 내역
   - 발견된 문제 및 해결 방안
+- [ ] Bybit Testnet UI 스크린샷 첨부
+  - Order History (Entry/Exit 주문)
+  - Position History (Closed positions)
+  - Asset (Equity 변화)
+- [ ] Evidence Artifacts (`docs/evidence/phase_12a/`)
+  - testnet_dry_run_report.md
+  - completion_checklist.md
+  - pytest_output.txt (회귀 테스트)
+  - bybit_testnet_screenshots/ (스크린샷 모음)
+- [ ] Progress Table 업데이트
 
-**Phase 12b (Mainnet Dry-Run)**:
+---
+
+#### Phase 12b: Mainnet Dry-Run (1-2일)
+
+#### Phase 12b: Mainnet Dry-Run (1-2일)
+
+**Goal**: Mainnet 실거래 환경에서 자동 거래 검증 → **실거래 시작 승인**
+
+**Scope**:
+1. **Mainnet 설정**:
+   - Mainnet API credentials 발급 (https://www.bybit.com/)
+   - .env 파일 업데이트 (BYBIT_TESTNET=false)
+   - safety_limits.yaml 설정 (mainnet_enabled: true)
+   - Initial equity: **$100** (최소 금액으로 시작)
+
+2. **Mainnet 초기 제한**:
+   - `mainnet_initial_max_trades: 50` (초기 50회만 허용)
+   - `mainnet_first_week_max_trades_per_day: 5` (첫 주 제한)
+   - Daily Loss Cap: -5% equity (더 엄격하게)
+   - Per-Trade Loss Cap: $3 (Stage 1 기준)
+
+3. **Mainnet 자동 거래 실행**:
+   - `python scripts/run_mainnet_dry_run.py --target-trades 30`
+   - 실시간 모니터링 (Slack/Discord alert 연동)
+   - Kill Switch 발동 대기 (Session Risk)
+   - 실행 결함 모니터링
+
+4. **안전 검증**:
+   - Kill Switch 작동 증거 (1회 이상)
+   - Emergency HALT 작동 증거 (가격 급락 시뮬레이션 불가, 자연 발생 대기)
+   - Session Risk 정확성 (실제 USD 손실 추적)
+
+**DoD**:
 - [ ] Mainnet 설정 완료
-  - `.env`에 Mainnet API credentials 추가
-  - `safety_limits.yaml`에서 `mainnet_enabled: true` 설정
-  - Initial equity 확인: $100 이상
+  - Mainnet API credentials 발급 (Read/Write 권한)
+  - .env 업데이트 (BYBIT_TESTNET=false)
+  - safety_limits.yaml 설정 (mainnet_enabled: true)
+  - Initial equity >= $100 확인
 - [ ] Mainnet 초기 제한 설정
-  - `mainnet_initial_max_trades: 50` (초기 50회만)
-  - `mainnet_first_week_max_trades_per_day: 5` (첫 주 제한)
-- [ ] Mainnet 실거래 실행
-  - 최소 30회 거래 성공
-  - Kill Switch 발동 증거 1회 이상
+  - mainnet_initial_max_trades: 50
+  - mainnet_first_week_max_trades_per_day: 5
+  - Daily Loss Cap: -5% equity
+  - Per-Trade Loss Cap: $3 (Stage 1)
+- [ ] Mainnet 30회 이상 거래 실행
+  - Full cycle 30회 이상 성공
+  - Kill Switch 발동 증거 1회 이상 (Daily cap / Loss streak)
+  - Emergency HALT 작동 확인 (자연 발생 시)
   - 실행 결함 0건
+- [ ] 로그 완전성 검증
+  - 모든 거래가 trade_log에 기록됨
+  - 실제 USD PnL 정확성 확인
+  - Bybit API 응답과 로그 일치 확인
 - [ ] Mainnet Dry-Run Report 작성
   - `docs/evidence/phase_12b/mainnet_dry_run_report.md`
   - 거래 요약 (실제 USD 수익/손실)
-  - Session Risk 작동 증거
-  - 실거래 발견 사항
-- [ ] Evidence Artifacts 생성 (`docs/evidence/phase_12/`)
-  - testnet_dry_run_report.md (Phase 12a)
-  - mainnet_dry_run_report.md (Phase 12b)
-  - safety_validation.md (Session Risk 작동 증거)
+  - Kill Switch 작동 증거
+  - 실거래 발견 사항 (문제 및 해결)
+- [ ] Bybit Mainnet UI 스크린샷 첨부
+  - Order History (실제 주문)
+  - Position History (실제 청산)
+  - Asset (실제 Equity 변화)
+- [ ] Evidence Artifacts (`docs/evidence/phase_12b/`)
+  - mainnet_dry_run_report.md
+  - completion_checklist.md
+  - safety_validation.md (Kill Switch 증거)
+  - bybit_mainnet_screenshots/ (스크린샷 모음)
 - [ ] Progress Table 업데이트
 
-#### 완료 기준
+---
 
-**Phase 12a (Testnet)**:
-- ✅ Testnet 30-50회 거래 성공
-- ✅ Session Risk 발동 증거 1회 이상
+#### 완료 기준 (DoD Summary)
+
+#### 완료 기준 (DoD Summary)
+
+**Phase 12a-1 (BybitAdapter)**:
+- ✅ BybitAdapter 구현 완료 (REST + WS 통합)
+- ✅ MarketDataInterface 모든 메서드 구현
+- ✅ Tests 10+ passed (unit)
+- ✅ Evidence Artifacts 생성
+
+**Phase 12a-2 (Market Data Provider)**:
+- ✅ ATR Calculator 구현 (14-period ATR + percentile)
+- ✅ Session Risk Tracker 구현 (Daily/Weekly PnL, Loss streak)
+- ✅ Market Regime Analyzer 구현 (MA slope + ATR)
+- ✅ Tests 25+ passed (ATR 8 + Session Risk 12 + Regime 5)
+- ✅ BybitAdapter 통합 완료
+
+**Phase 12a-3 (Dry-Run Infrastructure)**:
+- ✅ run_testnet_dry_run.py 구현 (자동 거래 실행)
+- ✅ DryRunMonitor 구현 (통계 추적)
+- ✅ generate_dry_run_report.py 구현 (Evidence 자동 생성)
+- ✅ Tests 5+ passed (integration)
+
+**Phase 12a-4 (Testnet Execution)**:
+- ✅ Testnet 30-50회 거래 자동 실행 성공
+- ✅ Session Risk 발동 증거 1회 이상 (Daily cap / Loss streak)
+- ✅ Stop loss 5회 이상 작동
 - ✅ 로그 완전성 100% (모든 거래 기록)
-- ✅ Testnet Dry-Run Report 작성 완료
+- ✅ Testnet Dry-Run Report 작성
+- ✅ Bybit Testnet UI 스크린샷 첨부
 
-**Phase 12b (Mainnet)**:
+**Phase 12b (Mainnet Execution)**:
 - ✅ Mainnet 설정 완료 (API credentials, safety_limits.yaml)
-- ✅ Mainnet 30회 이상 거래 성공 (실제 USD)
+- ✅ Mainnet 30회 이상 거래 자동 실행 성공 (실제 USD)
 - ✅ Kill Switch 발동 증거 1회 이상 (실거래에서 Session Risk 작동)
 - ✅ 실행 결함 0건
-- ✅ Mainnet Dry-Run Report 작성 완료
+- ✅ Mainnet Dry-Run Report 작성
 - ✅ **실거래 시작 승인** (Dry-run 성공 → 제한 해제 가능)
+
+---
+
+#### 파일 구조 (Phase 12 신규 생성)
+
+**Application Layer**:
+```
+src/application/
+├── atr_calculator.py           # ATR 계산 (14-period, percentile)
+├── session_risk_tracker.py     # Daily/Weekly PnL, Loss streak 추적
+└── market_regime.py             # MA slope + ATR → regime 분류
+```
+
+**Infrastructure Layer**:
+```
+src/infrastructure/exchange/
+└── bybit_adapter.py             # BybitAdapter (완전 구현, Phase 12a-1)
+```
+
+**Scripts**:
+```
+scripts/
+├── run_testnet_dry_run.py       # Testnet 자동 거래 실행
+├── run_mainnet_dry_run.py       # Mainnet 자동 거래 실행
+└── generate_dry_run_report.py   # Evidence 자동 생성
+```
+
+**Tests**:
+```
+tests/unit/
+├── test_bybit_adapter.py        # BybitAdapter (10+ cases)
+├── test_atr_calculator.py       # ATR Calculator (8+ cases)
+├── test_session_risk_tracker.py # Session Risk Tracker (12+ cases)
+└── test_market_regime.py        # Market Regime (5+ cases)
+
+tests/integration/
+└── test_dry_run_orchestrator.py # Dry-Run 통합 (5+ cases)
+```
+
+**Evidence**:
+```
+docs/evidence/
+├── phase_12a1/                  # BybitAdapter 구현
+│   ├── completion_checklist.md
+│   ├── pytest_output.txt
+│   └── gate7_verification.txt
+├── phase_12a2/                  # Market Data Provider
+│   ├── completion_checklist.md
+│   └── pytest_output.txt
+├── phase_12a3/                  # Dry-Run Infrastructure
+│   ├── completion_checklist.md
+│   └── pytest_output.txt
+├── phase_12a/                   # Testnet Execution
+│   ├── testnet_dry_run_report.md
+│   ├── completion_checklist.md
+│   ├── pytest_output.txt
+│   └── bybit_testnet_screenshots/
+└── phase_12b/                   # Mainnet Execution
+    ├── mainnet_dry_run_report.md
+    ├── completion_checklist.md
+    ├── safety_validation.md
+    └── bybit_mainnet_screenshots/
+```
+
+---
+
+#### 테스트 계획 (Phase 12 신규 추가)
+
+**Unit Tests (총 35+ cases)**:
+- `test_bybit_adapter.py`: 10+ cases
+  - REST API 응답 → MarketDataInterface 변환
+  - WebSocket event → ExecutionEvent 변환
+  - State caching 동작 검증
+  - DEGRADED 모드 전환 검증
+  - get_mark_price(), get_equity_btc(), get_atr() 등
+
+- `test_atr_calculator.py`: 8+ cases
+  - calculate_atr(): Kline → ATR (14-period)
+  - calculate_atr_percentile(): Rolling 100-period
+  - calculate_grid_spacing(): ATR * multiplier
+  - Edge cases: 데이터 부족, NaN 처리
+
+- `test_session_risk_tracker.py`: 12+ cases
+  - track_daily_pnl(): UTC boundary 인식
+  - track_weekly_pnl(): Week rollover
+  - calculate_loss_streak(): Consecutive losses
+  - track_fee_ratio(): Fee spike 감지
+  - track_slippage(): 10분 윈도우 슬리피지
+  - Edge cases: 빈 history, 타임존 변환
+
+- `test_market_regime.py`: 5+ cases
+  - calculate_ma_slope(): Kline → MA slope
+  - classify_regime(): trending_up, trending_down, ranging, high_vol
+  - Edge cases: Flat market, 급등/급락
+
+**Integration Tests (총 5+ cases)**:
+- `test_dry_run_orchestrator.py`: 5+ cases
+  - Full cycle integration (Orchestrator + BybitAdapter)
+  - HALT handling (Session Risk 발동)
+  - Graceful shutdown (Ctrl+C)
+  - Trade Log 기록 검증
+  - Monitor statistics 정확성
+
+**Total New Tests**: 40+ cases (267 → 307+ expected)
+
+---
+
+#### 예상 일정 (Phase 12 Full Automated)
+
+| Sub-Phase | 작업 | 예상 기간 | Deliverable |
+|-----------|------|----------|-------------|
+| **12a-1** | BybitAdapter 완전 구현 | 1-2일 | BybitAdapter + 10 tests |
+| **12a-2** | Market Data Provider | 1-2일 | ATR/Session Risk/Regime + 25 tests |
+| **12a-3** | Dry-Run Infrastructure | 1일 | run_testnet_dry_run.py + 5 tests |
+| **12a-4** | Testnet 자동 거래 실행 | 2-3일 | 30-50회 거래 + Evidence |
+| **12b** | Mainnet 자동 거래 실행 | 1-2일 | 30회 거래 + Kill Switch 증거 |
+
+**총 예상 기간**: **6-10일** (Full Automated)
+
+**장점**:
+- ✅ 완전 자동화 (사람 개입 최소화)
+- ✅ 재현 가능성 100% (코드로 고정)
+- ✅ Phase 13+ 준비 완료 (분석 인프라 구축)
+
+**단점**:
+- ❌ 구현 시간 길다 (6-10일)
+- ❌ 디버깅 복잡도 높음 (REST/WS 통합)
+
+**vs Manual Dry-Run**:
+- Manual: 1-2일, 즉시 시작, DoD 완전 충족
+- Automated: 6-10일, 완전 자동화, 장기 운영 준비
 
 ---
 
@@ -1294,7 +1645,7 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | Phase | Status (TODO/DOING/DONE) | Evidence (tests) | Evidence (impl) | Notes / Commit |
 |------:|--------------------------|------------------|------------------|----------------|
 | 0 | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_0/completion_checklist.md), [Gate 7](../evidence/phase_0/gate7_verification.txt), [pytest](../evidence/phase_0/pytest_output.txt), [RED→GREEN](../evidence/phase_0/red_green_proof.md), [File Tree](../evidence/phase_0/file_tree.txt). **Tests**: Oracle 25 cases (state transition + intent) + Unit 48 cases (transition, event_router, docs alignment, flow skeleton) + Integration 9 cases + Phase 1: 13 cases = **83 passed in 0.06s**. **Gate 7**: ALL PASS (Placeholder 0, Skip/Xfail 0, Assert 163, Migration 완료). **Verification**: `./scripts/verify_phase_completion.sh 0` → PASS | **Domain**: [state.py](../../src/domain/state.py), [intent.py](../../src/domain/intent.py), [events.py](../../src/domain/events.py). **Application**: [transition.py](../../src/application/transition.py) (SSOT), [event_router.py](../../src/application/event_router.py) (thin wrapper), [tick_engine.py](../../src/application/tick_engine.py). **Infrastructure**: [fake_exchange.py](../../src/infrastructure/exchange/fake_exchange.py). **Docs Alignment**: test_docs_ssot_paths.py (5 passed), test_flow_minimum_contract.py (5 passed), test_readme_links_exist.py (2 passed). **Migration**: src/application/services/ 삭제 완료, 패키징 표준 준수. | **Commit**: e0d147e (2026-01-19 00:35). **Phase 0+0.5 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료. **새 세션 검증 가능**. Phase 2 시작 가능. |
-| 0.5 | DONE | **Phase 0에 통합됨** (tests/oracles/test_state_transition_oracle.py에 포함). 개별 케이스: test_in_position_additional_partial_fill_increases_qty (Case A), test_in_position_fill_completes_entry_working_false (Case B), test_in_position_liquidation_should_halt (Case C), test_in_position_adl_should_halt (Case C), test_in_position_missing_stop_emits_place_stop_intent, test_in_position_invalid_filled_qty_halts (Case D). **실행**: `pytest -q` → **70 passed in 0.06s** | src/application/transition.py (Phase 0.5 로직: invalid qty 방어, stop_status=MISSING 복구, IN_POSITION 이벤트 처리 A-D) | Phase 0.5 완료. IN_POSITION 이벤트 처리 + stop 복구 intent + invalid qty 방어 구현 |
+| 0.5 | DONE | **Phase 0에 통합됨** ([Phase 0 Evidence Artifacts 참조](../evidence/phase_0/)). **Evidence**: [Completion Checklist](../evidence/phase_0/completion_checklist.md#L167-L241) (Phase 0.5 섹션), [RED→GREEN](../evidence/phase_0/red_green_proof.md#L82-L117) (Phase 0.5 케이스). **Tests**: 6 cases (test_in_position_additional_partial_fill_increases_qty, test_in_position_fill_completes_entry_working_false, test_in_position_liquidation_should_halt, test_in_position_adl_should_halt, test_in_position_missing_stop_emits_place_stop_intent, test_in_position_invalid_filled_qty_halts). **실행**: Phase 0와 동일 (`pytest -q` → **83 passed in 0.06s**) | src/application/transition.py (Phase 0.5 로직: invalid qty 방어, stop_status=MISSING 복구, IN_POSITION 이벤트 처리 A-D) | **Phase 0.5 완료 (Phase 0에 완전 통합)**. IN_POSITION 이벤트 처리 + stop 복구 intent + invalid qty 방어 구현. Evidence는 Phase 0 디렉토리에 포함됨. |
 | 1 | DONE | **Evidence Artifacts (ADR-0007 적용)**: [Completion Checklist](../evidence/phase_1/completion_checklist.md), [Gate 7](../evidence/phase_1/gate7_verification.txt), [pytest](../evidence/phase_1/pytest_output.txt), [RED→GREEN](../evidence/phase_1/red_green_proof.md), [Thresholds](../evidence/phase_1/emergency_thresholds_verification.txt). **Tests**: test_emergency.py (8 cases) + test_ws_health.py (5 cases) = **13 passed**. Total: **83 passed in 0.07s**. **Gate 7**: ALL PASS (Placeholder 0, Skip/Xfail 0, Assert 166). **Policy Alignment**: 12 / 12 thresholds MATCH. **ADR-0007**: COOLDOWN semantic 완전 적용 (price_drop → COOLDOWN). **Verification**: `./scripts/verify_phase_completion.sh 1` → PASS (예상) | **Application**: [emergency.py](../../src/application/emergency.py) (EmergencyStatus with is_cooldown field, check_emergency, check_recovery, Policy 7.1/7.2/7.3 준수, ADR-0007 적용), [ws_health.py](../../src/application/ws_health.py) (WSHealthStatus, WSRecoveryStatus, check_ws_health, check_degraded_timeout, check_ws_recovery, FLOW 2.4 준수). **Infrastructure**: [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (MarketDataInterface Protocol, 6 메서드), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (deterministic test injection). **Thresholds Verified**: price_drop (-10%/-20% → COOLDOWN), balance (0/30s → HALT), latency (5s → Block), recovery (-5%/-10%, 30min), heartbeat (10s), event_drop (3), degraded (60s), ws_recovery (5min). **SSOT**: FLOW v1.8 + Policy v2.2 완전 일치. | **Commit**: f678ae9 (2026-01-21 06:00, ADR-0007 적용). **Phase 1 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료 + ADR-0007 완전 적용 + Policy 일치 검증 완료 (SSOT). **새 세션 검증 가능**. Phase 2 시작 가능. |
 | 2 | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_2/completion_checklist.md), [Gate 7](../evidence/phase_2/gate7_verification.txt), [pytest](../evidence/phase_2/pytest_output.txt), [RED→GREEN](../evidence/phase_2/red_green_proof.md). **Tests**: test_ids.py (6) + test_entry_allowed.py (9) + test_sizing.py (8) + test_liquidation_gate.py (8) = **31 passed**. Total: **114 passed in 0.09s** (83 → 114). **Gate 7**: ALL PASS (Placeholder 0, Assert 181, Domain 재정의 0, Migration 완료). **Verification**: `./scripts/verify_phase_completion.sh 2` → PASS (expected) | **Domain**: [ids.py](../../src/domain/ids.py) (signal_id/orderLinkId validators). **Application**: [entry_allowed.py](../../src/application/entry_allowed.py) (8 gates + reject 이유코드), [sizing.py](../../src/application/sizing.py) (LONG/SHORT 정확한 공식 + margin + tick/lot), [liquidation_gate.py](../../src/application/liquidation_gate.py) (liq distance + 동적 기준 + fallback). **SSOT**: FLOW Section 2, 3.4, 7.5, 8 + Policy Section 5, 10. | **Commit**: 8d1c0d8 (impl) + 9fba6f7 (evidence, 2026-01-23). **Phase 2 완료**. DoD 5개 항목 충족 + Evidence Artifacts 생성 완료. **새 세션 검증 가능**. Phase 3 시작 가능. |
 | 3 | DONE | [test_fee_verification.py](../../tests/unit/test_fee_verification.py) (5)<br>[test_order_executor.py](../../tests/unit/test_order_executor.py) (8)<br>[test_event_handler.py](../../tests/unit/test_event_handler.py) (7) | [fee_verification.py](../../src/application/fee_verification.py)<br>[order_executor.py](../../src/application/order_executor.py)<br>[event_handler.py](../../src/application/event_handler.py) | e7f5c15 (impl)<br>Evidence: [phase_3/](../evidence/phase_3/)<br>134 passed (+20) |
@@ -1306,8 +1657,8 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | 9 | DONE | **Evidence Artifacts (9a)**: [Completion Checklist](../evidence/phase_9a/completion_checklist.md), [Gate 7](../evidence/phase_9a/gate7_verification.txt), [pytest](../evidence/phase_9a/pytest_output.txt), [RED→GREEN](../evidence/phase_9a/red_green_proof.md). **Evidence Artifacts (9b)**: [Completion Checklist](../evidence/phase_9b/completion_checklist.md), [Gate 7](../evidence/phase_9b/gate7_verification.txt), [pytest](../evidence/phase_9b/pytest_output.txt), [Policy Change](../evidence/phase_9b/policy_change_proof.md). **Evidence Artifacts (9c)**: [Completion Checklist](../evidence/phase_9c/completion_checklist.md), [Gate 7](../evidence/phase_9c/gate7_verification.txt), [pytest](../evidence/phase_9c/pytest_output.txt), [RED→GREEN](../evidence/phase_9c/red_green_proof.md). **Evidence Artifacts (9 Revision)**: [Completion Checklist](../evidence/phase_9_revision/completion_checklist.md), [Gate 7](../evidence/phase_9_revision/gate7_verification.txt), [pytest](../evidence/phase_9_revision/pytest_output.txt), [UTC Boundary Proof](../evidence/phase_9_revision/utc_boundary_proof.md). **Evidence Artifacts (9d)**: [Completion Checklist](../evidence/phase_9d/completion_checklist.md), [Slippage Fix Proof](../evidence/phase_9d/slippage_fix_proof.md), [pytest Session Risk](../evidence/phase_9d/pytest_output_session_risk.txt), [pytest Full](../evidence/phase_9d/pytest_output_full.txt). **Tests**: [test_session_risk.py](../../tests/unit/test_session_risk.py) (17 cases, UTC edge cases 추가) + [test_orchestrator_session_risk.py](../../tests/integration/test_orchestrator_session_risk.py) (5 cases, Slippage anomaly 통합 테스트 포함). Total: **238 passed in 0.29s** (188 → 238, +50). **Gate 7**: ALL PASS (375 asserts). | **Application**: [session_risk.py](../../src/application/session_risk.py) (UTC boundary 수정, 203 LOC), [orchestrator.py](../../src/application/orchestrator.py) (216 LOC, Session Risk 통합, Phase 9d: current_timestamp 초기화 수정). **Infrastructure**: [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (Protocol 확장), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (Session Risk 메서드 추가). **Infrastructure/Safety**: [killswitch.py](../../src/infrastructure/safety/killswitch.py) (59 LOC), [alert.py](../../src/infrastructure/safety/alert.py) (49 LOC), [rollback_protocol.py](../../src/infrastructure/safety/rollback_protocol.py) (73 LOC). **Config**: [safety_limits.yaml](../../config/safety_limits.yaml) (Dry-Run 4개 상한, Mainnet/Testnet 분리). **Policy**: [account_builder_policy.md](../specs/account_builder_policy.md) (Stage 1: $10→$3). **ADR**: [ADR-0001](../adrs/ADR-0001-per-trade-loss-cap-reduction.md). | **Evidence**: [phase_9a/](../evidence/phase_9a/), [phase_9b/](../evidence/phase_9b/), [phase_9c/](../evidence/phase_9c/), [phase_9_revision/](../evidence/phase_9_revision/), [phase_9d/](../evidence/phase_9d/). **Phase 9 완료** (Session Risk + Per-Trade Cap + Orchestrator 통합 + UTC boundary 버그 수정 + Slippage anomaly 버그 수정). **완전한 계좌 보호**: Session (Daily -5%, Weekly -12.5%, Loss Streak, Slippage Anomaly) + Trade ($3 cap) + Emergency = 3중 보호 **모두 활성**. **"도박 종료, 계좌 보호 시작"**. **✅ 실거래 투입 조건 충족**: Session Risk Policy 4개 모두 작동. **새 세션 검증 가능**. **Last Updated**: 2026-01-24 |
 | 10 | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_10/completion_checklist.md), [Gate 7](../evidence/phase_10/gate7_verification.txt), [pytest](../evidence/phase_10/pytest_output.txt), [RED→GREEN](../evidence/phase_10/red_green_proof.md). **Tests**: [test_trade_logger_v1.py](../../tests/unit/test_trade_logger_v1.py) (9 cases) + [test_log_storage.py](../../tests/unit/test_log_storage.py) (8 cases) = **17 passed**. Total: **225 passed in 0.34s** (208 → 225, +17). **Gate 7**: ALL PASS (359 asserts, +29). | **Infrastructure/Logging**: [trade_logger_v1.py](../../src/infrastructure/logging/trade_logger_v1.py) (145 LOC: TradeLogV1 dataclass, calculate_market_regime, validate_trade_log_v1), **Infrastructure/Storage**: [log_storage.py](../../src/infrastructure/storage/log_storage.py) (165 LOC: LogStorage class, append/read/rotate with fsync policy). **DoD 1/5**: order_id, fills, slippage, latency breakdown, funding/mark/index. **DoD 3/5**: market_regime deterministic (MA slope + ATR percentile). **DoD 5/5**: schema_version, config_hash, git_commit, exchange_server_time_offset 필수. **Failure-mode tests**: schema validation, partial line recovery, fsync policy (batch/periodic/critical), rotation boundary. | **Evidence**: [phase_10/](../evidence/phase_10/). **Phase 10 완료** (Trade Log v1.0 + JSONL Storage). **운영 현실화**: Single syscall write, durable append, crash safety. **새 세션 검증 가능**. **완료**: 2026-01-24 |
 | 11a | DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11a/completion_checklist.md), [Gate 7](../evidence/phase_11a/gate7_verification.txt), [pytest](../evidence/phase_11a/pytest_output.txt), [RED→GREEN](../evidence/phase_11a/red_green_proof.md). **Tests**: [test_signal_generator.py](../../tests/unit/test_signal_generator.py) (10 cases) + [test_exit_manager.py](../../tests/unit/test_exit_manager.py) (8 cases) = **18 passed**. Total: **245 passed in 0.36s** (225 → 245, +18). **Gate 7**: ALL PASS (380 asserts, +21). | **Application**: [signal_generator.py](../../src/application/signal_generator.py) (88 LOC: Signal dataclass, calculate_grid_spacing, generate_signal), [exit_manager.py](../../src/application/exit_manager.py) (78 LOC: check_stop_hit, create_exit_intent), **Domain**: [intent.py](../../src/domain/intent.py) (ExitIntent 추가), **Orchestrator**: [orchestrator.py](../../src/application/orchestrator.py) (Exit Manager만 통합). **Scope**: Grid Signal + Exit Logic (독립 완료 가능). | **Evidence**: [phase_11a/](../evidence/phase_11a/). **Phase 11a 완료** (Signal Generator + Exit Manager). **100% 완료**: DoD 8개 항목 모두 완료. **완료**: 2026-01-24. **새 세션 검증 가능**. **다음**: Phase 11b (Full Integration + Testnet E2E) |
-| 11b | [x] DONE | [test_orchestrator_entry_flow.py](../../tests/unit/test_orchestrator_entry_flow.py) (7 cases) + [test_orchestrator_event_processing.py](../../tests/integration/test_orchestrator_event_processing.py) (9 cases) + [test_full_cycle_testnet.py](../../tests/integration_real/test_full_cycle_testnet.py) (6 cases) = **22 cases** | [orchestrator.py](../../src/application/orchestrator.py) (✅ 413 LOC, God Object 리팩토링 완료), [emergency_checker.py](../../src/application/emergency_checker.py) (Session Risk 통합, 145 LOC), [entry_coordinator.py](../../src/application/entry_coordinator.py) (Entry helpers, 151 LOC), [event_processor.py](../../src/application/event_processor.py) (Event helpers, 161 LOC), [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (+7 메서드), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (+13 메서드), [entry_allowed.py](../../src/application/entry_allowed.py) (StageParams, SignalContext), [sizing.py](../../src/application/sizing.py) (SizingParams) | **Part 1/3 완료** (Entry Flow): c17cc8e. **Part 2/3 완료** (Event Processing + God Object 리팩토링): f158d7a, d7292e3. **Part 3/3 완료** (Testnet E2E): [현재 커밋]. **Evidence**: [risk_analysis.md](../evidence/phase_11b/risk_analysis.md), [entry_flow_design.md](../evidence/phase_11b/entry_flow_design.md), [testnet_cycle_proof.md](../evidence/phase_11b/testnet_cycle_proof.md), [completion_checklist.md](../evidence/phase_11b/completion_checklist.md), [pytest_output.txt](../evidence/phase_11b/pytest_output.txt). **Tests**: 267 passed (+22 from Phase start), 회귀 없음. **FLOW.md Section 4.2 준수**: orchestrator.py 413 LOC (< 500). **✅ Full Orchestrator Integration 완료** (Entry + Event Processing + Testnet E2E 6/6). **완료**: 2026-01-24. **새 세션 검증 가능**. |
-| 12 | [ ] TODO | - | - | Dry-Run Validation (12a: Testnet 30-50회, 12b: Mainnet 30회). **예상 기간**: 3-5일. **완료 시**: ✅ **Mainnet 실거래 시작** ($100 최소 금액) |
+| 11b | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11b/completion_checklist.md), [Gate 7](../evidence/phase_11b/gate7_verification.txt), [pytest](../evidence/phase_11b/pytest_output.txt), [RED→GREEN](../evidence/phase_11b/red_green_proof.md). **Tests**: [test_orchestrator_entry_flow.py](../../tests/unit/test_orchestrator_entry_flow.py) (7 cases) + [test_orchestrator_event_processing.py](../../tests/unit/test_orchestrator_event_processing.py) (9 cases) + [test_full_cycle_testnet.py](../../tests/integration_real/test_full_cycle_testnet.py) (6 cases) = **22 passed**. Total: **267 passed in 0.41s** (245 → 267, +22). **Gate 7**: ALL PASS (461 asserts, +81). | [orchestrator.py](../../src/application/orchestrator.py) (✅ 413 LOC, God Object 리팩토링 완료), [emergency_checker.py](../../src/application/emergency_checker.py) (Session Risk 통합, 145 LOC), [entry_coordinator.py](../../src/application/entry_coordinator.py) (Entry helpers, 151 LOC), [event_processor.py](../../src/application/event_processor.py) (Event helpers, 161 LOC), [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (+7 메서드), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (+13 메서드), [entry_allowed.py](../../src/application/entry_allowed.py) (StageParams, SignalContext), [sizing.py](../../src/application/sizing.py) (SizingParams) | **Part 1/3 완료** (Entry Flow): c17cc8e. **Part 2/3 완료** (Event Processing + God Object 리팩토링): f158d7a, d7292e3. **Part 3/3 완료** (Testnet E2E 시뮬레이션): [현재 커밋]. **Evidence**: [phase_11b/](../evidence/phase_11b/). **Phase 11b 완료** (Full Orchestrator Integration). **Tests**: 267 passed (+22 from Phase start), 회귀 없음. **FLOW.md Section 4.2 준수**: orchestrator.py 413 LOC (< 500). **✅ Full Orchestrator Integration 완료** (Entry + Event Processing + Testnet E2E 시뮬레이션 6/6). **완료**: 2026-01-24. **Gate 7 Evidence 추가**: 2026-01-25. **새 세션 검증 가능**. **중요**: 실제 Testnet 연결 테스트는 Phase 12 (Dry-Run Validation) 예정. |
+| 12a-1 | [~] IN PROGRESS | TBD (10+ cases) | [bybit_adapter.py](../../src/infrastructure/exchange/bybit_adapter.py) (구현 시작 예정) | **Phase 12a-1 시작**: BybitAdapter 완전 구현 (REST API + WS Integration + State Caching). **시작**: 2026-01-25. **DoD**: BybitAdapter 구현 + Tests 10+ + Evidence Artifacts. **Status**: Document-First 단계 (task_plan.md 업데이트 완료) |
 
 ---
 

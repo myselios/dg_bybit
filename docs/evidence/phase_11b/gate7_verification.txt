@@ -1,0 +1,74 @@
+# Phase 11b Gate 7 Self-Verification (Section 5.7)
+# Execution Date: 2026-01-25
+# Working Directory: /home/selios/dg_bybit
+
+## (1a) Placeholder 표현 감지
+$ grep -RInE "assert[[:space:]]+True|pytest\.skip\(|pass[[:space:]]*#.*TODO|TODO: implement|NotImplementedError|RuntimeError\(.*TODO" tests/ 2>/dev/null | grep -v "\.pyc"
+(출력 비어있음)
+
+## (1b) Skip/Xfail decorator 금지
+$ grep -RInE "pytest\.mark\.(skip|xfail)|@pytest\.mark\.(skip|xfail)|unittest\.SkipTest" tests/ 2>/dev/null | grep -v "\.pyc"
+(출력 비어있음)
+
+## (1c) 의미있는 assert 존재 여부
+$ grep -RIn "assert .*==" tests/ 2>/dev/null | wc -l
+461
+
+## (2a) 도메인 타입 이름 재정의 금지
+$ grep -RInE "^class[[:space:]]+(Position|PendingOrder|ExecutionEvent|State)\b" tests/ 2>/dev/null | grep -v "\.pyc"
+(출력 비어있음)
+
+## (2b) tests/ 내에 domain 모사 파일 생성 금지
+$ find tests -type f -maxdepth 3 -name "*.py" 2>/dev/null | grep -E "(domain|state|intent|events)\.py"
+(출력 비어있음)
+
+## (3) transition SSOT 파일 존재
+$ test -f src/application/transition.py && echo "OK: transition.py exists"
+OK: transition.py exists
+
+## (4a) 상태 분기문 감지 (EventRouter)
+$ grep -RInE "if[[:space:]]+.*state[[:space:]]*==|elif[[:space:]]+.*state[[:space:]]*==" src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+(출력 비어있음)
+
+## (4b) EventRouter에서 State enum 참조 금지
+$ grep -n "State\." src/application/event_router.py src/application/services/event_router.py 2>/dev/null
+(출력 비어있음)
+
+## (5) sys.path hack 금지
+$ grep -RIn "sys\.path\.insert" src/ tests/ 2>/dev/null
+(출력 비어있음)
+
+## (6a) Deprecated wrapper import 추적
+$ grep -RInE "application\.services\.(state_transition|event_router)" tests/ src/ 2>/dev/null
+(출력 비어있음)
+
+## (6b) Migration 완료 증거 (구 경로 import 0개)
+$ grep -RInE "from application\.services|import application\.services" tests/ src/ 2>/dev/null | wc -l
+0
+
+## (7) pytest 증거 + 패키징 표준
+$ source venv/bin/activate && pip install -e .[dev]
+(설치 완료)
+
+$ pytest -q
+........................................................................ [ 26%]
+........................................................................ [ 53%]
+........................................................................ [ 80%]
+...................................................                      [100%]
+267 passed, 15 deselected in 0.41s
+
+## Gate 7 검증 결과: ALL PASS ✅
+- (1a) Placeholder 0개
+- (1b) Skip/Xfail 0개
+- (1c) 의미있는 assert 461개
+- (2a~2b) Domain 재정의 0개
+- (3) transition.py 존재
+- (4a~4b) EventRouter State 참조 0개
+- (5) sys.path hack 0개
+- (6a~6b) Deprecated import 0개
+- (7) pytest 267 passed (pip install -e .[dev] 후 PYTHONPATH 없이 동작)
+
+## 패키징 표준 준수 확인 ✅
+- pyproject.toml 설정 완료
+- pip install -e .[dev] 후 pytest 정상 동작 (PYTHONPATH 불필요)
+- 테스트 자동 수집 정상 (267 passed, 15 deselected)
