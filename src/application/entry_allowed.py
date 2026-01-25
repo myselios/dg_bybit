@@ -28,7 +28,7 @@ Design Decisions:
 """
 
 from dataclasses import dataclass
-from src.domain.state import State
+from domain.state import State
 
 
 @dataclass

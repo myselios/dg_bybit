@@ -24,7 +24,7 @@ SSOT: docs/plans/task_plan.md Phase 9a
 """
 
 import pytest
-from src.application.session_risk import (
+from application.session_risk import (
     SessionRiskStatus,
     check_daily_loss_cap,
     check_weekly_loss_cap,

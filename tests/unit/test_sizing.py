@@ -24,7 +24,7 @@ Test Coverage:
 8. contract_size_conversion (qty → contracts 변환)
 """
 
-from src.application.sizing import calculate_contracts, SizingParams, SizingResult
+from application.sizing import calculate_contracts, SizingParams, SizingResult
 
 
 def test_contracts_from_loss_budget():

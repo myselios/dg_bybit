@@ -29,7 +29,7 @@ from collections import deque
 import websocket  # websocket-client 라이브러리
 
 # FatalConfigError는 bybit_rest_client에서 import
-from src.infrastructure.exchange.bybit_rest_client import FatalConfigError
+from infrastructure.exchange.bybit_rest_client import FatalConfigError
 
 
 class BybitWsClient:

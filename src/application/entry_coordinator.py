@@ -18,10 +18,10 @@ Design:
 - Return typed dataclasses (StageParams, SignalContext, SizingParams)
 """
 
-from src.application.entry_allowed import StageParams, SignalContext
-from src.application.signal_generator import Signal
-from src.application.sizing import SizingParams
-from src.infrastructure.exchange.market_data_interface import MarketDataInterface
+from application.entry_allowed import StageParams, SignalContext
+from application.signal_generator import Signal
+from application.sizing import SizingParams
+from infrastructure.exchange.market_data_interface import MarketDataInterface
 
 
 def get_stage_params() -> StageParams:

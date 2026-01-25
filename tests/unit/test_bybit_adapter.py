@@ -18,10 +18,10 @@ import pytest
 from unittest.mock import Mock, MagicMock, call
 from typing import Dict, Any, List, Optional
 
-from src.infrastructure.exchange.bybit_adapter import BybitAdapter
-from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
-from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
-from src.domain.events import ExecutionEvent, EventType
+from infrastructure.exchange.bybit_adapter import BybitAdapter
+from infrastructure.exchange.bybit_rest_client import BybitRestClient
+from infrastructure.exchange.bybit_ws_client import BybitWsClient
+from domain.events import ExecutionEvent, EventType
 
 
 class TestBybitAdapterRestIntegration:

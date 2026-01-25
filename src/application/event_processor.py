@@ -19,7 +19,7 @@ Design:
 """
 
 from typing import Optional, Dict, Any
-from src.domain.state import State, Position, Direction
+from domain.state import State, Position, Direction
 
 
 def verify_state_consistency(

@@ -117,23 +117,34 @@ class BybitRestClient:
         """
         return int(self.clock() * 1000)
 
-    def _generate_signature(self, timestamp: int, params: Dict[str, Any]) -> str:
+    def _generate_signature(self, timestamp: int, params: Dict[str, Any], method: str = "GET") -> str:
         """
-        HMAC SHA256 서명 생성
+        HMAC SHA256 서명 생성 (Bybit V5 API)
 
         Args:
             timestamp: timestamp (ms)
             params: 요청 파라미터
+            method: HTTP method ("GET" or "POST")
 
         Returns:
             str: HMAC SHA256 서명
 
         SSOT: docs/plans/task_plan.md Phase 7 - 서명 생성이 deterministic
+        Bybit V5 API Signature Spec:
+        - GET: timestamp + apiKey + recvWindow + queryString
+        - POST: timestamp + apiKey + recvWindow + JSON_BODY
         """
-        # Bybit 서명 스펙: timestamp + api_key + params_str
-        # params_str: 알파벳 순으로 정렬된 key=value 문자열
-        params_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-        payload = f"{timestamp}{self.api_key}{params_str}"
+        recv_window = 5000  # Default 5000ms
+
+        if method == "POST":
+            # POST: JSON body 사용
+            import json
+            params_str = json.dumps(params, separators=(',', ':'), sort_keys=True)
+        else:
+            # GET: Query string 사용
+            params_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+
+        payload = f"{timestamp}{self.api_key}{recv_window}{params_str}"
 
         # HMAC SHA256
         signature = hmac.new(
@@ -197,13 +208,14 @@ class BybitRestClient:
         timestamp = self._get_timestamp()
 
         # 서명 생성
-        signature = self._generate_signature(timestamp, params)
+        signature = self._generate_signature(timestamp, params, method)
 
         # 헤더 구성
         headers = {
             "X-BAPI-API-KEY": self.api_key,
             "X-BAPI-SIGN": signature,
             "X-BAPI-TIMESTAMP": str(timestamp),
+            "X-BAPI-RECV-WINDOW": "5000",
             "Content-Type": "application/json",
         }
 
@@ -211,9 +223,12 @@ class BybitRestClient:
         for attempt in range(self.max_retries):
             try:
                 if method == "POST":
+                    # POST: JSON body를 직렬화해서 전송 (서명과 동일한 형식)
+                    import json
+                    json_body = json.dumps(params, separators=(',', ':'), sort_keys=True)
                     response = requests.post(
                         url,
-                        json=params,
+                        data=json_body,
                         headers=headers,
                         timeout=self.timeout,
                     )
@@ -258,18 +273,20 @@ class BybitRestClient:
         order_type: str = "Market",
         time_in_force: str = "GoodTillCancel",
         price: Optional[str] = None,
+        category: str = "linear",
     ) -> Dict[str, Any]:
         """
         주문 발주
 
         Args:
-            symbol: 심볼 (예: BTCUSD)
+            symbol: 심볼 (예: BTCUSDT for Linear, BTCUSD for Inverse)
             side: Buy 또는 Sell
             qty: 수량 (contracts)
             order_link_id: orderLinkId (idempotency)
             order_type: 주문 타입 (기본: Market)
             time_in_force: 유효 기간 (기본: GoodTillCancel)
             price: 주문 가격 (Limit 주문 시 필수)
+            category: 카테고리 (기본: linear)
 
         Returns:
             Dict: 응답 JSON
@@ -279,6 +296,7 @@ class BybitRestClient:
             RateLimitError: Rate limit 초과
 
         SSOT: docs/plans/task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
+        ADR-0002: Linear USDT Migration (category="linear" 기본값)
         """
         # orderLinkId <= 36자 검증
         if len(order_link_id) > 36:
@@ -290,11 +308,11 @@ class BybitRestClient:
 
         # Bybit 스펙 payload
         params = {
-            "category": "inverse",  # 코인마진드
+            "category": category,
             "symbol": symbol,
             "side": side,
             "orderType": order_type,
-            "qty": qty,
+            "qty": str(qty),  # Bybit API는 string으로 받음
             "timeInForce": time_in_force,
             "orderLinkId": order_link_id,
         }
@@ -309,21 +327,24 @@ class BybitRestClient:
         self,
         symbol: str,
         order_id: str,
+        category: str = "linear",
     ) -> Dict[str, Any]:
         """
         주문 취소
 
         Args:
-            symbol: 심볼 (예: BTCUSD)
+            symbol: 심볼 (예: BTCUSDT for Linear, BTCUSD for Inverse)
             order_id: 주문 ID
+            category: 카테고리 (기본: linear)
 
         Returns:
             Dict: 응답 JSON
 
         SSOT: docs/plans/task_plan.md Phase 7 - 요청 payload가 Bybit 스펙 만족
+        ADR-0002: Linear USDT Migration (category="linear" 기본값)
         """
         params = {
-            "category": "inverse",
+            "category": category,
             "symbol": symbol,
             "orderId": order_id,
         }
@@ -442,7 +463,7 @@ class BybitRestClient:
     def get_execution_list(
         self,
         category: str = "inverse",
-        symbol: str = "BTCUSD",
+        symbol: Optional[str] = None,
         limit: int = 50,
     ) -> Dict[str, Any]:
         """
@@ -450,7 +471,7 @@ class BybitRestClient:
 
         Args:
             category: 카테고리 (기본: inverse)
-            symbol: 심볼 (기본: BTCUSD)
+            symbol: 심볼 (Optional, 미지정 시 전체 조회)
             limit: 조회 개수 (기본: 50)
 
         Returns:
@@ -468,9 +489,11 @@ class BybitRestClient:
         """
         params = {
             "category": category,
-            "symbol": symbol,
             "limit": limit,
         }
+
+        if symbol is not None:
+            params["symbol"] = symbol
 
         return self._make_request("GET", "/v5/execution/list", params)
 

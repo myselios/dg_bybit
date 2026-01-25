@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Optional
 
 # ========== Domain Models (src/domain/state.py에서 import) ==========
-from src.domain.state import (
+from domain.state import (
     State,
     StopStatus,
     Direction,
@@ -27,8 +27,8 @@ from src.domain.state import (
 )
 
 # ========== Transition Function ==========
-from src.application.transition import transition
-from src.domain.intent import TransitionIntents, StopIntent, HaltIntent
+from application.transition import transition
+from domain.intent import TransitionIntents, StopIntent, HaltIntent
 
 
 # ========== Stop Update Oracle용 Helper Types ==========

@@ -19,8 +19,8 @@ Design:
 """
 
 from typing import Optional
-from src.infrastructure.exchange.market_data_interface import MarketDataInterface
-from src.application.session_risk import (
+from infrastructure.exchange.market_data_interface import MarketDataInterface
+from application.session_risk import (
     check_daily_loss_cap,
     check_weekly_loss_cap,
     check_loss_streak_kill,
@@ -63,10 +63,11 @@ def check_emergency_status(
            - Fee/Slippage Anomaly (2회 연속, 3회/10분)
 
     FLOW Section 7.1 + Phase 9c Session Risk Policy
+    ADR-0002: Linear USDT Migration (equity_usdt)
     """
-    # (1) balance_too_low 체크
-    equity_btc = market_data.get_equity_btc()
-    if equity_btc <= 0:
+    # (1) balance_too_low 체크 (Linear USDT)
+    equity_usdt = market_data.get_equity_usdt()
+    if equity_usdt <= 0:
         return {"status": "HALT", "reason": "balance_too_low"}
 
     # (2) degraded timeout 체크 (60초)
@@ -74,9 +75,9 @@ def check_emergency_status(
     if degraded_timeout:
         return {"status": "HALT", "reason": "degraded_mode_timeout"}
 
-    # Session Risk Policy 체크 (Phase 9c)
-    btc_mark_price_usd = market_data.get_btc_mark_price_usd()
-    equity_usd = equity_btc * btc_mark_price_usd
+    # Session Risk Policy 체크 (Phase 9c, Linear USDT)
+    # Linear USDT: equity_usdt가 이미 USD 단위
+    equity_usd = equity_usdt
 
     # (3) Daily Loss Cap
     daily_pnl = market_data.get_daily_realized_pnl_usd()

@@ -14,8 +14,8 @@ Exports:
 """
 
 from typing import Optional
-from src.domain.state import Position, Direction
-from src.domain.intent import TransitionIntents, ExitIntent
+from domain.state import Position, Direction
+from domain.intent import TransitionIntents, ExitIntent
 
 
 def check_stop_hit(current_price: float, position: Position) -> bool:

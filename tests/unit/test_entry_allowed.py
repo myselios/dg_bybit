@@ -37,8 +37,8 @@ Test Coverage:
 """
 
 from dataclasses import dataclass
-from src.domain.state import State
-from src.application.entry_allowed import check_entry_allowed, EntryDecision
+from domain.state import State
+from application.entry_allowed import check_entry_allowed, EntryDecision
 
 
 @dataclass

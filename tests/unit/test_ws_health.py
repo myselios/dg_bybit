@@ -21,8 +21,8 @@ Execution:
 """
 
 import time
-from src.infrastructure.exchange.fake_market_data import FakeMarketData
-from src.application.ws_health import check_ws_health, check_ws_recovery, check_degraded_timeout
+from infrastructure.exchange.fake_market_data import FakeMarketData
+from application.ws_health import check_ws_health, check_ws_recovery, check_degraded_timeout
 
 
 def test_heartbeat_timeout_10s_enters_degraded():

@@ -19,7 +19,7 @@ Test Coverage:
 4. log_metrics_update_includes_num_closed_trades (closed trades 수 포함)
 """
 
-from src.infrastructure.logging.metrics_logger import (
+from infrastructure.logging.metrics_logger import (
     log_metrics_update,
     validate_metrics_schema,
     MetricsLogValidationError,

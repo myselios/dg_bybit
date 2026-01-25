@@ -11,7 +11,7 @@ FLOW.md Section 2.5 기반 상태 전환 Oracle Tests
 
 import pytest
 
-from src.domain.state import (
+from domain.state import (
     State,
     StopStatus,
     Direction,
@@ -20,8 +20,8 @@ from src.domain.state import (
     PendingOrder,
     Position
 )
-from src.application.transition import transition, is_entry_allowed
-from src.domain.intent import TransitionIntents, StopIntent, HaltIntent
+from application.transition import transition, is_entry_allowed
+from domain.intent import TransitionIntents, StopIntent, HaltIntent
 
 
 class TestEntryPendingTransitions:

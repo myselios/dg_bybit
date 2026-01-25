@@ -24,7 +24,7 @@ Test Coverage:
 """
 
 from dataclasses import dataclass
-from src.application.liquidation_gate import (
+from application.liquidation_gate import (
     calculate_liquidation_distance,
     check_liquidation_gate,
     LiquidationGateResult,

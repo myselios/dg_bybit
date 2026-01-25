@@ -18,7 +18,7 @@ Test Coverage:
 4. log_halt_includes_emergency_trigger_type (emergency 트리거 타입)
 """
 
-from src.infrastructure.logging.halt_logger import (
+from infrastructure.logging.halt_logger import (
     log_halt,
     validate_halt_schema,
     HaltLogValidationError,

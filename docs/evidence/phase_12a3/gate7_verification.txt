@@ -1,0 +1,36 @@
+# Gate 7 Self-Verification for Phase 12a-3
+# Generated: 2026-01-25 02:48:12 UTC
+
+## (1a) Placeholder 표현 감지
+tests/integration_real/conftest.py:29:        pytest.skip("Testnet API credentials not available (set BYBIT_TESTNET_API_KEY/API_SECRET)")
+
+## (1b) Skip/Xfail decorator 금지
+✅ No skip/xfail decorators found (allowlist only)
+
+## (1c) 의미있는 assert 존재 여부
+✅ Assert count: 511 (expected: > 0)
+
+## (2a) 도메인 타입 이름 재정의 금지
+✅ No domain type redefinition found
+
+## (2b) tests/ 내에 domain 모사 파일 생성 금지
+✅ No domain-mimic files found
+
+## (3) transition SSOT 파일 존재
+✅ OK: transition.py exists
+
+## (4a) 상태 분기문 감지 (if/elif state ==)
+src/application/event_router.py:10:- 상태 전환 분기 (if state == ...) — transition()에만 존재해야 함
+✅ No state branching found in EventRouter
+
+## (4b) EventRouter에서 State enum 참조 자체 금지
+✅ No State enum references in EventRouter
+
+## (5) sys.path hack 금지
+✅ No sys.path hacks found
+
+## (6a) Deprecated wrapper import 추적
+✅ No deprecated wrapper imports found (Phase 1+ clean)
+
+## (6b) Migration 완료 증거
+✅ Deprecated import count: 0 (expected: 0 for Phase 1+)

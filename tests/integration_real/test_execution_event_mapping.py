@@ -23,8 +23,8 @@ pytest -v -m testnet tests/integration_real/test_execution_event_mapping.py
 
 import time
 import pytest
-from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
-from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
+from infrastructure.exchange.bybit_ws_client import BybitWsClient
+from infrastructure.exchange.bybit_rest_client import BybitRestClient
 
 
 @pytest.mark.testnet

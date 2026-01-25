@@ -20,7 +20,7 @@ from collections import deque
 from dataclasses import dataclass
 import time
 
-from src.domain.events import ExecutionEvent, EventType
+from domain.events import ExecutionEvent, EventType
 
 
 @dataclass

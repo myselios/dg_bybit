@@ -17,15 +17,15 @@ Exports:
 
 from dataclasses import dataclass
 from typing import Optional
-from src.application.transition import transition
-from src.application.order_executor import (
+from application.transition import transition
+from application.order_executor import (
     place_stop_loss,
     amend_stop_loss,
     cancel_order,
 )
-from src.domain.state import State, Position, PendingOrder
-from src.domain.events import ExecutionEvent
-from src.domain.intent import TransitionIntents
+from domain.state import State, Position, PendingOrder
+from domain.events import ExecutionEvent
+from domain.intent import TransitionIntents
 
 
 @dataclass

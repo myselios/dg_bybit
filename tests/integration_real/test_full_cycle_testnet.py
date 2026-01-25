@@ -23,10 +23,10 @@ Note:
 import pytest
 import tempfile
 from pathlib import Path
-from src.application.orchestrator import Orchestrator
-from src.infrastructure.exchange.fake_market_data import FakeMarketData
-from src.infrastructure.storage.log_storage import LogStorage
-from src.domain.state import State, Direction
+from application.orchestrator import Orchestrator
+from infrastructure.exchange.fake_market_data import FakeMarketData
+from infrastructure.storage.log_storage import LogStorage
+from domain.state import State, Direction
 
 
 class MockRestClient:
@@ -290,8 +290,8 @@ def test_full_cycle_session_risk_halt():
         - Halt reason: daily_loss_cap_exceeded
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
-    fake_data._daily_realized_pnl_usd = -7.0  # -$7 USD (> -5% equity = -$6.25)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
+    fake_data._daily_realized_pnl_usd = -7.0  # -$7 USD (> -5% = -$6.25, -5.6% > 5% cap)
 
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 

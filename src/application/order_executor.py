@@ -20,7 +20,7 @@ Exports:
 """
 
 from dataclasses import dataclass
-from src.domain.ids import validate_order_link_id
+from domain.ids import validate_order_link_id
 
 
 # Exception Classes

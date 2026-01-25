@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 # Re-export events for backward compatibility
-from src.domain.events import EventType, ExecutionEvent
+from domain.events import EventType, ExecutionEvent
 
 __all__ = [
     'State',

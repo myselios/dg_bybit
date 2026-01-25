@@ -21,7 +21,7 @@ Test Coverage:
 """
 
 import re
-from src.domain.ids import generate_signal_id, validate_order_link_id
+from domain.ids import generate_signal_id, validate_order_link_id
 
 
 def test_generate_signal_id_deterministic():

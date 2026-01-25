@@ -25,12 +25,12 @@ Test Coverage:
 """
 
 from time import time
-from src.application.stop_manager import (
+from application.stop_manager import (
     should_update_stop,
     determine_stop_action,
     recover_missing_stop,
 )
-from src.domain.state import StopStatus
+from domain.state import StopStatus
 
 
 def test_should_update_stop_below_threshold_no_update():

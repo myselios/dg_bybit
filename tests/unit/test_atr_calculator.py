@@ -14,7 +14,7 @@ SSOT:
 import pytest
 from typing import List, Dict, Any
 
-from src.application.atr_calculator import ATRCalculator, Kline
+from application.atr_calculator import ATRCalculator, Kline
 
 
 class TestATRCalculator:

@@ -25,7 +25,7 @@ export $(cat .env | xargs) && pytest -v -m testnet tests/integration_real/test_r
 import time
 import uuid
 import pytest
-from src.infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
+from infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
 
 
 @pytest.fixture

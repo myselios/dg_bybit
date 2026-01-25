@@ -19,7 +19,7 @@ Test Coverage:
 5. log_trade_includes_stage_and_gate_results (스테이지 + 게이트 결과)
 """
 
-from src.infrastructure.logging.trade_logger import (
+from infrastructure.logging.trade_logger import (
     log_trade_entry,
     log_trade_exit,
     validate_trade_schema,

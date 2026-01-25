@@ -20,7 +20,7 @@ pytest -v -m testnet tests/integration_real/test_ws_reconnection.py
 
 import time
 import pytest
-from src.infrastructure.exchange.bybit_ws_client import BybitWsClient
+from infrastructure.exchange.bybit_ws_client import BybitWsClient
 
 
 @pytest.mark.testnet

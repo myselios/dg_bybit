@@ -17,8 +17,8 @@ SSOT:
 """
 
 import pytest
-from src.application.orchestrator import Orchestrator
-from src.domain.state import State, Direction, Position
+from application.orchestrator import Orchestrator
+from domain.state import State, Direction, Position
 
 
 class FakeMarketDataWithPosition:
