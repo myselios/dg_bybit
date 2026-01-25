@@ -1,0 +1,33 @@
+======================================================================
+Orchestrator State Check
+======================================================================
+
+⏳ Initializing Orchestrator...
+
+📊 Orchestrator Status:
+   - Current State: State.IN_POSITION
+
+📊 Position Info:
+   - Size: 0.1460 BTC
+   - Side: Buy
+   - Avg Price: $85,074.19
+   - Mark Price: $84,421.27
+
+✅ Position exists → State should be IN_POSITION
+
+📊 Grid Signal:
+   - Last Fill: $86,132.10
+   - ATR: $2,024.93
+   - Grid Spacing: $4,049.85
+   - Price Diff: $1,710.83
+
+⚠️  Grid signal NOT triggered
+
+⏳ Running single tick...
+
+📊 Tick Result:
+   - State: State.IN_POSITION
+   - Execution Order: ['emergency', 'events', 'position', 'entry']
+   - Entry Blocked: state_not_flat
+
+======================================================================

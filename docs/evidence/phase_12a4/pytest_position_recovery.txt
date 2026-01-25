@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 3 items
+
+tests/unit/test_orchestrator_position_recovery.py::test_position_recovery_no_position PASSED [ 33%]
+tests/unit/test_orchestrator_position_recovery.py::test_position_recovery_buy_position PASSED [ 66%]
+tests/unit/test_orchestrator_position_recovery.py::test_position_recovery_sell_position PASSED [100%]
+
+============================== 3 passed in 0.02s ===============================
