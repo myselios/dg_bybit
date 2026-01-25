@@ -78,6 +78,7 @@ class Orchestrator:
         market_data: MarketDataInterface,
         rest_client=None,  # Phase 11b: Order placement용 (Optional, type: BybitRestClient)
         log_storage: Optional[LogStorage] = None,  # Phase 11b: Trade Log 저장용 (Optional)
+        force_entry: bool = False,  # Phase 12a-4: Force Entry 모드 (테스트용)
     ):
         """
         Orchestrator 초기화
@@ -86,10 +87,12 @@ class Orchestrator:
             market_data: Market data interface (FakeMarketData or BybitAdapter)
             rest_client: Bybit REST client (Order placement용, Phase 11b)
             log_storage: LogStorage (Trade Log 저장용, Phase 11b)
+            force_entry: Force Entry 모드 (테스트용, Grid spacing 무시)
         """
         self.market_data = market_data
         self.rest_client = rest_client
         self.log_storage = log_storage
+        self.force_entry = force_entry
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
         position_data = market_data.get_position()
@@ -460,6 +463,7 @@ class Orchestrator:
             last_fill_price=last_fill_price,
             grid_spacing=self.grid_spacing,
             qty=0,  # Sizing에서 계산
+            force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
         )
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)

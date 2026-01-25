@@ -50,11 +50,13 @@ def generate_signal(
     last_fill_price: Optional[float],
     grid_spacing: float,
     qty: int = 0,
+    force_entry: bool = False,
 ) -> Optional[Signal]:
     """
     Grid 전략 기반 신호 생성
 
     규칙:
+    - Force Entry 모드 (force_entry=True): Grid spacing 무시, 즉시 Buy 신호
     - Grid up: current_price >= last_fill_price + grid_spacing → Sell
     - Grid down: current_price <= last_fill_price - grid_spacing → Buy
     - 그 외: No signal
@@ -64,10 +66,15 @@ def generate_signal(
         last_fill_price: 마지막 체결 가격 (None이면 FLAT 상태)
         grid_spacing: Grid 간격 (USD)
         qty: 거래 수량 (contracts, 기본 0)
+        force_entry: Force Entry 모드 (테스트용, Grid spacing 무시)
 
     Returns:
         Optional[Signal]: 신호 (없으면 None)
     """
+    # Force Entry 모드: Grid spacing 무시, 즉시 Buy 신호
+    if force_entry:
+        return Signal(side="Buy", price=current_price, qty=qty)
+
     # FLAT 상태 (last_fill_price가 None)면 grid 신호 생성 불가
     if last_fill_price is None:
         return None

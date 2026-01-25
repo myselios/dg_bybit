@@ -90,15 +90,19 @@ class DryRunMonitor:
         logger.info("=" * 60)
 
 
-def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
+def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_entry: bool = False):
     """
     Testnet Dry-Run 실행
 
     Args:
         target_trades: 목표 거래 횟수 (default: 30)
         max_duration_hours: 최대 실행 시간 (default: 72시간 = 3일)
+        force_entry: Force Entry 모드 (테스트용, Grid spacing 무시)
     """
     logger.info(f"🚀 Starting Testnet Dry-Run (target: {target_trades} trades)")
+
+    if force_entry:
+        logger.warning("⚠️  Force Entry Mode: Grid spacing ignored (TEST MODE ONLY)")
 
     # Log storage 초기화
     log_dir = Path("logs/testnet_dry_run")
@@ -120,6 +124,7 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
         market_data=bybit_adapter,
         rest_client=rest_client,
         log_storage=log_storage,
+        force_entry=force_entry,  # Phase 12a-4: Force Entry 모드 전달
     )
 
     # Monitor 초기화
@@ -211,12 +216,18 @@ def main():
         default=72,
         help="Maximum duration in hours (default: 72)"
     )
+    parser.add_argument(
+        "--force-entry",
+        action="store_true",
+        help="Force Entry mode (TEST MODE ONLY, bypasses Grid spacing check)"
+    )
 
     args = parser.parse_args()
 
     run_dry_run(
         target_trades=args.target_trades,
         max_duration_hours=args.max_hours,
+        force_entry=args.force_entry,
     )
 
 
