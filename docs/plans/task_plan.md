@@ -1311,25 +1311,26 @@ Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완
    - Bybit Testnet UI 스크린샷
 
 **DoD**:
-- [~] **Sub-task 12a-4a: Force Entry 모드 구현**
-  - [ ] TDD: `test_signal_generator_force_entry.py` 작성
+- [x] **Sub-task 12a-4a: Force Entry 모드 구현** ✅ COMPLETE (2026-01-25)
+  - [x] TDD: `test_signal_generator_force_entry.py` 작성
     - Test case 1: `force_entry=True` → 즉시 Buy 신호 (Grid spacing 무시)
     - Test case 2: `force_entry=True` + `last_fill_price=None` → Buy 신호
     - Test case 3: `force_entry=False` → 정상 Grid 로직
-  - [ ] `signal_generator.py`: `force_entry` 파라미터 추가
+  - [x] `signal_generator.py`: `force_entry` 파라미터 추가
     - `generate_signal(force_entry: bool = False)` 시그니처 수정
     - `force_entry=True`일 때 Grid spacing 체크 무시, 즉시 Buy 신호 반환
-  - [ ] `orchestrator.py`: `force_entry` 전달
+  - [x] `orchestrator.py`: `force_entry` 전달
     - `__init__(force_entry: bool = False)` 파라미터 추가
     - `_decide_entry()`: `generate_signal(force_entry=self.force_entry)` 전달
-  - [ ] `run_testnet_dry_run.py`: `--force-entry` 플래그 추가
+  - [x] `run_testnet_dry_run.py`: `--force-entry` 플래그 추가
     - `argparse.add_argument("--force-entry", action="store_true")`
     - Orchestrator 초기화 시 `force_entry=args.force_entry` 전달
     - WARNING 로그: "⚠️  Force Entry Mode: Grid spacing ignored"
-  - [ ] 회귀 테스트: `pytest -q` 통과
-  - [ ] Evidence: `docs/evidence/phase_12a4/force_entry_implementation.md`
+  - [x] 회귀 테스트: `pytest -q` 통과 (326 passed, +6)
+  - [x] Evidence: [force_entry_implementation.md](../../docs/evidence/phase_12a4/force_entry_implementation.md)
+  - **커밋**: 8b9a3c0
 
-- [ ] **Sub-task 12a-4b: Testnet 설정 완료**
+- [~] **Sub-task 12a-4b: Testnet 설정 완료**
   - [ ] .env 파일 작성 (BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET=true)
   - [ ] Testnet equity >= 0.01 BTC 확인
   - [ ] `config/safety_limits.yaml` 설정 확인 (testnet_max_trades: 50)
