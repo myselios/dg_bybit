@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.34, Phase 12a-2 DONE)
+# Task Plan: Account Builder Implementation (v2.35, Phase 12a-3 IN PROGRESS)
 Last Updated: 2026-01-25 (KST)
-Status: **Phase 0~12a-2 COMPLETE** | Gate 1-8 ALL PASS | **312 tests passed** (+31 from Phase 12a-2) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | ✅ God Object 위반 해소: orchestrator.py 413 LOC (< 500) | ✅ Full Orchestrator Integration + E2E 시뮬레이션 (6/6) | ✅ BybitAdapter 완전 구현 (REST + WS 통합) | 원칙: 100% 완료만 DONE 표시
+Status: **Phase 0~12a-2 COMPLETE, Phase 12a-3 IN PROGRESS** | Gate 1-8 ALL PASS | **312 tests passed** | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | ✅ God Object 위반 해소: orchestrator.py 413 LOC (< 500) | ✅ Full Orchestrator Integration + E2E 시뮬레이션 (6/6) | ✅ BybitAdapter 완전 구현 (REST + WS 통합) | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 

@@ -329,3 +329,193 @@ class BybitRestClient:
         }
 
         return self._make_request("POST", "/v5/order/cancel", params)
+
+    # ========================================================================
+    # Phase 12a-1: Market Data Query Methods
+    # ========================================================================
+
+    def get_tickers(
+        self,
+        category: str = "inverse",
+        symbol: str = "BTCUSD",
+    ) -> Dict[str, Any]:
+        """
+        시장 데이터 조회 (Mark price, Index price, Funding rate)
+
+        Args:
+            category: 카테고리 (기본: inverse)
+            symbol: 심볼 (기본: BTCUSD)
+
+        Returns:
+            Dict: 응답 JSON
+                {
+                    "result": {
+                        "list": [{
+                            "symbol": "BTCUSD",
+                            "markPrice": "50000.50",
+                            "indexPrice": "50001.00",
+                            "fundingRate": "0.0001"
+                        }]
+                    }
+                }
+
+        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+        }
+
+        return self._make_request("GET", "/v5/market/tickers", params)
+
+    def get_wallet_balance(
+        self,
+        accountType: str = "CONTRACT",
+        coin: str = "BTC",
+    ) -> Dict[str, Any]:
+        """
+        계정 Equity 조회
+
+        Args:
+            accountType: 계정 타입 (기본: CONTRACT)
+            coin: 코인 (기본: BTC)
+
+        Returns:
+            Dict: 응답 JSON
+                {
+                    "result": {
+                        "list": [{
+                            "coin": [{
+                                "coin": "BTC",
+                                "equity": "0.0025",
+                                "walletBalance": "0.0024",
+                                "unrealisedPnl": "0.0001"
+                            }]
+                        }]
+                    }
+                }
+
+        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        """
+        params = {
+            "accountType": accountType,
+            "coin": coin,
+        }
+
+        return self._make_request("GET", "/v5/account/wallet-balance", params)
+
+    def get_position(
+        self,
+        category: str = "inverse",
+        symbol: str = "BTCUSD",
+    ) -> Dict[str, Any]:
+        """
+        현재 포지션 조회
+
+        Args:
+            category: 카테고리 (기본: inverse)
+            symbol: 심볼 (기본: BTCUSD)
+
+        Returns:
+            Dict: 응답 JSON
+                {
+                    "result": {
+                        "list": [{
+                            "symbol": "BTCUSD",
+                            "side": "Buy",
+                            "size": "100",
+                            "avgPrice": "49500.00",
+                            "unrealisedPnl": "0.00020"
+                        }]
+                    }
+                }
+
+        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+        }
+
+        return self._make_request("GET", "/v5/position/list", params)
+
+    def get_execution_list(
+        self,
+        category: str = "inverse",
+        symbol: str = "BTCUSD",
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        거래 내역 조회 (PnL, Loss streak 계산용)
+
+        Args:
+            category: 카테고리 (기본: inverse)
+            symbol: 심볼 (기본: BTCUSD)
+            limit: 조회 개수 (기본: 50)
+
+        Returns:
+            Dict: 응답 JSON
+                {
+                    "result": {
+                        "list": [
+                            {"closedPnl": "5.0", "symbol": "BTCUSD"},
+                            {"closedPnl": "-3.0", "symbol": "BTCUSD"}
+                        ]
+                    }
+                }
+
+        SSOT: task_plan.md Phase 12a-1 - REST API Integration
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "limit": limit,
+        }
+
+        return self._make_request("GET", "/v5/execution/list", params)
+
+    def get_kline(
+        self,
+        category: str = "inverse",
+        symbol: str = "BTCUSD",
+        interval: str = "60",
+        limit: int = 200,
+    ) -> Dict[str, Any]:
+        """
+        Kline/캔들스틱 데이터 조회 (ATR/Regime 계산용)
+
+        Args:
+            category: 카테고리 (기본: inverse)
+            symbol: 심볼 (기본: BTCUSD)
+            interval: 간격 (1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M)
+            limit: 조회 개수 (기본: 200, 최대: 1000)
+
+        Returns:
+            Dict: 응답 JSON
+                {
+                    "result": {
+                        "list": [
+                            [
+                                "1622534400000",  # startTime
+                                "50000.00",       # openPrice
+                                "50100.00",       # highPrice
+                                "49900.00",       # lowPrice
+                                "50050.00",       # closePrice
+                                "1000000",        # volume
+                                "20.00"           # turnover
+                            ],
+                            ...
+                        ]
+                    }
+                }
+
+        SSOT: task_plan.md Phase 12a-2 - Market Data Provider 통합
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit,
+        }
+
+        return self._make_request("GET", "/v5/market/kline", params)
