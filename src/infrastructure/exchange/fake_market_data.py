@@ -453,3 +453,25 @@ class FakeMarketData:
             mode: Position mode ("MergedSingle" or "BothSide")
         """
         self._position_mode = mode
+
+    # ========== Phase 11b: Trade Log Integration Methods ==========
+
+    def get_funding_rate(self) -> float:
+        """Funding rate (기본값: 0.0001 = 0.01%)."""
+        return 0.0001
+
+    def get_index_price(self) -> float:
+        """Index price (Mark price와 동일하게 설정)."""
+        return self._mark_price
+
+    def get_ma_slope_pct(self) -> float:
+        """MA slope (%) - market_regime 계산용 (기본값: 0.05 = 5%)."""
+        return 0.05
+
+    def get_atr_percentile(self) -> float:
+        """ATR percentile (0-100) - market_regime 계산용 (기본값: 40.0)."""
+        return 40.0
+
+    def get_exchange_server_time_offset_ms(self) -> float:
+        """거래소 서버 시간 오프셋 (ms) - 기본값: 10.0ms."""
+        return 10.0

@@ -17,7 +17,7 @@ Exports:
 - TickResult: Tick 실행 결과 (state, execution_order, halt_reason 등)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
 from domain.state import State, Position, Direction
 from infrastructure.exchange.market_data_interface import MarketDataInterface
@@ -42,6 +42,10 @@ from application.event_processor import (
     match_pending_order,
     create_position_from_fill,
 )
+
+# Phase 11b: Trade Log Integration
+from infrastructure.logging.trade_logger_v1 import TradeLogV1, calculate_market_regime, validate_trade_log_v1
+from infrastructure.storage.log_storage import LogStorage
 
 
 @dataclass
@@ -73,6 +77,7 @@ class Orchestrator:
         self,
         market_data: MarketDataInterface,
         rest_client=None,  # Phase 11b: Order placement용 (Optional, type: BybitRestClient)
+        log_storage: Optional[LogStorage] = None,  # Phase 11b: Trade Log 저장용 (Optional)
     ):
         """
         Orchestrator 초기화
@@ -80,9 +85,11 @@ class Orchestrator:
         Args:
             market_data: Market data interface (FakeMarketData or BybitAdapter)
             rest_client: Bybit REST client (Order placement용, Phase 11b)
+            log_storage: LogStorage (Trade Log 저장용, Phase 11b)
         """
         self.market_data = market_data
         self.rest_client = rest_client
+        self.log_storage = log_storage
         self.state = State.FLAT
         self.position: Optional[Position] = None
 
@@ -170,6 +177,81 @@ class Orchestrator:
             exit_intent=exit_intent,  # Phase 11: Exit intent
         )
 
+    def _log_completed_trade(self, event: Dict[str, Any], position: Optional[Position]) -> None:
+        """
+        완료된 거래를 Trade Log v1.0으로 기록한다.
+
+        Args:
+            event: Exit FILL event
+            position: 청산된 Position (Exit FILL 직전 상태)
+
+        Phase 11b DoD: "Trade log 정상 기록 (Phase 10 로깅 인프라 사용)"
+        """
+        if position is None:
+            return  # Position이 없으면 로깅 불가
+
+        # Trade Log v1.0 생성
+        # 1. 실행 품질 필드
+        order_id = event.get("orderId", "unknown")
+        fills = [
+            {
+                "price": float(event.get("execPrice", 0.0)),
+                "qty": int(event.get("execQty", 0)),
+                "fee": 0.0,  # Fee는 실제 구현에서 계산 필요
+                "timestamp": self.market_data.get_timestamp(),
+            }
+        ]
+        slippage_usd = 0.0  # 실제 구현에서는 expected vs exec 계산
+        latency_rest_ms = 0.0  # 실제 구현에서는 타이밍 측정
+        latency_ws_ms = 0.0
+        latency_total_ms = 0.0
+
+        # 2. Market data
+        funding_rate = self.market_data.get_funding_rate()
+        mark_price = self.market_data.get_mark_price()
+        index_price = self.market_data.get_index_price()
+        orderbook_snapshot = {}  # 실제 구현에서는 MarketData에서 가져오기
+
+        # 3. Market regime (deterministic)
+        ma_slope_pct = self.market_data.get_ma_slope_pct()
+        atr_percentile = self.market_data.get_atr_percentile()
+        market_regime = calculate_market_regime(
+            ma_slope_pct=ma_slope_pct,
+            atr_percentile=atr_percentile,
+        )
+
+        # 4. 무결성 필드
+        schema_version = "1.0"
+        config_hash = "test_config_hash"  # 실제 구현에서는 설정 해시 계산
+        git_commit = "test_git_commit"  # 실제 구현에서는 Git 커밋 해시 가져오기
+        exchange_server_time_offset_ms = self.market_data.get_exchange_server_time_offset_ms()
+
+        # TradeLogV1 생성
+        trade_log = TradeLogV1(
+            order_id=order_id,
+            fills=fills,
+            slippage_usd=slippage_usd,
+            latency_rest_ms=latency_rest_ms,
+            latency_ws_ms=latency_ws_ms,
+            latency_total_ms=latency_total_ms,
+            funding_rate=funding_rate,
+            mark_price=mark_price,
+            index_price=index_price,
+            orderbook_snapshot=orderbook_snapshot,
+            market_regime=market_regime,
+            schema_version=schema_version,
+            config_hash=config_hash,
+            git_commit=git_commit,
+            exchange_server_time_offset_ms=exchange_server_time_offset_ms,
+        )
+
+        # Validation
+        validate_trade_log_v1(trade_log)
+
+        # LogStorage에 저장 (JSONL)
+        log_dict = asdict(trade_log)
+        self.log_storage.append_trade_log_v1(log_entry=log_dict, is_critical=False)
+
     def get_state(self) -> State:
         """현재 상태 반환"""
         return self.state
@@ -229,6 +311,10 @@ class Orchestrator:
                     self.pending_order = None  # Cleanup
                 elif self.state == State.EXIT_PENDING:
                     # Exit FILL → FLAT
+                    # Phase 11b: Trade Log 생성 및 저장 (DoD: "Trade log 정상 기록")
+                    if self.log_storage is not None:
+                        self._log_completed_trade(event=event, position=self.position)
+
                     self.position = None
                     self.state = State.FLAT
                     self.pending_order = None  # Cleanup

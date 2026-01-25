@@ -21,8 +21,11 @@ Note:
 """
 
 import pytest
+import tempfile
+from pathlib import Path
 from application.orchestrator import Orchestrator
 from infrastructure.exchange.fake_market_data import FakeMarketData
+from infrastructure.storage.log_storage import LogStorage
 from domain.state import State, Direction
 
 
@@ -100,7 +103,15 @@ def test_full_cycle_success():
     fake_data.inject_position_mode("MergedSingle")
 
     mock_rest_client = MockRestClient()
-    orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_rest_client)
+
+    # Phase 11b: LogStorage 초기화 (Trade Log 검증용)
+    tmpdir = tempfile.mkdtemp()
+    log_storage = LogStorage(log_dir=Path(tmpdir))
+    orchestrator = Orchestrator(
+        market_data=fake_data,
+        rest_client=mock_rest_client,
+        log_storage=log_storage,
+    )
 
     # Tick 1: FLAT → Entry signal → ENTRY_PENDING
     result1 = orchestrator.run_tick()
@@ -152,6 +163,18 @@ def test_full_cycle_success():
 
     # Full cycle completed
     assert result4.state == State.FLAT, "Full cycle should end with FLAT"
+
+    # Phase 11b: Trade Log 검증 (DoD: "Trade log 정상 기록")
+    trade_logs = log_storage.read_trade_logs_v1()
+    assert len(trade_logs) == 1, f"Expected 1 trade log, got {len(trade_logs)}"
+
+    # Trade Log 필드 검증
+    trade_log = trade_logs[0]
+    assert trade_log["order_id"] == exit_order["orderId"], "Trade log order_id should match exit order"
+    assert trade_log["market_regime"] in ["trending_up", "trending_down", "ranging", "high_vol"], "market_regime should be valid"
+    assert trade_log["schema_version"] == "1.0", "schema_version should be 1.0"
+    assert trade_log["mark_price"] == exit_price, "mark_price should match exit price"
+    assert len(trade_log["fills"]) > 0, "fills should not be empty"
 
 
 # ========== Test 2: Entry Blocked (Gate Reject) ==========
