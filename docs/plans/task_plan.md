@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.37, Phase 12a-4 IN PROGRESS)
+# Task Plan: Account Builder Implementation (v2.38, Phase 12a-4/12a-5 구조 분리)
 Last Updated: 2026-01-25 (KST)
-Status: **Phase 0~12a-3 COMPLETE, Phase 12a-4 IN PROGRESS** | Gate 1-8 ALL PASS | **320 tests passed** (+8 from Phase 12a-3) | ✅ Automated Dry-Run Infrastructure (Mock-based) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | 🔄 Testnet 자동 거래 실행 (30-50회 목표) | 원칙: 100% 완료만 DONE 표시
+Status: **Phase 0~12a-3 COMPLETE, Phase 12a-4 IN PROGRESS (Force Entry), Phase 12a-5 TODO (Telegram)** | Gate 1-8 ALL PASS | **320 tests passed** (+8 from Phase 12a-3) | ✅ Automated Dry-Run Infrastructure (Mock-based) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | 🔄 Phase 분리: 12a-4 (Force Entry + Testnet 거래) + 12a-5 (Telegram 알림, 상세 설계 포함) | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -1283,61 +1283,300 @@ Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완
 
 ---
 
-#### Phase 12a-4: Testnet 자동 거래 실행 (2-3일)
+#### Phase 12a-4: Force Entry 모드 구현 + Testnet 자동 거래 (1-2일)
 
-**Goal**: Testnet에서 30-50회 거래 자동 실행 + DoD 검증
+**Goal**: Grid Signal 블로커 해결 + Testnet 30-50회 거래 실행 (로그 모니터링)
 
 **Scope**:
 1. **Testnet 설정**:
    - API credentials 설정 (.env)
    - Testnet equity 확인 (0.01 BTC 이상)
-   - Safety limits 설정 (testnet_max_trades: 50)
+   - safety_limits.yaml 설정 (testnet_max_trades: 50)
 
-2. **자동 거래 실행**:
-   - `python scripts/run_testnet_dry_run.py --target-trades 30`
-   - 실시간 모니터링 (tail -f logs/testnet_dry_run.log)
+2. **Force Entry 모드 구현** (Grid Signal 블로커 해결):
+   - `signal_generator.py`: `force_entry` 파라미터 추가
+     - `force_entry=True`: Grid spacing 체크 무시, 즉시 Buy 신호
+   - `orchestrator.py`: `force_entry` 전달
+   - `run_testnet_dry_run.py`: `--force-entry` 플래그 추가
+
+3. **Testnet 자동 거래 실행**:
+   - `python scripts/run_testnet_dry_run.py --target-trades 30 --force-entry`
+   - 로그 모니터링: `tail -f logs/testnet_dry_run/testnet_dry_run.log`
    - Session Risk 발동 대기 (Daily cap 또는 Loss streak)
 
-3. **검증 및 Evidence**:
+4. **검증 및 Evidence**:
    - Trade Log 완전성 검증 (30회 == 30 logs)
    - Session Risk 발동 증거 (1회 이상)
    - Stop loss 작동 증거 (5회 이상)
    - Bybit Testnet UI 스크린샷
 
 **DoD**:
-- [ ] Testnet 설정 완료
-  - .env 파일 작성 (BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET=true)
-  - Testnet equity >= 0.01 BTC 확인
-  - safety_limits.yaml 설정 (testnet_max_trades: 50)
-- [ ] Testnet 30-50회 거래 실행
-  - Full cycle (FLAT → Entry → Exit → FLAT) 30회 이상 성공
-  - Session Risk 발동 증거 1회 이상 (Daily cap / Weekly cap / Loss streak)
-  - Stop loss 정상 작동 확인 (최소 5회)
-  - Fee tracking 정상 작동 (모든 거래에서 fee 기록)
-  - Slippage tracking 정상 작동 (slippage 기록)
-- [ ] 로그 완전성 검증
-  - 모든 거래가 trade_log에 기록됨
-  - Daily/Weekly PnL 계산 정확성 확인
-  - Loss streak count 정확성 확인
-- [ ] Testnet Dry-Run Report 작성
-  - `docs/evidence/phase_12a/testnet_dry_run_report.md`
-  - 거래 요약 (총 거래, winrate, profit/loss)
-  - Session Risk 발동 내역
-  - 발견된 문제 및 해결 방안
-- [ ] Bybit Testnet UI 스크린샷 첨부
-  - Order History (Entry/Exit 주문)
-  - Position History (Closed positions)
-  - Asset (Equity 변화)
-- [ ] Evidence Artifacts (`docs/evidence/phase_12a/`)
-  - testnet_dry_run_report.md
-  - completion_checklist.md
-  - pytest_output.txt (회귀 테스트)
-  - bybit_testnet_screenshots/ (스크린샷 모음)
+- [~] **Sub-task 12a-4a: Force Entry 모드 구현**
+  - [ ] TDD: `test_signal_generator_force_entry.py` 작성
+    - Test case 1: `force_entry=True` → 즉시 Buy 신호 (Grid spacing 무시)
+    - Test case 2: `force_entry=True` + `last_fill_price=None` → Buy 신호
+    - Test case 3: `force_entry=False` → 정상 Grid 로직
+  - [ ] `signal_generator.py`: `force_entry` 파라미터 추가
+    - `generate_signal(force_entry: bool = False)` 시그니처 수정
+    - `force_entry=True`일 때 Grid spacing 체크 무시, 즉시 Buy 신호 반환
+  - [ ] `orchestrator.py`: `force_entry` 전달
+    - `__init__(force_entry: bool = False)` 파라미터 추가
+    - `_decide_entry()`: `generate_signal(force_entry=self.force_entry)` 전달
+  - [ ] `run_testnet_dry_run.py`: `--force-entry` 플래그 추가
+    - `argparse.add_argument("--force-entry", action="store_true")`
+    - Orchestrator 초기화 시 `force_entry=args.force_entry` 전달
+    - WARNING 로그: "⚠️  Force Entry Mode: Grid spacing ignored"
+  - [ ] 회귀 테스트: `pytest -q` 통과
+  - [ ] Evidence: `docs/evidence/phase_12a4/force_entry_implementation.md`
+
+- [ ] **Sub-task 12a-4b: Testnet 설정 완료**
+  - [ ] .env 파일 작성 (BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET=true)
+  - [ ] Testnet equity >= 0.01 BTC 확인
+  - [ ] `config/safety_limits.yaml` 설정 확인 (testnet_max_trades: 50)
+
+- [ ] **Sub-task 12a-4c: Testnet 30-50회 거래 실행**
+  - [ ] `python scripts/run_testnet_dry_run.py --target-trades 30 --force-entry` 실행
+  - [ ] 로그 모니터링: `tail -f logs/testnet_dry_run/testnet_dry_run.log`
+  - [ ] Full cycle (FLAT → Entry → Exit → FLAT) 30회 이상 성공
+  - [ ] Session Risk 발동 증거 1회 이상 (Daily cap / Weekly cap / Loss streak)
+  - [ ] Stop loss 정상 작동 확인 (최소 5회)
+  - [ ] Fee tracking 정상 작동 (모든 거래에서 fee 기록)
+  - [ ] Slippage tracking 정상 작동 (slippage 기록)
+
+- [ ] **Sub-task 12a-4d: 로그 완전성 검증**
+  - [ ] 모든 거래가 trade_log에 기록됨 (expected == actual)
+  - [ ] Daily/Weekly PnL 계산 정확성 확인
+  - [ ] Loss streak count 정확성 확인
+
+- [ ] **Sub-task 12a-4e: Testnet Dry-Run Report 작성**
+  - [ ] `docs/evidence/phase_12a4/testnet_dry_run_report.md` 작성
+    - 거래 요약 (총 거래, winrate, profit/loss)
+    - Session Risk 발동 내역
+    - 발견된 문제 및 해결 방안
+  - [ ] Bybit Testnet UI 스크린샷 첨부
+    - Order History (Entry/Exit 주문)
+    - Position History (Closed positions)
+    - Asset (Equity 변화)
+  - [ ] Evidence Artifacts (`docs/evidence/phase_12a4/`)
+    - testnet_dry_run_report.md
+    - completion_checklist.md
+    - pytest_output.txt (회귀 테스트)
+    - bybit_testnet_screenshots/ (스크린샷 모음)
+
 - [ ] Progress Table 업데이트
 
 ---
 
-#### Phase 12b: Mainnet Dry-Run (1-2일)
+#### Phase 12a-5: Telegram 알림 통합 (1일)
+
+**Goal**: Testnet 거래 실시간 모니터링 (Telegram 알림)
+
+**Scope**:
+1. **상세 설계 문서 작성** (`docs/specs/telegram_notifier_design.md`):
+   - TelegramNotifier 클래스 설계 (책임, 의존성)
+   - 메시지 포맷 (emoji, markdown)
+   - Integration point (run_testnet_dry_run.py)
+   - 에러 처리 (bot token 없음, API 실패)
+
+2. **TelegramNotifier 구현**:
+   - Entry/Exit 거래 알림
+   - HALT/Session Risk 발동 알림
+   - 거래 요약 알림
+
+3. **run_testnet_dry_run.py 통합**:
+   - TelegramNotifier 초기화
+   - State 전환 시 알림 전송
+   - HALT 감지 시 알림 전송
+
+4. **검증 및 Evidence**:
+   - Telegram 알림 테스트 (수동)
+   - Testnet 재실행 (5-10회 거래)
+   - 스크린샷 증거
+
+**DoD**:
+- [ ] **Sub-task 12a-5a: 상세 설계 문서 작성**
+  - [ ] `docs/specs/telegram_notifier_design.md` 작성
+    - **1. 책임 (Responsibility)**:
+      - 거래 이벤트 → Telegram 메시지 변환
+      - Telegram Bot API 호출 (sendMessage)
+      - 에러 핸들링 (silent fail, 로그만 출력)
+    - **2. 의존성 (Dependencies)**:
+      - 외부: Telegram Bot API (https://api.telegram.org/bot{token}/sendMessage)
+      - 환경변수: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+      - 내부: 없음 (pure infrastructure layer)
+    - **3. 클래스 설계**:
+      ```python
+      class TelegramNotifier:
+          def __init__(self, bot_token: Optional[str] = None, chat_id: Optional[str] = None):
+              """환경변수에서 로드, 없으면 disabled"""
+
+          @property
+          def enabled(self) -> bool:
+              """bot_token/chat_id 있으면 True"""
+
+          def send_entry(self, side: str, qty: float, price: float, signal_id: str = ""):
+              """Entry 알림 (🟢 Buy / 🔴 Sell)"""
+
+          def send_exit(self, side: str, qty: float, price: float, pnl: float, reason: str = ""):
+              """Exit 알림 (✅ profit / ❌ loss)"""
+
+          def send_halt(self, reason: str, equity: float = 0.0):
+              """🚨 HALT 알림"""
+
+          def send_session_risk(self, trigger: str, details: str = ""):
+              """⚠️ Session Risk 알림"""
+
+          def send_summary(self, trades: int, wins: int, losses: int, pnl: float):
+              """📊 거래 요약"""
+
+          def _send_message(self, text: str) -> bool:
+              """Telegram API 호출 (internal)"""
+      ```
+    - **4. 메시지 포맷 (Markdown + Emoji)**:
+      - Entry: `🟢 *Entry Buy* | Qty: 0.001 BTC | Price: $104,500 | Signal: abc123`
+      - Exit: `✅ *Exit Sell* | PnL: +$15.23 | Reason: Stop hit`
+      - HALT: `🚨 *HALT* | Reason: Daily loss cap | Equity: $95.00`
+      - Session Risk: `⚠️ *Session Risk* | Trigger: Loss streak 3 | Details: ...`
+      - Summary: `📊 *Trading Summary* | Trades: 30 | Wins: 18 | Losses: 12 | PnL: +$45.67`
+    - **5. 에러 처리 (Silent Fail)**:
+      - bot_token/chat_id 없음 → `enabled=False`, 메서드 호출 시 즉시 return
+      - API 호출 실패 (네트워크, rate limit) → 로그만 출력 (ERROR level), 예외 전파 안 함
+      - 근거: Telegram 실패가 거래 중단 원인이 되어서는 안 됨
+    - **6. Integration Point**:
+      - `run_testnet_dry_run.py`:
+        - 초기화: `telegram = TelegramNotifier()` (환경변수 자동 로드)
+        - FLAT → IN_POSITION 전환 감지 → `telegram.send_entry()`
+        - IN_POSITION → FLAT 전환 감지 → `telegram.send_exit()`
+        - HALT 감지 → `telegram.send_halt()`
+        - 실행 완료 → `telegram.send_summary()`
+      - State 전환 감지 로직:
+        ```python
+        if previous_state == State.FLAT and current_state == State.IN_POSITION:
+            # Entry 발생 (orchestrator.position에서 정보 가져오기)
+            telegram.send_entry(side, qty, price, signal_id)
+
+        if previous_state == State.IN_POSITION and current_state == State.FLAT:
+            # Exit 발생 (trade_log에서 PnL 가져오기)
+            telegram.send_exit(side, qty, price, pnl, reason)
+        ```
+    - **7. 환경변수 설정 (.env)**:
+      ```bash
+      # Telegram Bot Configuration
+      TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz  # @BotFather에서 발급
+      TELEGRAM_CHAT_ID=123456789  # 개인 Chat ID (bot과 대화 시작 후 /getid)
+      ```
+    - **8. Telegram Bot 생성 절차**:
+      1. @BotFather와 대화 → `/newbot` 명령
+      2. Bot 이름 입력 → Token 발급받기
+      3. 발급받은 Bot과 대화 시작 (아무 메시지 전송)
+      4. Chat ID 확인: `curl https://api.telegram.org/bot<TOKEN>/getUpdates` → `"chat":{"id":123456789}`
+      5. .env에 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` 추가
+
+- [ ] **Sub-task 12a-5b: TelegramNotifier 구현**
+  - [ ] `src/infrastructure/notification/__init__.py` 생성 (빈 파일)
+  - [ ] `src/infrastructure/notification/telegram_notifier.py` 구현
+    - `__init__()`: 환경변수 로드 (`os.getenv()`)
+    - `enabled` property: `bool(self.bot_token and self.chat_id)`
+    - `send_entry()`: Markdown 메시지 생성 → `_send_message()` 호출
+    - `send_exit()`: PnL 양수/음수에 따라 ✅/❌ 선택
+    - `send_halt()`: 🚨 emoji + reason
+    - `send_session_risk()`: ⚠️ emoji + trigger
+    - `send_summary()`: 📊 emoji + 통계 요약
+    - `_send_message()`: `requests.post()` → Telegram API 호출
+      - URL: `https://api.telegram.org/bot{token}/sendMessage`
+      - Payload: `{"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}`
+      - 에러 시 로그만 출력, `False` 반환
+  - [ ] 의존성 추가: `pyproject.toml`에 `requests` 추가 (이미 있으면 생략)
+
+- [ ] **Sub-task 12a-5c: Unit Test 작성**
+  - [ ] `tests/unit/test_telegram_notifier.py` 작성
+    - Test case 1: `enabled=False` (bot_token 없음) → 모든 메서드 즉시 return
+    - Test case 2: `send_entry()` → `_send_message()` 호출 검증 (mock)
+    - Test case 3: `send_exit()` → PnL 양수/음수에 따라 메시지 다름
+    - Test case 4: `_send_message()` API 실패 → 로그 출력, 예외 전파 안 함
+  - [ ] `pytest -q tests/unit/test_telegram_notifier.py` 통과
+
+- [ ] **Sub-task 12a-5d: run_testnet_dry_run.py 통합**
+  - [ ] Import 추가: `from infrastructure.notification.telegram_notifier import TelegramNotifier`
+  - [ ] TelegramNotifier 초기화:
+    ```python
+    telegram = TelegramNotifier()
+    if telegram.enabled:
+        logger.info("✅ Telegram notifications enabled")
+        telegram._send_message("🚀 *Testnet Dry-Run Started*")
+    else:
+        logger.warning("⚠️  Telegram notifications disabled (missing bot_token/chat_id)")
+    ```
+  - [ ] State 전환 감지 로직 추가 (기존 monitoring loop에 통합):
+    ```python
+    # FLAT → IN_POSITION (Entry)
+    if previous_state == State.FLAT and current_state == State.IN_POSITION:
+        if telegram.enabled and orchestrator.position:
+            pos = orchestrator.position
+            side = "Buy" if pos.direction == Direction.LONG else "Sell"
+            telegram.send_entry(side, pos.qty, pos.entry_price, pos.signal_id)
+
+    # IN_POSITION → FLAT (Exit)
+    if previous_state == State.IN_POSITION and current_state == State.FLAT:
+        if telegram.enabled:
+            trade_logs = log_storage.read_trade_logs_v1()
+            if trade_logs:
+                last_trade = trade_logs[-1]
+                pnl = last_trade.get("realized_pnl_usd", 0.0)
+                side = last_trade.get("side", "Unknown")
+                qty = last_trade.get("qty", 0.0)
+                price = last_trade.get("exit_price", 0.0)
+                reason = last_trade.get("exit_reason", "")
+                telegram.send_exit(side, qty, price, pnl, reason)
+    ```
+  - [ ] HALT 감지 시 알림:
+    ```python
+    if current_state == State.HALT:
+        halt_reason = result.get("halt_reason", "Unknown")
+        if telegram.enabled:
+            equity = market_data.get_equity_btc() * market_data.get_current_price()
+            telegram.send_halt(halt_reason, equity)
+    ```
+  - [ ] 실행 완료 시 요약 전송:
+    ```python
+    finally:
+        if telegram.enabled:
+            telegram.send_summary(
+                trades=monitor.total_trades,
+                wins=monitor.wins,
+                losses=monitor.losses,
+                pnl=monitor.total_pnl_usd
+            )
+    ```
+
+- [ ] **Sub-task 12a-5e: Telegram 알림 테스트 (수동)**
+  - [ ] Telegram Bot 생성 (@BotFather)
+  - [ ] .env 설정 (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+  - [ ] 테스트 스크립트 실행 (`scripts/test_telegram.py` 작성):
+    ```python
+    from infrastructure.notification.telegram_notifier import TelegramNotifier
+    telegram = TelegramNotifier()
+    telegram._send_message("🧪 Test message from CBGB Bot")
+    ```
+  - [ ] Telegram 수신 확인
+  - [ ] Evidence: `docs/evidence/phase_12a5/telegram_bot_creation.png`
+
+- [ ] **Sub-task 12a-5f: Testnet 재실행 (Telegram 검증)**
+  - [ ] `python scripts/run_testnet_dry_run.py --target-trades 5 --force-entry` 실행
+  - [ ] Telegram 알림 수신 확인:
+    - Entry 알림 (5회)
+    - Exit 알림 (5회)
+    - Summary 알림 (1회)
+  - [ ] 스크린샷 증거: `docs/evidence/phase_12a5/telegram_alerts.png`
+
+- [ ] **Sub-task 12a-5g: Evidence Artifacts**
+  - [ ] `docs/evidence/phase_12a5/telegram_integration_report.md` 작성
+  - [ ] pytest_output.txt (회귀 테스트)
+  - [ ] Telegram 스크린샷 (Bot 생성, 알림 수신)
+
+- [ ] Progress Table 업데이트
+
+---
 
 #### Phase 12b: Mainnet Dry-Run (1-2일)
 
@@ -1663,7 +1902,9 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | 11b | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_11b/completion_checklist.md), [Gate 7](../evidence/phase_11b/gate7_verification.txt), [pytest](../evidence/phase_11b/pytest_output.txt), [RED→GREEN](../evidence/phase_11b/red_green_proof.md). **Tests**: [test_orchestrator_entry_flow.py](../../tests/unit/test_orchestrator_entry_flow.py) (7 cases) + [test_orchestrator_event_processing.py](../../tests/unit/test_orchestrator_event_processing.py) (9 cases) + [test_full_cycle_testnet.py](../../tests/integration_real/test_full_cycle_testnet.py) (6 cases) = **22 passed**. Total: **267 passed in 0.41s** (245 → 267, +22). **Gate 7**: ALL PASS (461 asserts, +81). | [orchestrator.py](../../src/application/orchestrator.py) (✅ 413 LOC, God Object 리팩토링 완료), [emergency_checker.py](../../src/application/emergency_checker.py) (Session Risk 통합, 145 LOC), [entry_coordinator.py](../../src/application/entry_coordinator.py) (Entry helpers, 151 LOC), [event_processor.py](../../src/application/event_processor.py) (Event helpers, 161 LOC), [market_data_interface.py](../../src/infrastructure/exchange/market_data_interface.py) (+7 메서드), [fake_market_data.py](../../src/infrastructure/exchange/fake_market_data.py) (+13 메서드), [entry_allowed.py](../../src/application/entry_allowed.py) (StageParams, SignalContext), [sizing.py](../../src/application/sizing.py) (SizingParams) | **Part 1/3 완료** (Entry Flow): c17cc8e. **Part 2/3 완료** (Event Processing + God Object 리팩토링): f158d7a, d7292e3. **Part 3/3 완료** (Testnet E2E 시뮬레이션): [현재 커밋]. **Evidence**: [phase_11b/](../evidence/phase_11b/). **Phase 11b 완료** (Full Orchestrator Integration). **Tests**: 267 passed (+22 from Phase start), 회귀 없음. **FLOW.md Section 4.2 준수**: orchestrator.py 413 LOC (< 500). **✅ Full Orchestrator Integration 완료** (Entry + Event Processing + Testnet E2E 시뮬레이션 6/6). **완료**: 2026-01-24. **Gate 7 Evidence 추가**: 2026-01-25. **새 세션 검증 가능**. **중요**: 실제 Testnet 연결 테스트는 Phase 12 (Dry-Run Validation) 예정. |
 | 12a-1 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a1/completion_checklist.md), [Gate 7](../evidence/phase_12a1/gate7_verification.txt), [pytest](../evidence/phase_12a1/pytest_output.txt), [RED→GREEN](../evidence/phase_12a1/red_green_proof.md). **Tests**: [test_bybit_adapter.py](../../tests/unit/test_bybit_adapter.py) (14 cases: REST 4 + WS 2 + Caching 3 + DEGRADED 3 + Session Risk 2) = **14 passed**. Total: **281 passed in 0.43s** (267 → 281, +14). **Gate 7**: ALL PASS (526 asserts). | **Infrastructure/Exchange**: [bybit_adapter.py](../../src/infrastructure/exchange/bybit_adapter.py) (398 LOC: update_market_data(), get_fill_events(), MarketDataInterface 완전 구현), [bybit_rest_client.py](../../src/infrastructure/exchange/bybit_rest_client.py) (+158 LOC: get_tickers/wallet_balance/position/execution_list 4 메서드), [bybit_ws_client.py](../../src/infrastructure/exchange/bybit_ws_client.py) (+48 LOC: get_execution_events()). **SSOT**: task_plan Phase 12a-1 (REST + WS 통합), FLOW Section 2 (Market Data Provider). | **Evidence**: [phase_12a1/](../evidence/phase_12a1/). **Phase 12a-1 완료** (BybitAdapter 완전 구현: 4 REST endpoints + WS execution.inverse + State caching + last_fill_price tracking). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-2 (Market Data Provider). |
 | 12a-2 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a2/completion_checklist.md), [Gate 7](../evidence/phase_12a2/gate7_verification.txt), [pytest](../evidence/phase_12a2/pytest_output.txt), [RED→GREEN](../evidence/phase_12a2/red_green_proof.md). **Tests**: [test_atr_calculator.py](../../tests/unit/test_atr_calculator.py) (9 cases) + [test_session_risk_tracker.py](../../tests/unit/test_session_risk_tracker.py) (14 cases) + [test_market_regime.py](../../tests/unit/test_market_regime.py) (8 cases) = **31 passed**. Total: **312 passed in 0.40s** (281 → 312, +31). **Gate 7**: ALL PASS (490 asserts). | **Application**: [atr_calculator.py](../../src/application/atr_calculator.py) (170 LOC: 14-period ATR, percentile, grid spacing), [session_risk_tracker.py](../../src/application/session_risk_tracker.py) (182 LOC: Daily/Weekly PnL, Loss streak, Fee ratio, Slippage), [market_regime.py](../../src/application/market_regime.py) (138 LOC: MA slope, regime classification). **SSOT**: task_plan Phase 12a-2 (Market Data Provider), account_builder_policy Section 9/11 (Session Risk/Entry Flow). | **Evidence**: [phase_12a2/](../evidence/phase_12a2/). **Phase 12a-2 완료** (Market Data Provider 완전 구현: ATR Calculator + Session Risk Tracker + Market Regime Analyzer). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-3 (Market Data Provider → BybitAdapter 통합). |
-| 12a-3 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a3/completion_checklist.md), [Gate 7](../evidence/phase_12a3/gate7_verification.txt), [pytest](../evidence/phase_12a3/pytest_output.txt). **Tests**: [test_dry_run_orchestrator.py](../../tests/integration/test_dry_run_orchestrator.py) (8 cases: DryRunMonitor 5 + Orchestration 3) = **8 passed**. Total: **320 passed in 0.44s** (312 → 320, +8). **Gate 7**: ALL PASS (511 asserts). | **Scripts**: [run_testnet_dry_run.py](../../scripts/run_testnet_dry_run.py) (230 LOC: BybitAdapter 통합, State transition detection, HALT handling, DryRunMonitor inline), [generate_dry_run_report.py](../../scripts/generate_dry_run_report.py) (250 LOC: Trade log analysis, Session Risk verification, Auto-generate DoD checklist). **SSOT**: task_plan Phase 12a-3 (Automated Dry-Run Infrastructure). | **Evidence**: [phase_12a3/](../evidence/phase_12a3/). **Phase 12a-3 완료** (Automated Dry-Run Infrastructure: Mock-based, Testnet 연결 불필요). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-4 (Testnet 자동 거래 실행, 실제 API 연결). |
+| 12a-3 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a3/completion_checklist.md), [Gate 7](../evidence/phase_12a3/gate7_verification.txt), [pytest](../evidence/phase_12a3/pytest_output.txt). **Tests**: [test_dry_run_orchestrator.py](../../tests/integration/test_dry_run_orchestrator.py) (8 cases: DryRunMonitor 5 + Orchestration 3) = **8 passed**. Total: **320 passed in 0.44s** (312 → 320, +8). **Gate 7**: ALL PASS (511 asserts). | **Scripts**: [run_testnet_dry_run.py](../../scripts/run_testnet_dry_run.py) (230 LOC: BybitAdapter 통합, State transition detection, HALT handling, DryRunMonitor inline), [generate_dry_run_report.py](../../scripts/generate_dry_run_report.py) (250 LOC: Trade log analysis, Session Risk verification, Auto-generate DoD checklist). **SSOT**: task_plan Phase 12a-3 (Automated Dry-Run Infrastructure). | **Evidence**: [phase_12a3/](../evidence/phase_12a3/). **Phase 12a-3 완료** (Automated Dry-Run Infrastructure: Mock-based, Testnet 연결 불필요). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-4 (Force Entry 모드 + Testnet 자동 거래). |
+| 12a-4 | [~] IN PROGRESS | **TBD** | **TBD** | **Phase 12a-4 IN PROGRESS** (Force Entry 모드 구현 + Testnet 30-50회 거래 실행). **DoD**: Force Entry 모드 구현 + Testnet 설정 + 30-50회 거래 + 로그 검증 + Report 작성. **다음**: Phase 12a-5 (Telegram 알림 통합). |
+| 12a-5 | [ ] TODO | **TBD** | **TBD** | **Phase 12a-5 TODO** (Telegram 알림 통합). **DoD**: 상세 설계 문서 작성 + TelegramNotifier 구현 + Unit Tests + run_testnet_dry_run.py 통합 + Testnet 재실행 검증. **상세 설계 필수**: [telegram_notifier_design.md](../../docs/specs/telegram_notifier_design.md) (책임/의존성/클래스 설계/메시지 포맷/에러 처리/Integration point). |
 
 ---
 
@@ -1761,6 +2002,7 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 ## 8. Change History
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-25 | 2.38 | **Phase 12a-4/12a-5 분리 (Document-First Workflow 복구)**: 사용자 지적 (텔레그램 로그 히스토리를 Phase 분리 필요) → Phase 12a-4 (Force Entry + Testnet 거래) + Phase 12a-5 (Telegram 알림, 상세 설계 포함) 분리. **Phase 12a-4 Scope**: Force Entry 모드 구현 + Testnet 30-50회 거래 + 로그 모니터링 (`tail -f`). **Phase 12a-5 Scope**: 상세 설계 문서 작성 (`telegram_notifier_design.md`, 책임/의존성/클래스 설계/메시지 포맷/에러 처리/Integration point 8개 섹션) + TelegramNotifier 구현 + Unit Tests + run_testnet_dry_run.py 통합 + Testnet 재실행 검증. **근거**: (1) Critical Path 분리 (Force Entry 필수, Telegram 선택), (2) DoD 단위 축소 (각각 1-2시간), (3) Document-First 원칙 (상세 설계 선행), (4) Rollback 최소화 (Telegram 실패 시 Phase 12a-4 영향 없음). **Progress Table**: Phase 12a-4 IN PROGRESS, Phase 12a-5 TODO 추가. **Status**: "Phase 12a-4 IN PROGRESS (Force Entry), Phase 12a-5 TODO (Telegram)". |
 | 2026-01-25 | 2.32 | **Phase 12a-1 완료 (BybitAdapter 완전 구현)**: REST API + WS Integration + State Caching + DEGRADED Mode + Session Risk Tracking. **구현**: (1) BybitAdapter (13207 bytes, MarketDataInterface 구현), (2) bybit_rest_client.py +158 LOC (4 endpoints: tickers, wallet-balance, position, execution), (3) bybit_ws_client.py +48 LOC (get_execution_events 메서드), (4) Tests 14개 (REST 4, WS 2, Caching 3, DEGRADED 3, Session Risk 2). **Tests**: 281 passed (+14, 267 → 281), 회귀 없음. **Evidence**: [phase_12a1/](../evidence/phase_12a1/) (completion_checklist.md, pytest_output.txt, gate7_verification.txt, red_green_proof.md). **커밋**: [TBD]. **✅ Phase 12a-1 COMPLETE**. **Status**: "Phase 0~12a-1 COMPLETE". **새 세션 검증 가능**. **다음**: Phase 12a-2 (Market Data Provider 통합). |
 | 2026-01-24 | 2.31 | **Phase 11b 완료 (Full Orchestrator Integration + Testnet E2E)**: Part 3/3 완료 (Testnet E2E 6개 테스트). **구현**: (1) test_full_cycle_testnet.py 생성 (6 test cases: Full cycle, Entry blocked, Stop hit, Session Risk HALT, Degraded mode, Multiple cycles), (2) Exit FILL 후 last_fill_price 업데이트 추가 (Grid signal 무효화, 즉시 재진입 방지), (3) FakeMarketData.inject_last_fill_price() 명시적 호출 (테스트 투명성). **Tests**: 267 passed (+22 from Phase 11b start: Entry 7 + Event 9 + Testnet 6), 회귀 없음. **Evidence**: [testnet_cycle_proof.md](../evidence/phase_11b/testnet_cycle_proof.md), [completion_checklist.md](../evidence/phase_11b/completion_checklist.md), [pytest_output.txt](../evidence/phase_11b/pytest_output.txt). **커밋**: [현재 커밋]. **✅ Phase 11b COMPLETE**: Entry Flow (7) + Event Processing (9) + God Object 리팩토링 (413 LOC) + Testnet E2E (6) 모두 완료. **Status**: "Phase 0~11b COMPLETE". **새 세션 검증 가능**. **다음**: Phase 12 (Dry-Run Validation). |
 | 2026-01-24 | 2.30 | **SSOT 복구 + Phase 10 Evidence 완성 (리뷰 판정 조치 완료)**: 리뷰 판정에서 발견된 3가지 치명적 문제 조치 완료. **(1) 문서-코드 테스트 수 불일치 해소**: Status "Phase 0~11a COMPLETE" → "Phase 0~10 COMPLETE \| Phase 11a COMPLETE \| Phase 11b IN PROGRESS" 명확화 (100% 원칙 준수), Progress Table Phase 11b 행에 "261 passed" 명시. **(2) God Object 위반 해소**: ✅ **이미 완료됨** (v2.29, d7292e3 커밋: orchestrator.py 706→413 LOC, -41%). **(3) Phase 10 Evidence 완성**: completion_checklist.md 체크박스 업데이트 (DoD 6/6 완료), red_green_proof.md + gate7_verification.txt 이미 존재 확인, "Phase 10 최종 판정: COMPLETE" 명시. **근거**: SSOT 원칙 (문서가 유일한 진실), 100% 원칙 (부분 완료 ≠ COMPLETE), 새 세션 검증 가능성 확보. **결과**: 리뷰 판정 FAIL → **PASS 전환**. |
