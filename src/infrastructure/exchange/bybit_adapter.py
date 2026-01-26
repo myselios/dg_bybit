@@ -390,10 +390,12 @@ class BybitAdapter:
                 exec_type = raw_event.get("execType")
                 exec_qty = float(raw_event.get("execQty", 0))
                 order_qty = float(raw_event.get("orderQty", 0))
+                leaves_qty = float(raw_event.get("leavesQty", 0))
 
                 # EventType 판단 (FILL vs PARTIAL_FILL)
+                # Bybit SSOT: leavesQty=0이면 완전 체결, leavesQty>0이면 부분 체결
                 if exec_type == "Trade":
-                    if exec_qty == order_qty:
+                    if leaves_qty == 0:
                         event_type = EventType.FILL
                     else:
                         event_type = EventType.PARTIAL_FILL

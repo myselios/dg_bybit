@@ -343,6 +343,11 @@ class BybitWsClient:
             # Invalid JSON → 무시
             return
 
+        # Debug logging (temporary)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"WS message received: {msg}")
+
         op = msg.get("op")
         success = msg.get("success")
 

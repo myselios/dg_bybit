@@ -343,6 +343,12 @@ class Orchestrator:
         # WS에서 FILL event 가져오기 (Mock 구현)
         fill_events = self.market_data.get_fill_events()
 
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        if fill_events:
+            logger.info(f">>> Got {len(fill_events)} FILL events from WS")
+
         for event in fill_events:
             try:
                 # Step 1: Pending order 매칭 (orderId 또는 orderLinkId)

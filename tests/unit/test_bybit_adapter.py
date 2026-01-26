@@ -164,6 +164,7 @@ class TestBybitAdapterWebSocketIntegration:
                 "execQty": "100",
                 "execPrice": "49800.00",
                 "orderQty": "100",
+                "leavesQty": "0",  # 완전 체결 (FILL)
                 "execFee": "0.00001",
                 "execTime": "1706000000000"
             }]
@@ -201,6 +202,7 @@ class TestBybitAdapterWebSocketIntegration:
             "execQty": "30",
             "execPrice": "50200.00",
             "orderQty": "100",  # Partial: 30/100
+            "leavesQty": "70",  # 남은 수량: 70 (Partial fill)
             "execFee": "0.000003",
             "execTime": "1706000010000"
         }
