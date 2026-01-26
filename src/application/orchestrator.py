@@ -241,11 +241,22 @@ class Orchestrator:
 
         # Trade Log v1.0 생성
         # 1. 실행 품질 필드
-        order_id = event.get("orderId", "unknown")
+        # Support both ExecutionEvent (dataclass) and dict (for backward compatibility)
+        if hasattr(event, 'order_id'):
+            # ExecutionEvent dataclass
+            order_id = event.order_id or "unknown"
+            exec_price = event.exec_price
+            exec_qty = event.filled_qty
+        else:
+            # dict (backward compatibility)
+            order_id = event.get("orderId", "unknown")
+            exec_price = float(event.get("execPrice", 0.0))
+            exec_qty = int(event.get("execQty", 0))
+
         fills = [
             {
-                "price": float(event.get("execPrice", 0.0)),
-                "qty": int(event.get("execQty", 0)),
+                "price": float(exec_price),
+                "qty": int(exec_qty),
                 "fee": 0.0,  # Fee는 실제 구현에서 계산 필요
                 "timestamp": self.market_data.get_timestamp(),
             }
