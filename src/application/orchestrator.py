@@ -351,8 +351,21 @@ class Orchestrator:
 
         for event in fill_events:
             try:
+                # Debug logging (support both ExecutionEvent and dict)
+                if hasattr(event, 'order_id'):
+                    event_order_id = event.order_id
+                    event_order_link_id = event.order_link_id
+                else:
+                    event_order_id = event.get("orderId")
+                    event_order_link_id = event.get("orderLinkId")
+                logger.info(f">>> Processing FILL event: order_id={event_order_id}, order_link_id={event_order_link_id}")
+                logger.info(f">>> Pending order: {self.pending_order}")
+
                 # Step 1: Pending order 매칭 (orderId 또는 orderLinkId)
-                if not match_pending_order(event=event, pending_order=self.pending_order):
+                matched = match_pending_order(event=event, pending_order=self.pending_order)
+                logger.info(f">>> Match result: {matched}")
+                if not matched:
+                    logger.warning(f">>> FILL event not matched, skipping")
                     continue  # 매칭 실패 → 다음 event
 
                 # Step 2: Position 생성
@@ -379,8 +392,11 @@ class Orchestrator:
             except Exception as e:
                 # Exception 발생 시 State 롤백 (Position은 이미 None 또는 기존 유지)
                 # 로그 기록 후 다음 event 처리
-                # (실제로는 로그 시스템에 기록해야 하지만, 최소 구현은 pass)
-                pass
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f">>> Exception in _process_events: {type(e).__name__}: {e}")
+                import traceback
+                logger.error(f">>> Traceback: {traceback.format_exc()}")
 
     def _manage_position(self) -> Optional[ExitIntent]:
         """

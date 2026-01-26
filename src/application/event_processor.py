@@ -61,16 +61,16 @@ def verify_state_consistency(
 
 
 def match_pending_order(
-    event: dict,
+    event,  # ExecutionEvent or dict
     pending_order: Optional[dict],
 ) -> bool:
     """
     FILL event를 Pending order와 매칭
 
     Args:
-        event: FILL event (Bybit API format)
-            - orderId: Bybit 서버 생성 ID
-            - orderLinkId: 클라이언트 ID (optional)
+        event: FILL event (ExecutionEvent dataclass or dict)
+            - order_id / orderId: Bybit 서버 생성 ID
+            - order_link_id / orderLinkId: 클라이언트 ID (optional)
         pending_order: Pending order 정보 (None이면 매칭 실패)
             - order_id: 주문 ID
             - order_link_id: 클라이언트 ID
@@ -79,39 +79,50 @@ def match_pending_order(
         bool: 매칭 성공 시 True
 
     매칭 조건 (Dual ID tracking):
-    1. event["orderId"] == pending_order["order_id"] (우선)
-    2. event.get("orderLinkId") == pending_order["order_link_id"] (fallback)
+    1. event.order_id == pending_order["order_id"] (우선)
+    2. event.order_link_id == pending_order["order_link_id"] (fallback)
 
     리스크 완화: Dual ID tracking으로 매칭 실패 방지
     """
     if pending_order is None:
         return False
 
+    # ExecutionEvent (dataclass) 또는 dict 모두 지원
+    if hasattr(event, 'order_id'):
+        # ExecutionEvent dataclass
+        event_order_id = event.order_id
+        event_order_link_id = event.order_link_id
+    else:
+        # dict (backward compatibility)
+        event_order_id = event.get("orderId")
+        event_order_link_id = event.get("orderLinkId")
+
     # orderId 매칭 (우선)
-    if event.get("orderId") == pending_order["order_id"]:
+    if event_order_id == pending_order["order_id"]:
         return True
 
     # orderLinkId 매칭 (fallback)
-    if event.get("orderLinkId") == pending_order["order_link_id"]:
+    if event_order_link_id == pending_order["order_link_id"]:
         return True
 
     return False
 
 
 def create_position_from_fill(
-    event: dict,
+    event,  # ExecutionEvent or dict
     pending_order: Optional[dict],
 ) -> Position:
     """
     FILL event → Position 생성
 
     Args:
-        event: FILL event (Bybit API format)
-            - execQty: 체결 수량 (string)
-            - execPrice: 체결 가격 (string)
-            - side: "Buy" or "Sell"
-        pending_order: Pending order 정보 (signal_id 필요)
+        event: FILL event (ExecutionEvent dataclass or dict)
+            - filled_qty / execQty: 체결 수량
+            - exec_price / execPrice: 체결 가격
+            - side (from pending_order): "Buy" or "Sell"
+        pending_order: Pending order 정보 (signal_id, side 필요)
             - signal_id: Signal ID
+            - side: "Buy" or "Sell"
 
     Returns:
         Position: entry_price, qty, direction, stop_price, signal_id
@@ -121,10 +132,18 @@ def create_position_from_fill(
     - SHORT: entry_price * (1 + stop_distance_pct)
     - stop_distance_pct = 3% (Policy Section 9)
     """
-    # Event에서 데이터 추출
-    qty = int(event["execQty"])
-    entry_price = float(event["execPrice"])
-    side = event["side"]
+    # Event에서 데이터 추출 (ExecutionEvent 또는 dict 지원)
+    if hasattr(event, 'filled_qty'):
+        # ExecutionEvent dataclass
+        qty = event.filled_qty
+        entry_price = event.exec_price
+    else:
+        # dict (backward compatibility)
+        qty = int(event["execQty"])
+        entry_price = float(event["execPrice"])
+
+    # Side는 pending_order에서 가져옴 (ExecutionEvent에는 없음)
+    side = pending_order["side"] if pending_order else "Buy"
 
     # Signal ID (pending_order에서 가져옴)
     signal_id = pending_order["signal_id"] if pending_order else "unknown"
