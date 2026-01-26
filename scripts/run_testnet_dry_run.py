@@ -32,7 +32,7 @@ load_dotenv()
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('logs/testnet_dry_run.log'),
@@ -126,6 +126,7 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
         api_key=api_key,
         api_secret=api_secret,
         wss_url="wss://stream-testnet.bybit.com/v5/private",
+        category="linear",  # BTCUSDT Linear Futures
     )
 
     # BybitAdapter 초기화 (Phase 12a-2 통합)
@@ -148,6 +149,16 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
     bybit_adapter.update_market_data()
     logger.info(f"✅ Equity: ${bybit_adapter.get_equity_usdt():.2f} USDT")
 
+    # WebSocket 시작 (execution events 수신)
+    logger.info("🔌 Starting WebSocket connection...")
+    ws_client.start()
+    # Wait for connection/auth/subscribe (3초 대기)
+    time.sleep(3)
+    if ws_client.is_connected():
+        logger.info("✅ WebSocket connected and subscribed to execution.linear")
+    else:
+        logger.warning("⚠️ WebSocket connection in progress...")
+
     # Monitor 초기화
     monitor = DryRunMonitor()
 
@@ -167,10 +178,11 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
                 break
 
             # Tick 실행
-            logger.debug(f"Tick #{monitor.total_trades+1}")
+            logger.info(f">>> Executing Tick #{monitor.total_trades+1}")
             try:
+                logger.info(">>> Calling orchestrator.run_tick()...")
                 result = orchestrator.run_tick()
-                logger.debug(f"Tick result: state={result.state}")
+                logger.info(f">>> Tick complete: state={result.state}, entry_blocked={result.entry_blocked}")
                 current_state = result.state
             except Exception as e:
                 logger.error(f"❌ Tick execution failed: {type(e).__name__}: {e}")

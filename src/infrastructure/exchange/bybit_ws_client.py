@@ -53,6 +53,7 @@ class BybitWsClient:
         clock: Optional[Callable[[], float]] = None,
         pong_timeout: float = 20.0,
         queue_maxsize: int = 1000,
+        category: str = "linear",
     ):
         """
         Bybit WS Client 초기화
@@ -64,6 +65,7 @@ class BybitWsClient:
             clock: Timestamp 생성 함수 (기본: time.time)
             pong_timeout: Pong timeout (초, 기본: 20.0)
             queue_maxsize: 메시지 큐 최대 크기 (기본: 1000)
+            category: Futures category ("linear" or "inverse", 기본: "linear")
 
         Raises:
             FatalConfigError: API key/secret 누락 또는 mainnet URL
@@ -84,6 +86,7 @@ class BybitWsClient:
         self.clock = clock or time.time
         self.pong_timeout = pong_timeout
         self.queue_maxsize = queue_maxsize
+        self.category = category
 
         # DEGRADED 상태 추적
         self._degraded = False
@@ -109,16 +112,20 @@ class BybitWsClient:
 
     def get_subscribe_payload(self) -> Dict[str, Any]:
         """
-        Subscribe payload 생성 (execution.inverse topic)
+        Subscribe payload 생성 (execution.{category} topic)
 
         Returns:
             Dict: Subscribe payload
 
         SSOT: docs/plans/task_plan.md Phase 7 - subscribe topic 정확성
+        Bybit V5 WebSocket Execution Topics:
+        - Linear: "execution.linear" (USDT-margined futures)
+        - Inverse: "execution.inverse" (Coin-margined futures)
         """
+        topic = f"execution.{self.category}"
         return {
             "op": "subscribe",
-            "args": ["execution.inverse"],
+            "args": [topic],
         }
 
     def on_disconnect(self) -> None:
@@ -523,8 +530,9 @@ class BybitWsClient:
             try:
                 msg = self._message_queue.popleft()
 
-                # execution.inverse topic 필터링
-                if msg.get("topic") == "execution.inverse":
+                # execution.{category} topic 필터링
+                expected_topic = f"execution.{self.category}"
+                if msg.get("topic") == expected_topic:
                     data = msg.get("data", [])
                     # data는 list 형식 (1개 이상의 execution event)
                     for event in data:

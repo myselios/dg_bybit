@@ -158,14 +158,8 @@ class Orchestrator:
             - Position management (stop 갱신)
             - Entry decision (signal → gate → sizing)
         """
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(">>> run_tick START")
-
         # Phase 9d: current_timestamp 초기화 (Slippage anomaly 체크용)
-        logger.info(">>> [1] get_timestamp...")
         self.current_timestamp = self.market_data.get_timestamp()
-        logger.info(f">>> [1] DONE: ts={self.current_timestamp}")
 
         execution_order = []
         halt_reason = None
@@ -173,9 +167,7 @@ class Orchestrator:
         entry_block_reason = None
 
         # (0a) KillSwitch check (최우선, Codex Review Fix #2)
-        logger.info(">>> [2] killswitch_check...")
         if self.killswitch.is_halted():
-            logger.info(">>> [2] HALT: killswitch")
             self.state = State.HALT
             halt_reason = "manual_halt_killswitch"
             return TickResult(
@@ -183,16 +175,13 @@ class Orchestrator:
                 execution_order=["killswitch_check"],
                 halt_reason=halt_reason,
             )
-        logger.info(">>> [2] DONE: killswitch OK")
 
         # (0) Self-healing check (Position vs State 일관성, Phase 11b)
-        logger.info(">>> [3] self_healing_check...")
         inconsistency_reason = verify_state_consistency(
             position=self.position,
             state=self.state,
         )
         if inconsistency_reason is not None:
-            logger.info(f">>> [3] HALT: {inconsistency_reason}")
             self.state = State.HALT
             halt_reason = inconsistency_reason
             return TickResult(
@@ -200,15 +189,11 @@ class Orchestrator:
                 execution_order=["self_healing_check"],
                 halt_reason=halt_reason,
             )
-        logger.info(">>> [3] DONE: consistency OK")
 
         # (1) Emergency check (최우선)
-        logger.info(">>> [4] emergency_check...")
         execution_order.append("emergency")
         emergency_result = self._check_emergency()
-        logger.info(f">>> [4] DONE: {emergency_result['status']}")
         if emergency_result["status"] == "HALT":
-            logger.info(f">>> [4] HALT: {emergency_result['reason']}")
             self.state = State.HALT
             halt_reason = emergency_result["reason"]
             return TickResult(
@@ -218,27 +203,20 @@ class Orchestrator:
             )
 
         # (2) Events processing
-        logger.info(">>> [5] process_events...")
         execution_order.append("events")
         self._process_events()
-        logger.info(">>> [5] DONE")
 
         # (3) Position management + Exit decision
-        logger.info(">>> [6] manage_position...")
         execution_order.append("position")
         exit_intent = self._manage_position()
-        logger.info(">>> [6] DONE")
 
         # (4) Entry decision
-        logger.info(">>> [7] decide_entry...")
         execution_order.append("entry")
         entry_result = self._decide_entry()
-        logger.info(f">>> [7] DONE: blocked={entry_result['blocked']}")
         if entry_result["blocked"]:
             entry_blocked = True
             entry_block_reason = entry_result["reason"]
 
-        logger.info(">>> run_tick COMPLETE")
         return TickResult(
             state=self.state,
             execution_order=execution_order,
@@ -425,20 +403,31 @@ class Orchestrator:
                 try:
                     # Exit order 발주 (Market order for immediate execution)
                     exit_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
+                    # Convert contracts to BTC quantity
+                    contract_size = 0.001
+                    qty_btc = self.position.qty * contract_size
+
                     exit_order = self.rest_client.place_order(
-                        symbol="BTCUSD",
+                        symbol="BTCUSDT",  # Linear USDT Futures
                         side=exit_side,
-                        qty=self.position.qty,
+                        qty=str(qty_btc),  # BTC quantity
                         order_link_id=f"exit_{self.position.signal_id}",
                         order_type="Market",  # Market order (즉시 체결)
-                        time_in_force="GoodTillCancel",
+                        time_in_force="GTC",
+                        price=None,  # Market order: no price
+                        category="linear",
                     )
+
+                    # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
+                    result = exit_order.get("result", {})
+                    order_id = result.get("orderId")
+                    order_link_id = result.get("orderLinkId")
 
                     # State 전이: IN_POSITION → EXIT_PENDING
                     self.state = State.EXIT_PENDING
                     self.pending_order = {
-                        "order_id": exit_order["orderId"],
-                        "order_link_id": exit_order["orderLinkId"],
+                        "order_id": order_id,
+                        "order_link_id": order_link_id,
                         "side": exit_side,
                         "qty": self.position.qty,
                         "price": current_price,  # Market price (참고용)
@@ -568,35 +557,24 @@ class Orchestrator:
 
         Phase 11b: Full Entry Flow 구현
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Step 1: FLAT 상태 확인
-        logger.info(f">>> decide_entry Step 1: state={self.state}")
         if self.state != State.FLAT:
-            logger.info(">>> BLOCKED: state_not_flat")
             return {"blocked": True, "reason": "state_not_flat"}
 
         # Step 2: degraded_mode 체크
-        logger.info(">>> decide_entry Step 2: degraded_mode check")
         ws_degraded = self.market_data.is_ws_degraded()
         if ws_degraded:
-            logger.info(">>> BLOCKED: degraded_mode")
             return {"blocked": True, "reason": "degraded_mode"}
 
         degraded_timeout = self.market_data.is_degraded_timeout()
         if degraded_timeout:
-            logger.info(">>> BLOCKED: degraded_mode_timeout")
             self.state = State.HALT
             return {"blocked": True, "reason": "degraded_mode_timeout"}
 
         # Step 3: Signal generation
-        logger.info(">>> decide_entry Step 3: signal generation")
         # ATR 가져오기 (Grid spacing 계산용)
         atr = self.market_data.get_atr()
-        logger.info(f">>> ATR: {atr}")
         if atr is None:
-            logger.info(">>> BLOCKED: atr_unavailable")
             return {"blocked": True, "reason": "atr_unavailable"}
 
         # Grid spacing 계산 (ATR * 2.0)
@@ -609,7 +587,6 @@ class Orchestrator:
         last_fill_price = self.market_data.get_last_fill_price()
 
         # Signal 생성 (Grid up/down)
-        logger.info(f">>> Generating signal: price={current_price}, last_fill={last_fill_price}, spacing={self.grid_spacing}, force_entry={self.force_entry}")
         signal: Optional[Signal] = generate_signal(
             current_price=current_price,
             last_fill_price=last_fill_price,
@@ -617,11 +594,9 @@ class Orchestrator:
             qty=0,  # Sizing에서 계산
             force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
         )
-        logger.info(f">>> Signal: {signal}")
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)
         if signal is None:
-            logger.info(">>> BLOCKED: no_signal")
             return {"blocked": True, "reason": "no_signal"}
 
         # Step 4: Entry gates 검증
@@ -630,13 +605,10 @@ class Orchestrator:
         atr_pct_24h = self.market_data.get_atr_pct_24h()
 
         # Sizing 먼저 계산 (EV gate용 qty 필요)
-        logger.info(">>> decide_entry Step 4: sizing")
         sizing_params = build_sizing_params(signal=signal, market_data=self.market_data)
         sizing_result: SizingResult = calculate_contracts(params=sizing_params)
-        logger.info(f">>> Sizing result: contracts={sizing_result.contracts}, reason={sizing_result.reject_reason}")
 
         if sizing_result.contracts == 0:
-            logger.info(f">>> BLOCKED: {sizing_result.reject_reason}")
             return {"blocked": True, "reason": sizing_result.reject_reason}
 
         # Signal에 qty 업데이트
@@ -651,7 +623,6 @@ class Orchestrator:
         current_time = self.market_data.get_timestamp()
 
         # Entry gates 검증
-        logger.info(">>> decide_entry Step 5: entry gates")
         entry_decision: EntryDecision = check_entry_allowed(
             state=self.state,
             stage=stage,
@@ -664,11 +635,9 @@ class Orchestrator:
             current_time=current_time,
             force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
         )
-        logger.info(f">>> Entry decision: allowed={entry_decision.allowed}, reason={entry_decision.reject_reason}")
 
         # Gate 거절 시 차단
         if not entry_decision.allowed:
-            logger.info(f">>> BLOCKED: {entry_decision.reject_reason}")
             return {"blocked": True, "reason": entry_decision.reject_reason}
 
         # Step 5: Position sizing (이미 Step 4에서 계산 완료)
@@ -683,27 +652,39 @@ class Orchestrator:
             # Signal ID 생성
             self.current_signal_id = generate_signal_id()
 
-            # Entry order 발주 (Limit order, Maker)
-            # TEMPORARY DEBUG: Use 1 contract to test
-            test_qty = 1
-            logger.info(f">>> Placing order: symbol=BTCUSDT, side={signal.side}, qty={test_qty} (calculated: {contracts}), price={signal.price}")
-            order_result = self.rest_client.place_order(
-                symbol="BTCUSDT",  # Linear USDT Futures (ADR-0002)
-                side=signal.side,  # "Buy" or "Sell"
-                order_type="Limit",
-                qty=str(test_qty),  # Bybit requires string
-                price=str(signal.price),  # Bybit requires string
-                time_in_force="PostOnly",  # Maker-only
-                order_link_id=f"entry_{self.current_signal_id}",
-                category="linear",  # Linear USDT Futures
-            )
-            logger.info(f">>> Order result: {order_result}")
+            # Bybit Linear USDT API: qty는 BTC quantity (계산: contracts * contract_size)
+            # 예: contracts=831, contract_size=0.001 → qty_btc=0.831 BTC
+            contract_size = 0.001  # Bybit Linear BTCUSDT: 0.001 BTC per contract
+            qty_btc = contracts * contract_size
+
+            # Force Entry 모드: Market 주문 (즉시 체결), 정상 모드: Limit PostOnly (maker-only)
+            if self.force_entry:
+                order_result = self.rest_client.place_order(
+                    symbol="BTCUSDT",
+                    side=signal.side,
+                    order_type="Market",
+                    qty=str(qty_btc),
+                    price=None,  # Market order: no price
+                    time_in_force="GTC",
+                    order_link_id=f"entry_{self.current_signal_id}",
+                    category="linear",
+                )
+            else:
+                order_result = self.rest_client.place_order(
+                    symbol="BTCUSDT",
+                    side=signal.side,
+                    order_type="Limit",
+                    qty=str(qty_btc),
+                    price=str(signal.price),
+                    time_in_force="PostOnly",  # Maker-only
+                    order_link_id=f"entry_{self.current_signal_id}",
+                    category="linear",
+                )
 
             # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
             result = order_result.get("result", {})
             order_id = result.get("orderId")
             order_link_id = result.get("orderLinkId")
-            logger.info(f">>> Order placed: order_id={order_id}, order_link_id={order_link_id}")
 
         except Exception as e:
             # Order placement 실패 → 차단

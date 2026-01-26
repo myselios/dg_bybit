@@ -38,7 +38,7 @@ def test_subscribe_topic_correctness_inverse():
     """
     from infrastructure.exchange.bybit_ws_client import BybitWsClient
 
-    # Given: WS client (네트워크 연결 mock)
+    # Given: WS client (Inverse category)
     api_key = "test_key"
     api_secret = "test_secret"
     fake_clock = lambda: 1640000000.0
@@ -48,6 +48,7 @@ def test_subscribe_topic_correctness_inverse():
         api_secret=api_secret,
         wss_url="wss://stream-testnet.bybit.com/v5/private",
         clock=fake_clock,
+        category="inverse",
     )
 
     # When: Subscribe payload 생성
@@ -58,6 +59,41 @@ def test_subscribe_topic_correctness_inverse():
     assert subscribe_payload["op"] == "subscribe"
     assert "args" in subscribe_payload
     assert "execution.inverse" in subscribe_payload["args"]
+
+
+def test_subscribe_topic_correctness_linear():
+    """
+    Subscribe topic 정확성 (execution.linear)
+
+    SSOT: docs/plans/task_plan.md Phase 7 - subscribe topic 정확성
+
+    검증:
+    - Linear futures는 execution.linear topic 사용
+    - Subscribe payload가 Bybit 스펙 만족
+    """
+    from infrastructure.exchange.bybit_ws_client import BybitWsClient
+
+    # Given: WS client (Linear category, default)
+    api_key = "test_key"
+    api_secret = "test_secret"
+    fake_clock = lambda: 1640000000.0
+
+    client = BybitWsClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        wss_url="wss://stream-testnet.bybit.com/v5/private",
+        clock=fake_clock,
+        category="linear",
+    )
+
+    # When: Subscribe payload 생성
+    subscribe_payload = client.get_subscribe_payload()
+
+    # Then: topic이 execution.linear
+    assert "op" in subscribe_payload
+    assert subscribe_payload["op"] == "subscribe"
+    assert "args" in subscribe_payload
+    assert "execution.linear" in subscribe_payload["args"]
 
 
 def test_disconnect_triggers_degraded_flag():
