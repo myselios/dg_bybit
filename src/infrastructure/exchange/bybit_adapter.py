@@ -404,12 +404,24 @@ class BybitAdapter:
                     continue
 
                 # ExecutionEvent 생성 (파라미터 이름 정확히 매칭)
+                # Phase 12a-5e: Linear (BTCUSDT)는 BTC 단위 → contracts 변환 필요
+                # Inverse (BTCUSD)는 이미 contracts 단위 → 그대로 사용
+                symbol = raw_event.get("symbol", "")
+                if "USDT" in symbol:
+                    # Linear: BTC to contracts (0.001 BTC per contract)
+                    filled_qty_contracts = int(exec_qty * 1000)
+                    order_qty_contracts = int(order_qty * 1000)
+                else:
+                    # Inverse: Already in contracts
+                    filled_qty_contracts = int(exec_qty)
+                    order_qty_contracts = int(order_qty)
+
                 execution_event = ExecutionEvent(
                     type=event_type,  # ✅ event_type → type
                     order_id=raw_event.get("orderId", ""),
                     order_link_id=raw_event.get("orderLinkId", ""),
-                    filled_qty=int(exec_qty),  # ✅ executed_qty → filled_qty
-                    order_qty=int(order_qty),
+                    filled_qty=filled_qty_contracts,
+                    order_qty=order_qty_contracts,
                     timestamp=float(raw_event.get("execTime", 0)),
                     exec_price=float(raw_event.get("execPrice", 0.0)),  # ✅ executed_price → exec_price
                     fee_paid=float(raw_event.get("execFee", 0.0)),  # ✅ fee → fee_paid

@@ -28,6 +28,7 @@ from domain.intent import ExitIntent
 from application.entry_allowed import check_entry_allowed, EntryDecision
 from application.signal_generator import generate_signal, calculate_grid_spacing, Signal
 from application.sizing import calculate_contracts, SizingResult
+from application.event_processor import match_pending_order, create_position_from_fill  # Phase 12a-4c: REST API fallback
 
 # Phase 11b: Refactored modules (God Object mitigation)
 from application.emergency_checker import check_emergency_status
@@ -102,6 +103,8 @@ class Orchestrator:
         self.log_storage = log_storage
         self.force_entry = force_entry
         self.killswitch = killswitch if killswitch is not None else KillSwitch()
+        self.force_entry_entered_tick = None  # Phase 12a-5e: Track tick when position entered (for delayed exit)
+        self.tick_counter = 0  # Phase 12a-5e: Tick counter for force_entry delayed exit
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
         position_data = market_data.get_position()
@@ -130,6 +133,7 @@ class Orchestrator:
 
         # Phase 11b: Entry Flow tracking
         self.pending_order: Optional[dict] = None  # Pending order 정보 (FILL event 매칭용)
+        self.pending_order_timestamp: Optional[float] = None  # Phase 12a-4c: Pending order 발주 시각 (timeout 체크용)
         self.current_signal_id: Optional[str] = None  # 현재 Signal ID
         self.grid_spacing: float = 0.0  # Grid spacing (ATR * 2.0)
 
@@ -158,6 +162,9 @@ class Orchestrator:
             - Position management (stop 갱신)
             - Entry decision (signal → gate → sizing)
         """
+        # Phase 12a-5e: Tick counter increment (for force_entry delayed exit)
+        self.tick_counter += 1
+
         # Phase 9d: current_timestamp 초기화 (Slippage anomaly 체크용)
         self.current_timestamp = self.market_data.get_timestamp()
 
@@ -251,7 +258,9 @@ class Orchestrator:
             # dict (backward compatibility)
             order_id = event.get("orderId", "unknown")
             exec_price = float(event.get("execPrice", 0.0))
-            exec_qty = int(event.get("execQty", 0))
+            # Phase 12a-5: execQty는 BTC 단위 float (Bybit API 구조)
+            exec_qty_btc = float(event.get("execQty", 0.0))
+            exec_qty = int(exec_qty_btc * 1000)  # BTC to contracts (0.001 BTC per contract)
 
         fills = [
             {
@@ -346,11 +355,92 @@ class Orchestrator:
             - Position 생성 + State 전환 (atomic)
 
         Phase 11b: Entry/Exit FILL event 처리
+        Phase 12a-4c: REST API polling fallback (WebSocket FILL 이벤트 미수신 시)
         리스크 완화:
         - Atomic state transition (Position + State 동시 전환)
         - Dual ID matching (orderId + orderLinkId)
         - Exception handling (롤백)
         """
+        import logging
+        import time
+        logger = logging.getLogger(__name__)
+
+        # Phase 12a-4c: REST API polling fallback (WebSocket timeout 시)
+        # EXIT_PENDING 또는 ENTRY_PENDING 상태에서 5초 경과 시 REST API로 주문 조회
+        WEBSOCKET_TIMEOUT = 5.0  # seconds
+        if (self.state in [State.ENTRY_PENDING, State.EXIT_PENDING] and
+            self.pending_order is not None and
+            self.pending_order_timestamp is not None):
+
+            elapsed = time.time() - self.pending_order_timestamp
+            if elapsed > WEBSOCKET_TIMEOUT:
+                logger.warning(f"⚠️ WebSocket FILL event not received after {elapsed:.1f}s, polling REST API...")
+
+                # REST API로 주문 상태 조회
+                if self.rest_client is not None:
+                    try:
+                        order_id = self.pending_order.get("order_id")
+                        order_link_id = self.pending_order.get("order_link_id")
+
+                        # GET /v5/order/realtime (주문 상태 조회)
+                        order_response = self.rest_client.get_open_orders(
+                            category="linear",
+                            symbol="BTCUSDT",
+                            orderId=order_id,
+                        )
+
+                        # Bybit V5 response: {"result": {"list": [...]}}
+                        orders = order_response.get("result", {}).get("list", [])
+
+                        if not orders:
+                            # 주문이 open orders에 없으면 이미 체결됨 (Filled)
+                            logger.info(f"✅ Order {order_id} is Filled (not in open orders)")
+
+                            # Execution list에서 FILL 이벤트 조회
+                            exec_response = self.rest_client.get_execution_list(
+                                category="linear",
+                                symbol="BTCUSDT",
+                                orderId=order_id,
+                                limit=50,
+                            )
+
+                            executions = exec_response.get("result", {}).get("list", [])
+                            if executions:
+                                # 첫 번째 execution을 FILL 이벤트로 처리
+                                fill_event = executions[0]
+                                logger.info(f"✅ Got FILL event from REST API: {fill_event}")
+
+                                # FILL 이벤트 처리 (아래 WebSocket 처리 로직과 동일)
+                                matched = match_pending_order(event=fill_event, pending_order=self.pending_order)
+                                if matched:
+                                    position = create_position_from_fill(event=fill_event, pending_order=self.pending_order)
+
+                                    if self.state == State.ENTRY_PENDING:
+                                        self.position = position
+                                        self.state = State.IN_POSITION
+                                        self.pending_order = None
+                                        self.pending_order_timestamp = None
+                                        # Phase 12a-5e: Track entry tick for force_entry delayed exit
+                                        if self.force_entry:
+                                            self.force_entry_entered_tick = self.tick_counter
+                                        logger.info("✅ REST API fallback: ENTRY_PENDING → IN_POSITION")
+                                    elif self.state == State.EXIT_PENDING:
+                                        if self.log_storage is not None:
+                                            self._log_completed_trade(event=fill_event, position=self.position)
+
+                                        self.position = None
+                                        self.state = State.FLAT
+                                        self.pending_order = None
+                                        self.pending_order_timestamp = None
+                                        logger.info("✅ REST API fallback: EXIT_PENDING → FLAT")
+                        else:
+                            # 주문이 여전히 open 상태 (미체결 또는 부분 체결)
+                            order_status = orders[0].get("orderStatus")
+                            logger.warning(f"⚠️ Order {order_id} still {order_status}, waiting...")
+
+                    except Exception as e:
+                        logger.error(f"❌ REST API polling failed: {type(e).__name__}: {e}")
+
         # WS에서 FILL event 가져오기 (Mock 구현)
         fill_events = self.market_data.get_fill_events()
 
@@ -388,6 +478,9 @@ class Orchestrator:
                     self.position = position
                     self.state = State.IN_POSITION
                     self.pending_order = None  # Cleanup
+                    # Phase 12a-5e: Track entry tick for force_entry delayed exit
+                    if self.force_entry:
+                        self.force_entry_entered_tick = self.tick_counter
                 elif self.state == State.EXIT_PENDING:
                     # Exit FILL → FLAT
                     # Phase 11b: Trade Log 생성 및 저장 (DoD: "Trade log 정상 기록")
@@ -427,9 +520,62 @@ class Orchestrator:
 
         # Phase 11b: Stop hit 체크
         current_price = self.market_data.get_current_price()
-        if check_stop_hit(current_price=current_price, position=self.position):
-            # Stop hit → Exit intent 생성
-            intents = create_exit_intent(position=self.position, reason="stop_loss_hit")
+
+        # Phase 12a-5: Force Entry 모드 → 즉시 Exit (테스트용)
+        should_exit = False
+        exit_reason = "stop_loss_hit"
+
+        if self.force_entry:
+            # Phase 12a-5e: Force Entry 모드 → 1 tick 지연 후 Exit (Telegram 알림 검증용)
+            # Delay exit by 1 tick to allow state transition detection
+            if self.force_entry_entered_tick is not None and self.tick_counter > self.force_entry_entered_tick:
+                # At least 1 tick has passed since entry
+                # Mock PnL 계산 (간단한 시뮬레이션)
+                entry_price = self.position.entry_price
+                exit_price = current_price
+                pnl_usd = (exit_price - entry_price) * (self.position.qty * 0.001)  # qty는 contracts, 0.001 BTC per contract
+
+                # Trade log 기록 (mock execution event)
+                if self.log_storage is not None:
+                    mock_fill_event = {
+                        "orderId": f"mock_exit_{self.position.signal_id}",
+                        "orderLinkId": f"exit_{self.position.signal_id}",
+                        "execPrice": str(exit_price),
+                        "execQty": str(self.position.qty * 0.001),
+                        "side": "Sell" if self.position.direction == Direction.LONG else "Buy",
+                        "execTime": str(int(self.market_data.get_timestamp() * 1000)),
+                    }
+                    self._log_completed_trade(event=mock_fill_event, position=self.position)
+
+                # State 전이: IN_POSITION → FLAT (delayed)
+                self.position = None
+                self.state = State.FLAT
+                self.pending_order = None
+                self.pending_order_timestamp = None
+                self.force_entry_entered_tick = None  # Reset
+
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"✅ Force exit (delayed): IN_POSITION → FLAT (PnL: ${pnl_usd:.2f})")
+
+                return None  # Exit order 발주 없음
+            else:
+                # Still in the same tick as entry, wait for next tick
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"⏳ Force exit delayed: waiting for next tick (current={self.tick_counter}, entry={self.force_entry_entered_tick})")
+                return None  # No exit yet
+
+        elif check_stop_hit(current_price=current_price, position=self.position):
+            # 정상 모드: Stop loss hit
+            should_exit = True
+            exit_reason = "stop_loss_hit"
+        else:
+            should_exit = False
+
+        if should_exit:
+            # Exit intent 생성
+            intents = create_exit_intent(position=self.position, reason=exit_reason)
 
             # Phase 11b: Exit order 발주 (DoD: "Place exit order")
             if self.rest_client is not None:
@@ -466,6 +612,9 @@ class Orchestrator:
                         "price": current_price,  # Market price (참고용)
                         "signal_id": self.position.signal_id,
                     }
+                    # Phase 12a-4c: Pending order 발주 시각 기록
+                    import time
+                    self.pending_order_timestamp = time.time()
                 except Exception as e:
                     # Exit order 실패 → HALT (치명적 오류)
                     self.state = State.HALT
@@ -735,5 +884,9 @@ class Orchestrator:
             "price": signal.price,
             "signal_id": self.current_signal_id,
         }
+
+        # Phase 12a-4c: Pending order 발주 시각 기록
+        import time
+        self.pending_order_timestamp = time.time()
 
         return {"blocked": False, "reason": None}

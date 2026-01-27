@@ -389,6 +389,52 @@ class BybitRestClient:
 
         return self._make_request("GET", "/v5/market/tickers", params)
 
+    def get_open_orders(
+        self,
+        category: str = "linear",
+        symbol: Optional[str] = None,
+        orderId: Optional[str] = None,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        미체결 주문 조회 (Phase 12a-4c: REST API polling fallback용)
+
+        Args:
+            category: 카테고리 (기본: linear)
+            symbol: 심볼 (Optional)
+            orderId: 주문 ID 필터 (Optional)
+            limit: 조회 개수 (기본: 50)
+
+        Returns:
+            Dict: 응답 JSON
+                {
+                    "result": {
+                        "list": [
+                            {
+                                "orderId": "...",
+                                "orderLinkId": "...",
+                                "orderStatus": "New" | "PartiallyFilled" | "Filled",
+                                ...
+                            }
+                        ]
+                    }
+                }
+
+        SSOT: docs/plans/task_plan.md Phase 12a-4c - REST API polling fallback
+        """
+        params = {
+            "category": category,
+            "limit": limit,
+        }
+
+        if symbol is not None:
+            params["symbol"] = symbol
+
+        if orderId is not None:
+            params["orderId"] = orderId
+
+        return self._make_request("GET", "/v5/order/realtime", params)
+
     def get_wallet_balance(
         self,
         accountType: str = "CONTRACT",
@@ -464,6 +510,7 @@ class BybitRestClient:
         self,
         category: str = "inverse",
         symbol: Optional[str] = None,
+        orderId: Optional[str] = None,  # Phase 12a-4c: orderId 필터 지원
         limit: int = 50,
     ) -> Dict[str, Any]:
         """
@@ -472,6 +519,7 @@ class BybitRestClient:
         Args:
             category: 카테고리 (기본: inverse)
             symbol: 심볼 (Optional, 미지정 시 전체 조회)
+            orderId: 주문 ID 필터 (Phase 12a-4c: REST API polling fallback용)
             limit: 조회 개수 (기본: 50)
 
         Returns:
@@ -494,6 +542,9 @@ class BybitRestClient:
 
         if symbol is not None:
             params["symbol"] = symbol
+
+        if orderId is not None:
+            params["orderId"] = orderId
 
         return self._make_request("GET", "/v5/execution/list", params)
 
