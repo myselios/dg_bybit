@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
 # Task Plan: Account Builder Implementation (v2.39, ADR-0011 적용 + Gate 9 추가)
 Last Updated: 2026-01-27 (KST, Phase 12a-5 완료: Telegram Notifier + Qty Bug Fix)
-Status: **Phase 0~12a-3 COMPLETE, Phase 12a-4 IN PROGRESS (Force Entry), Phase 12a-5 COMPLETE (Telegram)** | Gate 1-9 ALL PASS | **334 tests passed** (+14 from Phase 12a-3) | ✅ Telegram Notifier 완전 구현 (Entry/Exit/HALT/Summary 알림) | ✅ Testnet 검증 완료 (90회 Entry-Exit cycle, Qty bug fix) | ✅ Automated Dry-Run Infrastructure (Mock-based) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | 원칙: 100% 완료만 DONE 표시
+Status: **Phase 0~12a-3 COMPLETE, Phase 12a-4 IN PROGRESS (Force Entry), Phase 12a-5 COMPLETE (Telegram)** | Gate 1-9 ALL PASS | **341 tests passed** (+21 from Phase 12a-3) | ✅ Telegram Notifier 완전 구현 (Entry/Exit/HALT/Summary 알림) | ✅ Testnet 검증 완료 (90회 Entry-Exit cycle, Qty bug fix) | ✅ Linear/Inverse 단위 처리 (BTCUSDT BTC→contracts, BTCUSD 이미 contracts) | ✅ Automated Dry-Run Infrastructure (Mock-based) | ✅ Market Data Provider 완전 구현 (ATR/SessionRisk/Regime) | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -84,7 +84,7 @@ Non-goal
 
 ## 2. Repo Map (Single Source of Location)
 
-### 2.1 Implemented (Phase 0-12a-3 완료, 실제 존재)
+### 2.1 Implemented (Phase 0-12a-5 완료, 실제 존재)
 
 ```
 src/
@@ -110,7 +110,11 @@ src/
 │   ├── metrics_tracker.py # ✅ Phase 4: winrate/streak/multipliers + rolling window
 │   ├── orchestrator.py # ✅ Phase 6: tick loop orchestrator (Emergency-first ordering)
 │   ├── signal_generator.py # ✅ Phase 11a: Grid 전략 시그널 생성
-│   └── exit_manager.py # ✅ Phase 11a: Exit decision (Stop hit / Profit target)
+│   ├── exit_manager.py # ✅ Phase 11a: Exit decision (Stop hit / Profit target)
+│   ├── event_processor.py # ✅ Phase 11b: Event processing helpers (FILL→Position, consistency check)
+│   ├── atr_calculator.py # ✅ Phase 12a-2: ATR calculation (14-period, percentile, grid spacing)
+│   ├── session_risk_tracker.py # ✅ Phase 12a-2: Session risk tracking (Daily/Weekly PnL, loss streak, fee ratio)
+│   └── market_regime.py # ✅ Phase 12a-2: Market regime analysis (MA slope, regime classification)
 │
 └── infrastructure/
     ├── exchange/
@@ -125,8 +129,10 @@ src/
     │   ├── halt_logger.py # ✅ Phase 5: HALT reason + context snapshot
     │   ├── metrics_logger.py # ✅ Phase 5: winrate/streak/multiplier change tracking
     │   └── trade_logger_v1.py # ✅ Phase 10: Trade Log Schema v1.0 (slippage, latency, market_regime, integrity)
-    └── storage/
-        └── log_storage.py # ✅ Phase 10: JSON Lines storage + rotation
+    ├── storage/
+    │   └── log_storage.py # ✅ Phase 10: JSON Lines storage + rotation
+    └── notification/
+        └── telegram_notifier.py # ✅ Phase 12a-5: Telegram notification (Entry/Exit/HALT/Summary, silent fail)
 
 tests/
 ├── oracles/
@@ -158,9 +164,15 @@ tests/
 │   ├── test_trade_logger_v1.py # ✅ Phase 10: Trade Log Schema v1.0 tests (9 cases)
 │   ├── test_log_storage.py # ✅ Phase 10: Log storage tests (8 cases)
 │   ├── test_signal_generator.py # ✅ Phase 11a: Signal generation tests (10 cases)
-│   └── test_exit_manager.py # ✅ Phase 11a: Exit logic tests (8 cases)
+│   ├── test_exit_manager.py # ✅ Phase 11a: Exit logic tests (8 cases)
+│   ├── test_orchestrator_event_processing.py # ✅ Phase 11b: Event processing tests (3 cases)
+│   ├── test_atr_calculator.py # ✅ Phase 12a-2: ATR calculator tests (9 cases)
+│   ├── test_session_risk_tracker.py # ✅ Phase 12a-2: Session risk tracker tests (14 cases)
+│   ├── test_market_regime.py # ✅ Phase 12a-2: Market regime tests (8 cases)
+│   └── test_telegram_notifier.py # ✅ Phase 12a-5: Telegram notifier tests (14 cases)
 ├── integration/
-│   └── test_orchestrator.py # ✅ Phase 6: tick loop integration (5 cases)
+│   ├── test_orchestrator.py # ✅ Phase 6: tick loop integration (5 cases)
+│   └── test_dry_run_orchestrator.py # ✅ Phase 12a-3: Dry-run infrastructure tests (8 cases)
 └── integration_real/
     ├── test_testnet_connection.py # ✅ Phase 8: WS connection (3 cases, testnet)
     ├── test_testnet_order_flow.py # ✅ Phase 8: REST order flow (4 cases, testnet)
@@ -170,7 +182,7 @@ tests/
     └── test_full_cycle_testnet.py # ✅ Phase 11b: Testnet full cycle (FLAT → Entry → Exit → FLAT, 6 cases)
 ```
 
-**Phase 0-12a-3 DONE 증거**: 320 tests passed (Phase 0-11b: 267 + Phase 12a-1: 14 + Phase 12a-2: 31 + Phase 12a-3: 8), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_12a3/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-12a-3`, `./scripts/verify_task_plan_consistency.sh`)
+**Phase 0-12a-5 DONE 증거**: 341 tests passed (Phase 0-11b: 267 + Phase 12a-1: 14 + Phase 12a-2: 31 + Phase 12a-3: 8 + Phase 12a-5: 14 + Others: 7), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_12a/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-12a-5`, `./scripts/verify_task_plan_consistency.sh`)
 
 ---
 
@@ -1897,7 +1909,7 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | 12a-2 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a2/completion_checklist.md), [Gate 7](../evidence/phase_12a2/gate7_verification.txt), [pytest](../evidence/phase_12a2/pytest_output.txt), [RED→GREEN](../evidence/phase_12a2/red_green_proof.md). **Tests**: [test_atr_calculator.py](../../tests/unit/test_atr_calculator.py) (9 cases) + [test_session_risk_tracker.py](../../tests/unit/test_session_risk_tracker.py) (14 cases) + [test_market_regime.py](../../tests/unit/test_market_regime.py) (8 cases) = **31 passed**. Total: **312 passed in 0.40s** (281 → 312, +31). **Gate 7**: ALL PASS (490 asserts). | **Application**: [atr_calculator.py](../../src/application/atr_calculator.py) (170 LOC: 14-period ATR, percentile, grid spacing), [session_risk_tracker.py](../../src/application/session_risk_tracker.py) (182 LOC: Daily/Weekly PnL, Loss streak, Fee ratio, Slippage), [market_regime.py](../../src/application/market_regime.py) (138 LOC: MA slope, regime classification). **SSOT**: task_plan Phase 12a-2 (Market Data Provider), account_builder_policy Section 9/11 (Session Risk/Entry Flow). | **Evidence**: [phase_12a2/](../evidence/phase_12a2/). **Phase 12a-2 완료** (Market Data Provider 완전 구현: ATR Calculator + Session Risk Tracker + Market Regime Analyzer). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-3 (Market Data Provider → BybitAdapter 통합). |
 | 12a-3 | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12a3/completion_checklist.md), [Gate 7](../evidence/phase_12a3/gate7_verification.txt), [pytest](../evidence/phase_12a3/pytest_output.txt). **Tests**: [test_dry_run_orchestrator.py](../../tests/integration/test_dry_run_orchestrator.py) (8 cases: DryRunMonitor 5 + Orchestration 3) = **8 passed**. Total: **320 passed in 0.44s** (312 → 320, +8). **Gate 7**: ALL PASS (511 asserts). | **Scripts**: [run_testnet_dry_run.py](../../scripts/run_testnet_dry_run.py) (230 LOC: BybitAdapter 통합, State transition detection, HALT handling, DryRunMonitor inline), [generate_dry_run_report.py](../../scripts/generate_dry_run_report.py) (250 LOC: Trade log analysis, Session Risk verification, Auto-generate DoD checklist). **SSOT**: task_plan Phase 12a-3 (Automated Dry-Run Infrastructure). | **Evidence**: [phase_12a3/](../evidence/phase_12a3/). **Phase 12a-3 완료** (Automated Dry-Run Infrastructure: Mock-based, Testnet 연결 불필요). **새 세션 검증 가능**. **완료**: 2026-01-25. **다음**: Phase 12a-4 (Force Entry 모드 + Testnet 자동 거래). |
 | 12a-4 | [~] IN PROGRESS | **TBD** | **TBD** | **Phase 12a-4 IN PROGRESS** (Force Entry 모드 구현 + Testnet 30-50회 거래 실행). **DoD**: Force Entry 모드 구현 + Testnet 설정 + 30-50회 거래 + 로그 검증 + Report 작성. **다음**: Phase 12a-5 (Telegram 알림 통합). |
-| 12a-5 | [x] DONE | **Evidence Artifacts**: [Telegram Qty Fix Validation](../evidence/phase_12a/telegram_qty_fix_validation.md). **Tests**: [test_telegram_notifier.py](../../tests/unit/test_telegram_notifier.py) (14 cases: enabled/disabled 2 + Entry/Exit/HALT/SessionRisk/Summary 5 + API failure 3 + Message format 4) = **14 passed**. Total: **334 passed in 0.46s** (320 → 334, +14). | **Infrastructure/Notification**: [telegram_notifier.py](../../src/infrastructure/notification/telegram_notifier.py) (185 LOC: TelegramNotifier class, 5 public methods), **Design**: [telegram_notifier_design.md](../../docs/specs/telegram_notifier_design.md) (완전한 상세 설계). **Scripts**: [run_testnet_dry_run.py](../../scripts/run_testnet_dry_run.py) (Telegram 통합 완료). **Bug Fix**: [bybit_adapter.py:411](../../src/infrastructure/exchange/bybit_adapter.py#L411) (execQty BTC→contracts 변환 수정). **SSOT**: task_plan Phase 12a-5 (Telegram 알림 통합). | **Evidence**: [phase_12a/](../evidence/phase_12a/). **Phase 12a-5 완료** (Telegram Notifier 완전 구현 + Testnet 검증 90회 Entry-Exit cycle + Qty bug fix). **완료**: 2026-01-27. **다음**: Phase 12a-6 (TBD). |
+| 12a-5 | [x] DONE | **Evidence Artifacts**: [Telegram Qty Fix Validation](../evidence/phase_12a/telegram_qty_fix_validation.md). **Tests**: [test_telegram_notifier.py](../../tests/unit/test_telegram_notifier.py) (14 cases: enabled/disabled 2 + Entry/Exit/HALT/SessionRisk/Summary 5 + API failure 3 + Message format 4) = **14 passed**. Total: **341 passed in 0.47s** (320 → 341, +21). | **Infrastructure/Notification**: [telegram_notifier.py](../../src/infrastructure/notification/telegram_notifier.py) (230 LOC: TelegramNotifier class, 5 public methods), **Design**: [telegram_notifier_design.md](../../docs/specs/telegram_notifier_design.md) (완전한 상세 설계). **Scripts**: [run_testnet_dry_run.py](../../scripts/run_testnet_dry_run.py) (Telegram 통합 완료, DryRunMonitor 추가). **Bug Fix**: [bybit_adapter.py:407-420](../../src/infrastructure/exchange/bybit_adapter.py#L407-L420) (Linear/Inverse 단위 처리: BTCUSDT BTC→contracts, BTCUSD 이미 contracts), [event_processor.py:144-158](../../src/application/event_processor.py#L144-L158) (동일 수정). **SSOT**: task_plan Phase 12a-5 (Telegram 알림 통합). | **Evidence**: [phase_12a/](../evidence/phase_12a/). **Phase 12a-5 완료** (Telegram Notifier 완전 구현 + Testnet 검증 90회 Entry-Exit cycle + Qty bug fix + Linear/Inverse 단위 처리). **완료**: 2026-01-27. **다음**: Phase 12a-6 (TBD). |
 
 ---
 
