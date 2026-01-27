@@ -91,12 +91,12 @@ environment:
   testnet_symbol: "BTCUSD"
   testnet_leverage: 1  # Testnet은 1배 레버리지 강제
 
-  # Mainnet 설정
-  mainnet_enabled: false  # 초기 false (dry-run 완료 후 true)
+  # Mainnet 설정 (Phase 12b: Mainnet Dry-Run)
+  mainnet_enabled: true  # ⚠️ Phase 12b: Mainnet 활성화 (실거래 환경)
   mainnet_api_base_url: "https://api.bybit.com"
   mainnet_ws_url: "wss://stream.bybit.com/v5/private"
-  mainnet_symbol: "BTCUSD"
-  mainnet_leverage: 3  # Stage 1 기본 레버리지
+  mainnet_symbol: "BTCUSDT"  # Linear USDT-Margined
+  mainnet_leverage: 1  # ⚠️ 초기 1배 레버리지 (보수적 시작)
 
   # API Credentials (환경변수에서 로드)
   # BYBIT_TESTNET_API_KEY

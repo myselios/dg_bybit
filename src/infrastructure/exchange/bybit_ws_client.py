@@ -23,6 +23,7 @@ import time
 import hmac
 import hashlib
 import json
+import os
 import threading
 from typing import Callable, Optional, Dict, Any
 from collections import deque
@@ -76,9 +77,22 @@ class BybitWsClient:
         if not api_secret:
             raise FatalConfigError("API secret is required")
 
-        # Testnet WSS URL 강제 assert (mainnet 접근 차단)
-        if "stream-testnet.bybit.com" not in wss_url:
-            raise FatalConfigError("mainnet access forbidden before Phase 9")
+        # Phase 12b: Mainnet 접근 허용 (BYBIT_TESTNET=false 확인)
+        # Testnet mode: stream-testnet.bybit.com 강제
+        # Mainnet mode: stream.bybit.com 허용 (BYBIT_TESTNET=false일 때만)
+        testnet_mode = os.getenv("BYBIT_TESTNET", "true").lower() == "true"
+
+        if testnet_mode and "stream-testnet.bybit.com" not in wss_url:
+            raise FatalConfigError(
+                "BYBIT_TESTNET=true but wss_url is not Testnet. "
+                "Use 'wss://stream-testnet.bybit.com/v5/private' for Testnet."
+            )
+
+        if not testnet_mode and "stream.bybit.com" not in wss_url:
+            raise FatalConfigError(
+                "BYBIT_TESTNET=false but wss_url is not Mainnet. "
+                "Use 'wss://stream.bybit.com/v5/private' for Mainnet."
+            )
 
         self.api_key = api_key
         self.api_secret = api_secret

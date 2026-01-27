@@ -22,6 +22,7 @@ Exports:
 import hashlib
 import hmac
 import time
+import os
 from typing import Callable, Dict, Any, Optional
 import requests
 
@@ -92,9 +93,22 @@ class BybitRestClient:
         if not api_secret:
             raise FatalConfigError("API secret is required")
 
-        # Testnet base_url 강제 assert (mainnet 접근 차단)
-        if "api-testnet.bybit.com" not in base_url:
-            raise FatalConfigError("mainnet access forbidden before Phase 9")
+        # Phase 12b: Mainnet 접근 허용 (BYBIT_TESTNET=false 확인)
+        # Testnet mode: api-testnet.bybit.com 강제
+        # Mainnet mode: api.bybit.com 허용 (BYBIT_TESTNET=false일 때만)
+        testnet_mode = os.getenv("BYBIT_TESTNET", "true").lower() == "true"
+
+        if testnet_mode and "api-testnet.bybit.com" not in base_url:
+            raise FatalConfigError(
+                "BYBIT_TESTNET=true but base_url is not Testnet. "
+                "Use 'https://api-testnet.bybit.com' for Testnet."
+            )
+
+        if not testnet_mode and "api.bybit.com" not in base_url:
+            raise FatalConfigError(
+                "BYBIT_TESTNET=false but base_url is not Mainnet. "
+                "Use 'https://api.bybit.com' for Mainnet."
+            )
 
         self.api_key = api_key
         self.api_secret = api_secret
