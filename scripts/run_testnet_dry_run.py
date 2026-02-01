@@ -28,8 +28,9 @@ from infrastructure.storage.log_storage import LogStorage
 from infrastructure.notification.telegram_notifier import TelegramNotifier
 from domain.state import State
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (명시적 경로 + override)
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 # Setup logging
 logging.basicConfig(
@@ -146,19 +147,15 @@ class DryRunMonitor:
         logger.info("=" * 60)
 
 
-def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_entry: bool = False):
+def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
     """
     Testnet Dry-Run 실행
 
     Args:
         target_trades: 목표 거래 횟수 (default: 30)
         max_duration_hours: 최대 실행 시간 (default: 72시간 = 3일)
-        force_entry: Force Entry 모드 (테스트용, Grid spacing 무시)
     """
     logger.info(f"🚀 Starting Testnet Dry-Run (target: {target_trades} trades)")
-
-    if force_entry:
-        logger.warning("⚠️  Force Entry Mode: Grid spacing ignored (TEST MODE ONLY)")
 
     # Log storage 초기화
     log_dir = Path("logs/testnet_dry_run")
@@ -197,12 +194,15 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
         market_data=bybit_adapter,
         rest_client=rest_client,
         log_storage=log_storage,
-        force_entry=force_entry,  # Phase 12a-4: Force Entry 모드 전달
     )
 
     # Market data 초기 로드 (equity, mark price 조회)
     logger.info("📊 Loading initial market data...")
     bybit_adapter.update_market_data()
+
+    # Phase 13b: 이전 체결 가격 무시 (Clean start)
+    bybit_adapter._last_fill_price = None
+
     initial_equity = bybit_adapter.get_equity_usdt()
     logger.info(f"✅ Equity: ${initial_equity:.2f} USDT")
 
@@ -246,8 +246,22 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
             try:
                 logger.info(">>> Calling orchestrator.run_tick()...")
                 result = orchestrator.run_tick()
-                logger.info(f">>> Tick complete: state={result.state}, entry_blocked={result.entry_blocked}")
+                logger.info(f">>> Tick complete: state={result.state}, entry_blocked={result.entry_blocked}, entry_block_reason={result.entry_block_reason}")
                 current_state = result.state
+
+                # Entry 차단 이유 로깅 (처음 20 tick만)
+                if result.entry_blocked and tick_count <= 20:
+                    if result.entry_block_reason == "atr_too_low":
+                        atr_pct = bybit_adapter.get_atr_pct_24h()
+                        logger.info(f"  → Entry blocked: {result.entry_block_reason} (ATR: {atr_pct:.2f}% < 3.0%)")
+                    elif result.entry_block_reason == "no_signal":
+                        # Regime-aware entry debug: 실제 ma_slope_pct, funding_rate 값 표시
+                        ma_slope = bybit_adapter.get_ma_slope_pct()
+                        funding = bybit_adapter.get_funding_rate()
+                        logger.info(f"  → Entry blocked: no_signal (ma_slope={ma_slope:.4f}%, funding={funding:.6f})")
+                    else:
+                        logger.info(f"  → Entry blocked: {result.entry_block_reason}")
+
             except Exception as e:
                 logger.error(f"❌ Tick execution failed: {type(e).__name__}: {e}")
                 import traceback
@@ -276,10 +290,7 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72, force_ent
                     side_str = "Buy" if orchestrator.position.direction == Direction.LONG else "Sell"
 
                     # Entry 근거 생성
-                    if force_entry:
-                        entry_reason = "테스트 모드: 강제 진입 (Grid 조건 무시)"
-                    else:
-                        entry_reason = f"Grid {side_str}: 목표가 ${orchestrator.position.entry_price:,.2f} 도달"
+                    entry_reason = f"Grid {side_str}: 목표가 ${orchestrator.position.entry_price:,.2f} 도달"
 
                     # Entry 시간 추적
                     monitor.log_entry(orchestrator.position.entry_price)
@@ -426,18 +437,12 @@ def main():
         default=72,
         help="Maximum duration in hours (default: 72)"
     )
-    parser.add_argument(
-        "--force-entry",
-        action="store_true",
-        help="Force Entry mode (TEST MODE ONLY, bypasses Grid spacing check)"
-    )
 
     args = parser.parse_args()
 
     run_dry_run(
         target_trades=args.target_trades,
         max_duration_hours=args.max_hours,
-        force_entry=args.force_entry,
     )
 
 
