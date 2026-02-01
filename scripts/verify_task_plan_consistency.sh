@@ -22,7 +22,7 @@ done_phases=$(grep "^| [0-9]" "$TASK_PLAN" | grep -E "DONE|\[x\]" | awk '{print 
 fail_count=0
 
 for phase in $done_phases; do
-  if sed -n '/### 2.2 Planned/,/^##/p' "$TASK_PLAN" | grep -q "Phase $phase"; then
+  if sed -n '/### 2.2 Planned/,/^##/p' "$TASK_PLAN" | grep -qE "\bPhase ${phase}\b"; then
     echo "  ❌ FAIL: Phase $phase is DONE but still in Section 2.2 Planned"
     fail_count=$((fail_count + 1))
   fi
@@ -45,7 +45,7 @@ section21_files=$(sed -n '/### 2.1 Implemented/,/### 2.2 Planned/p' "$TASK_PLAN"
 missing_count=0
 
 for f in $section21_files; do
-  if ! find src tests -name "$f" 2>/dev/null | grep -q .; then
+  if ! find src tests scripts -name "$f" 2>/dev/null | grep -q .; then
     echo "  ❌ FAIL: $f in Section 2.1 but not in repo"
     missing_count=$((missing_count + 1))
   fi

@@ -84,7 +84,7 @@ Non-goal
 
 ## 2. Repo Map (Single Source of Location)
 
-### 2.1 Implemented (Phase 0-13a 완료, 실제 존재)
+### 2.1 Implemented (Phase 0-13b 완료, 실제 존재)
 
 ```
 src/
@@ -109,7 +109,7 @@ src/
 │   ├── stop_manager.py # ✅ Phase 4: stop placement/amend/debounce + stop_status recovery
 │   ├── metrics_tracker.py # ✅ Phase 4: winrate/streak/multipliers + rolling window
 │   ├── orchestrator.py # ✅ Phase 6: tick loop orchestrator (Emergency-first ordering)
-│   ├── signal_generator.py # ✅ Phase 11a: Grid 전략 시그널 생성
+│   ├── signal_generator.py # ✅ Phase 11a (13b: Initial entry fix, 13c: Regime-aware)
 │   ├── exit_manager.py # ✅ Phase 11a: Exit decision (Stop hit / Profit target)
 │   ├── event_processor.py # ✅ Phase 11b: Event processing helpers (FILL→Position, consistency check)
 │   ├── atr_calculator.py # ✅ Phase 12a-2: ATR calculation (14-period, percentile, grid spacing)
@@ -199,23 +199,15 @@ tests/
     └── test_full_cycle_testnet.py # ✅ Phase 11b: Testnet full cycle (FLAT → Entry → Exit → FLAT, 6 cases)
 ```
 
-**Phase 0-13a DONE 증거**: 365 tests passed (Phase 0-11b: 267 + Phase 12a-1: 14 + Phase 12a-2: 31 + Phase 12a-3: 8 + Phase 12a-5: 14 + Phase 13a: 30 + Phase 12b/12c: -6 force_entry tests removed + Others: 7), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_13a/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-13a`, `./scripts/verify_task_plan_consistency.sh`)
+**Phase 0-13b DONE 증거**: 366 tests passed (Phase 0-11b: 267 + Phase 12a-1: 14 + Phase 12a-2: 31 + Phase 12a-3: 8 + Phase 12a-5: 14 + Phase 13a: 30 + Phase 13b: 1 + Phase 12b/12c: -6 force_entry tests removed + Others: 7), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_13b/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-13b`, `./scripts/verify_task_plan_consistency.sh`)
 
 ---
 
-### 2.2 Planned (Phase 13b+ 예정, 아직 미생성)
+### 2.2 Planned (Phase 13c+ 예정, 아직 미생성)
 
 **구현 완료된 항목**: ✅ Section 2.1 Implemented로 이동 완료 (Progress Table에서 DONE 표시된 모든 Phase)
 
-**Phase 13b+: 운영 최적화 (선택 사항)**:
-- **Phase 13c (Option A): MA Slope 기반 첫 진입 방향 결정** ⚠️ 대안 전략 (현재: Funding Rate 기반)
-  - **구현**: `generate_signal()`에 `ma_slope_pct` 파라미터 추가
-  - **로직**: `ma_slope >= 0 → Buy (Long)`, `ma_slope < 0 → Sell (Short)`
-  - **전략 성격**: Trend Following (추세 추종)
-  - **장점**: 명확한 추세에서 안정적, 큰 움직임 포착, BTC 장기 상승 추세 부합
-  - **단점**: 추세 전환 시 손실, 횡보장에서 신호 불명확, 후행성 (늦게 반응)
-  - **비교**: 현재 B안 (Funding Rate) vs A안 (MA Slope) 선택 가능
-  - **DoD**: (1) 테스트 추가 (MA slope 양수/음수 케이스), (2) orchestrator.py 수정 (ma_slope 전달), (3) 백테스트 비교 (A안 vs B안 성능), (4) ADR 작성 (전략 선택 근거)
+**Phase 14+: 운영 최적화 (선택 사항)**:
 - Trade Log 대시보드 (Grafana/Streamlit)
 - 자동 파라미터 튜닝 (Grid spacing, Session Risk thresholds)
 - 실시간 모니터링 (Telegram/Slack Bot)
