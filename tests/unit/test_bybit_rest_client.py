@@ -329,38 +329,64 @@ def test_timeout_triggers_retry():
 
 def test_testnet_base_url_enforced():
     """
-    Testnet base_url 강제 assert (mainnet 접근 차단)
+    Testnet/Mainnet base_url 일치성 검증 (Phase 12b)
 
-    SSOT: docs/plans/task_plan.md Phase 7 - testnet base_url 강제 assert
+    SSOT: docs/plans/task_plan.md Phase 12b - Mainnet 접근 허용
 
     검증:
-    - Mainnet URL → FatalConfigError
-    - Testnet URL → 통과
+    - BYBIT_TESTNET=true + Mainnet URL → FatalConfigError
+    - BYBIT_TESTNET=false + Testnet URL → FatalConfigError
+    - BYBIT_TESTNET=true + Testnet URL → 통과
+    - BYBIT_TESTNET=false + Mainnet URL → 통과
     """
     from infrastructure.exchange.bybit_rest_client import BybitRestClient, FatalConfigError
+    import os
+    from unittest.mock import patch
 
     # Given: API key/secret
     api_key = "test_key"
     api_secret = "test_secret"
     fake_clock = lambda: 1640000000.0
 
-    # When/Then: Mainnet URL → FatalConfigError
-    with pytest.raises(FatalConfigError, match="mainnet access forbidden before Phase 9"):
-        BybitRestClient(
+    # When/Then: BYBIT_TESTNET=true + Mainnet URL → FatalConfigError
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "true"}):
+        with pytest.raises(FatalConfigError, match="BYBIT_TESTNET=true but base_url is not Testnet"):
+            BybitRestClient(
+                api_key=api_key,
+                api_secret=api_secret,
+                base_url="https://api.bybit.com",  # Mainnet (불일치)
+                clock=fake_clock,
+            )
+
+    # When/Then: BYBIT_TESTNET=false + Testnet URL → FatalConfigError
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "false"}):
+        with pytest.raises(FatalConfigError, match="BYBIT_TESTNET=false but base_url is not Mainnet"):
+            BybitRestClient(
+                api_key=api_key,
+                api_secret=api_secret,
+                base_url="https://api-testnet.bybit.com",  # Testnet (불일치)
+                clock=fake_clock,
+            )
+
+    # When/Then: BYBIT_TESTNET=true + Testnet URL → 통과
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "true"}):
+        client = BybitRestClient(
             api_key=api_key,
             api_secret=api_secret,
-            base_url="https://api.bybit.com",  # Mainnet (금지)
+            base_url="https://api-testnet.bybit.com",  # Testnet (일치)
             clock=fake_clock,
         )
+        assert client.base_url == "https://api-testnet.bybit.com"
 
-    # When/Then: Testnet URL → 통과
-    client = BybitRestClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url="https://api-testnet.bybit.com",  # Testnet (허용)
-        clock=fake_clock,
-    )
-    assert client.base_url == "https://api-testnet.bybit.com"
+    # When/Then: BYBIT_TESTNET=false + Mainnet URL → 통과 (Phase 12b)
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "false"}):
+        client = BybitRestClient(
+            api_key=api_key,
+            api_secret=api_secret,
+            base_url="https://api.bybit.com",  # Mainnet (일치)
+            clock=fake_clock,
+        )
+        assert client.base_url == "https://api.bybit.com"
 
 
 def test_missing_api_key_prevents_process_start():
@@ -426,8 +452,8 @@ def test_clock_injection_for_deterministic_timestamp():
     # When: _get_timestamp() 호출
     timestamp_ms = client._get_timestamp()
 
-    # Then: Fake clock의 timestamp 사용 (고정)
-    assert timestamp_ms == int(fixed_timestamp * 1000)
+    # Then: Fake clock의 timestamp 사용 (고정, -3초 조정)
+    assert timestamp_ms == int((fixed_timestamp - 3.0) * 1000)
 
     # When: 다시 호출해도 동일 (deterministic)
     timestamp_ms_2 = client._get_timestamp()

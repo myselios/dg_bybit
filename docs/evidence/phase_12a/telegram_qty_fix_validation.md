@@ -148,14 +148,18 @@ Entry Price: $...
 
 **핵심 성과**:
 1. Root cause 정확히 식별 (bybit_adapter.py:411)
-2. BTC to contracts 변환 수정 적용
+2. Linear/Inverse 단위 처리 구현 (BTCUSDT BTC→contracts, BTCUSD 이미 contracts)
 3. 90회 Entry-Exit 사이클로 충분한 검증
 4. 모든 알림에서 정상 수량 표시 확인
 
 **Modified Files**:
-- `src/infrastructure/exchange/bybit_adapter.py` (Lines 406-416)
-- `src/application/event_processor.py` (Lines 136-148)
-- `scripts/run_testnet_dry_run.py` (Multiple locations)
-- `src/application/orchestrator.py` (Lines 101-106, 155-157, 517-546)
+- `src/infrastructure/exchange/bybit_adapter.py` (Lines 407-425: Linear/Inverse 단위 처리)
+- `src/application/event_processor.py` (Lines 144-158: Linear/Inverse 단위 처리)
+- `scripts/run_testnet_dry_run.py` (Multiple locations: Telegram 통합 + DryRunMonitor)
+- `src/application/orchestrator.py` (Lines 101-106, 155-157, 517-546: Force exit delayed)
+- `src/infrastructure/notification/telegram_notifier.py` (New: 230 LOC)
+- `tests/unit/test_telegram_notifier.py` (New: 14 test cases)
 
-**Test Evidence**: `/tmp/claude/-home-selios-dg-bybit/tasks/b4dbc08.output`
+**Test Evidence**:
+- Testnet validation: `/tmp/claude/-home-selios-dg-bybit/tasks/b4dbc08.output`
+- Unit tests: **341 tests passed in 0.47s** (320 → 341, +21 from Phase 12a-5)

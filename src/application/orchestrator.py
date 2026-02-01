@@ -17,9 +17,12 @@ Exports:
 - TickResult: Tick 실행 결과 (state, execution_order, halt_reason 등)
 """
 
+import logging
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
 from domain.state import State, Position, Direction, StopStatus
+
+logger = logging.getLogger(__name__)
 from infrastructure.exchange.market_data_interface import MarketDataInterface
 from application.exit_manager import check_stop_hit, create_exit_intent
 from domain.intent import ExitIntent
@@ -85,7 +88,6 @@ class Orchestrator:
         market_data: MarketDataInterface,
         rest_client=None,  # Phase 11b: Order placement용 (Optional, type: BybitRestClient)
         log_storage: Optional[LogStorage] = None,  # Phase 11b: Trade Log 저장용 (Optional)
-        force_entry: bool = False,  # Phase 12a-4: Force Entry 모드 (테스트용)
         killswitch: Optional[KillSwitch] = None,  # Codex Review Fix #2: Manual halt mechanism
     ):
         """
@@ -95,41 +97,59 @@ class Orchestrator:
             market_data: Market data interface (FakeMarketData or BybitAdapter)
             rest_client: Bybit REST client (Order placement용, Phase 11b)
             log_storage: LogStorage (Trade Log 저장용, Phase 11b)
-            force_entry: Force Entry 모드 (테스트용, Grid spacing 무시)
             killswitch: KillSwitch (Manual halt mechanism, Codex Review Fix #2)
         """
         self.market_data = market_data
         self.rest_client = rest_client
         self.log_storage = log_storage
-        self.force_entry = force_entry
         self.killswitch = killswitch if killswitch is not None else KillSwitch()
-        self.force_entry_entered_tick = None  # Phase 12a-5e: Track tick when position entered (for delayed exit)
-        self.tick_counter = 0  # Phase 12a-5e: Tick counter for force_entry delayed exit
+        self.tick_counter = 0  # Tick counter (general purpose)
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
-        position_data = market_data.get_position()
-        position_size = float(position_data.get("size", "0"))
+        # Phase 12b: Re-enabled with proper error handling (10s timeout)
+        # ⚠️ TEMPORARY DISABLED: 이전 테스트 포지션 무시 (깨끗한 시작)
+        self.state = State.FLAT
+        self.position = None
 
-        if position_size > 0:
-            # Position 존재 → State.IN_POSITION
-            position_side = position_data.get("side", "None")
-            avg_price = float(position_data.get("avgPrice", "0") or "0")
+        if False and rest_client is not None:  # DISABLED: Position Recovery
+            try:
+                pos_response = rest_client.get_position(symbol="BTCUSDT", category="linear")
 
-            # Direction 매핑 (Bybit "Buy"/"Sell" → Domain Direction)
-            direction = Direction.LONG if position_side == "Buy" else Direction.SHORT
+                if pos_response["retCode"] == 0:
+                    positions = pos_response["result"]["list"]
 
-            # Position 객체 생성 (recovery 시 signal_id는 "recovered")
-            self.position = Position(
-                direction=direction,
-                qty=position_size,
-                entry_price=avg_price,
-                signal_id="recovered",
-            )
-            self.state = State.IN_POSITION
-        else:
-            # Position 없음 → State.FLAT
-            self.state = State.FLAT
-            self.position = None
+                    if positions and len(positions) > 0:
+                        existing_pos = positions[0]
+                        size_btc = float(existing_pos.get("size", "0"))
+
+                        if size_btc > 0:
+                            # 기존 포지션 발견 → State.IN_POSITION으로 복구
+                            qty = int(size_btc * 1000)  # BTC to contracts
+                            entry_price = float(existing_pos.get("avgPrice", "0"))
+                            side = existing_pos.get("side", "")
+                            direction = Direction.LONG if side == "Buy" else Direction.SHORT
+
+                            self.position = Position(
+                                qty=qty,
+                                entry_price=entry_price,
+                                direction=direction,
+                                signal_id="recovered",  # Position recovery
+                                stop_status=StopStatus.MISSING,  # Force stop recovery
+                                stop_price=entry_price,  # Initial stop = entry
+                            )
+                            self.state = State.IN_POSITION
+
+                            logger.info(f"✅ Position recovered: {side} {qty} contracts @ ${entry_price:.2f}")
+                        else:
+                            logger.info("✅ No existing position found (size=0)")
+                    else:
+                        logger.info("✅ No existing position found (empty list)")
+                else:
+                    logger.warning(f"⚠️ Position recovery API error: {pos_response['retMsg']}")
+            except Exception as e:
+                logger.warning(f"⚠️ Position recovery failed: {e} - Starting with State.FLAT")
+                self.state = State.FLAT
+                self.position = None
 
         # Phase 11b: Entry Flow tracking
         self.pending_order: Optional[dict] = None  # Pending order 정보 (FILL event 매칭용)
@@ -162,7 +182,10 @@ class Orchestrator:
             - Position management (stop 갱신)
             - Entry decision (signal → gate → sizing)
         """
-        # Phase 12a-5e: Tick counter increment (for force_entry delayed exit)
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Tick counter increment
         self.tick_counter += 1
 
         # Phase 9d: current_timestamp 초기화 (Slippage anomaly 체크용)
@@ -382,6 +405,13 @@ class Orchestrator:
                         order_id = self.pending_order.get("order_id")
                         order_link_id = self.pending_order.get("order_link_id")
 
+                        # Phase 12b Fix: Skip fallback if order_id is None (invalid pending_order)
+                        if not order_id:
+                            logger.error(f"❌ Invalid pending_order: order_id is None, clearing state")
+                            self.pending_order = None
+                            self.pending_order_timestamp = None
+                            return  # Skip fallback
+
                         # GET /v5/order/realtime (주문 상태 조회)
                         order_response = self.rest_client.get_open_orders(
                             category="linear",
@@ -420,9 +450,6 @@ class Orchestrator:
                                         self.state = State.IN_POSITION
                                         self.pending_order = None
                                         self.pending_order_timestamp = None
-                                        # Phase 12a-5e: Track entry tick for force_entry delayed exit
-                                        if self.force_entry:
-                                            self.force_entry_entered_tick = self.tick_counter
                                         logger.info("✅ REST API fallback: ENTRY_PENDING → IN_POSITION")
                                     elif self.state == State.EXIT_PENDING:
                                         if self.log_storage is not None:
@@ -478,9 +505,6 @@ class Orchestrator:
                     self.position = position
                     self.state = State.IN_POSITION
                     self.pending_order = None  # Cleanup
-                    # Phase 12a-5e: Track entry tick for force_entry delayed exit
-                    if self.force_entry:
-                        self.force_entry_entered_tick = self.tick_counter
                 elif self.state == State.EXIT_PENDING:
                     # Exit FILL → FLAT
                     # Phase 11b: Trade Log 생성 및 저장 (DoD: "Trade log 정상 기록")
@@ -521,53 +545,11 @@ class Orchestrator:
         # Phase 11b: Stop hit 체크
         current_price = self.market_data.get_current_price()
 
-        # Phase 12a-5: Force Entry 모드 → 즉시 Exit (테스트용)
         should_exit = False
         exit_reason = "stop_loss_hit"
 
-        if self.force_entry:
-            # Phase 12a-5e: Force Entry 모드 → 1 tick 지연 후 Exit (Telegram 알림 검증용)
-            # Delay exit by 1 tick to allow state transition detection
-            if self.force_entry_entered_tick is not None and self.tick_counter > self.force_entry_entered_tick:
-                # At least 1 tick has passed since entry
-                # Mock PnL 계산 (간단한 시뮬레이션)
-                entry_price = self.position.entry_price
-                exit_price = current_price
-                pnl_usd = (exit_price - entry_price) * (self.position.qty * 0.001)  # qty는 contracts, 0.001 BTC per contract
-
-                # Trade log 기록 (mock execution event)
-                if self.log_storage is not None:
-                    mock_fill_event = {
-                        "orderId": f"mock_exit_{self.position.signal_id}",
-                        "orderLinkId": f"exit_{self.position.signal_id}",
-                        "execPrice": str(exit_price),
-                        "execQty": str(self.position.qty * 0.001),
-                        "side": "Sell" if self.position.direction == Direction.LONG else "Buy",
-                        "execTime": str(int(self.market_data.get_timestamp() * 1000)),
-                    }
-                    self._log_completed_trade(event=mock_fill_event, position=self.position)
-
-                # State 전이: IN_POSITION → FLAT (delayed)
-                self.position = None
-                self.state = State.FLAT
-                self.pending_order = None
-                self.pending_order_timestamp = None
-                self.force_entry_entered_tick = None  # Reset
-
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"✅ Force exit (delayed): IN_POSITION → FLAT (PnL: ${pnl_usd:.2f})")
-
-                return None  # Exit order 발주 없음
-            else:
-                # Still in the same tick as entry, wait for next tick
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.debug(f"⏳ Force exit delayed: waiting for next tick (current={self.tick_counter}, entry={self.force_entry_entered_tick})")
-                return None  # No exit yet
-
-        elif check_stop_hit(current_price=current_price, position=self.position):
-            # 정상 모드: Stop loss hit
+        if check_stop_hit(current_price=current_price, position=self.position):
+            # Stop loss hit
             should_exit = True
             exit_reason = "stop_loss_hit"
         else:
@@ -739,6 +721,7 @@ class Orchestrator:
 
         Phase 11b: Full Entry Flow 구현
         """
+
         # Step 1: FLAT 상태 확인
         if self.state != State.FLAT:
             return {"blocked": True, "reason": "state_not_flat"}
@@ -768,13 +751,18 @@ class Orchestrator:
         # 마지막 체결 가격 (Grid 기준점)
         last_fill_price = self.market_data.get_last_fill_price()
 
-        # Signal 생성 (Grid up/down)
+        # Funding rate + MA slope (첫 진입 방향 결정용, Phase 13c)
+        funding_rate = self.market_data.get_funding_rate()
+        ma_slope_pct = self.market_data.get_ma_slope_pct()
+
+        # Signal 생성 (Grid up/down, Regime-aware initial direction)
         signal: Optional[Signal] = generate_signal(
             current_price=current_price,
             last_fill_price=last_fill_price,
             grid_spacing=self.grid_spacing,
             qty=0,  # Sizing에서 계산
-            force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
+            funding_rate=funding_rate,
+            ma_slope_pct=ma_slope_pct,
         )
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)
@@ -815,7 +803,6 @@ class Orchestrator:
             position_mode=position_mode,
             cooldown_until=cooldown_until,
             current_time=current_time,
-            force_entry=self.force_entry,  # Phase 12a-4: Force Entry 모드 전달
         )
 
         # Gate 거절 시 차단
@@ -839,34 +826,26 @@ class Orchestrator:
             contract_size = 0.001  # Bybit Linear BTCUSDT: 0.001 BTC per contract
             qty_btc = contracts * contract_size
 
-            # Force Entry 모드: Market 주문 (즉시 체결), 정상 모드: Limit PostOnly (maker-only)
-            if self.force_entry:
-                order_result = self.rest_client.place_order(
-                    symbol="BTCUSDT",
-                    side=signal.side,
-                    order_type="Market",
-                    qty=str(qty_btc),
-                    price=None,  # Market order: no price
-                    time_in_force="GTC",
-                    order_link_id=f"entry_{self.current_signal_id}",
-                    category="linear",
-                )
-            else:
-                order_result = self.rest_client.place_order(
-                    symbol="BTCUSDT",
-                    side=signal.side,
-                    order_type="Limit",
-                    qty=str(qty_btc),
-                    price=str(signal.price),
-                    time_in_force="PostOnly",  # Maker-only
-                    order_link_id=f"entry_{self.current_signal_id}",
-                    category="linear",
-                )
+            # Limit PostOnly (maker-only) 주문
+            order_result = self.rest_client.place_order(
+                symbol="BTCUSDT",
+                side=signal.side,
+                order_type="Limit",
+                qty=str(qty_btc),
+                price=str(signal.price),
+                time_in_force="PostOnly",  # Maker-only
+                order_link_id=f"entry_{self.current_signal_id}",
+                category="linear",
+            )
 
             # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
             result = order_result.get("result", {})
             order_id = result.get("orderId")
             order_link_id = result.get("orderLinkId")
+
+            # Phase 12b Fix: Validate order_id (prevent None from causing infinite loop)
+            if not order_id:
+                raise ValueError(f"API response missing orderId: {order_result}")
 
         except Exception as e:
             # Order placement 실패 → 차단

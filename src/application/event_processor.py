@@ -140,7 +140,6 @@ def create_position_from_fill(
         # ExecutionEvent dataclass
         qty = event.filled_qty
         entry_price = event.exec_price
-        logger.info(f"🔍 create_position_from_fill (dataclass): filled_qty={qty}, entry_price={entry_price}")
     else:
         # dict (backward compatibility)
         # Phase 12a-5e: Linear (BTCUSDT)는 BTC 단위 → contracts 변환 필요
@@ -156,11 +155,6 @@ def create_position_from_fill(
             qty = int(exec_qty_value)
 
         entry_price = float(event["execPrice"])
-
-        # Debug logging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"🔍 create_position_from_fill: symbol={symbol}, execQty={exec_qty_value}, qty={qty}")
 
     # Side는 pending_order에서 가져옴 (ExecutionEvent에는 없음)
     side = pending_order["side"] if pending_order else "Buy"

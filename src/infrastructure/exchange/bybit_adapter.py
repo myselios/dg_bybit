@@ -344,6 +344,11 @@ class BybitAdapter:
                 # ATR 계산 (14-period 이상 필요)
                 if len(klines_atr) >= 15:  # 14 + 1 (previous close)
                     self._atr = self.atr_calculator.calculate_atr(klines_atr)
+
+                    # ATR percentage 계산 (mark price 대비)
+                    if self._mark_price > 0:
+                        self._atr_pct_24h = (self._atr / self._mark_price) * 100.0
+
                     # ATR percentile 계산 (rolling 100-period)
                     # 단순화: 최근 100개 kline의 ATR을 계산하여 history로 사용
                     # (실제로는 별도 history 저장 필요)

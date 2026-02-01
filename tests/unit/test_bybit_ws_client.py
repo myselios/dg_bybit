@@ -247,38 +247,64 @@ def test_ws_queue_maxsize_overflow_policy():
 
 def test_testnet_wss_url_enforced():
     """
-    Testnet WSS URL 강제 assert (실거래 함정 3)
+    Testnet/Mainnet WSS URL 일치성 검증 (Phase 12b)
 
-    SSOT: docs/plans/task_plan.md Phase 7 - testnet base_url 강제 assert
+    SSOT: docs/plans/task_plan.md Phase 12b - Mainnet 접근 허용
 
     검증:
-    - Mainnet WSS URL → FatalConfigError
-    - Testnet WSS URL → 통과
+    - BYBIT_TESTNET=true + Mainnet URL → FatalConfigError
+    - BYBIT_TESTNET=false + Testnet URL → FatalConfigError
+    - BYBIT_TESTNET=true + Testnet URL → 통과
+    - BYBIT_TESTNET=false + Mainnet URL → 통과
     """
     from infrastructure.exchange.bybit_ws_client import BybitWsClient, FatalConfigError
+    import os
+    from unittest.mock import patch
 
     # Given: API key/secret
     api_key = "test_key"
     api_secret = "test_secret"
     fake_clock = lambda: 1640000000.0
 
-    # When/Then: Mainnet URL → FatalConfigError
-    with pytest.raises(FatalConfigError, match="mainnet access forbidden before Phase 9"):
-        BybitWsClient(
+    # When/Then: BYBIT_TESTNET=true + Mainnet URL → FatalConfigError
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "true"}):
+        with pytest.raises(FatalConfigError, match="BYBIT_TESTNET=true but wss_url is not Testnet"):
+            BybitWsClient(
+                api_key=api_key,
+                api_secret=api_secret,
+                wss_url="wss://stream.bybit.com/v5/private",  # Mainnet (불일치)
+                clock=fake_clock,
+            )
+
+    # When/Then: BYBIT_TESTNET=false + Testnet URL → FatalConfigError
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "false"}):
+        with pytest.raises(FatalConfigError, match="BYBIT_TESTNET=false but wss_url is not Mainnet"):
+            BybitWsClient(
+                api_key=api_key,
+                api_secret=api_secret,
+                wss_url="wss://stream-testnet.bybit.com/v5/private",  # Testnet (불일치)
+                clock=fake_clock,
+            )
+
+    # When/Then: BYBIT_TESTNET=true + Testnet URL → 통과
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "true"}):
+        client = BybitWsClient(
             api_key=api_key,
             api_secret=api_secret,
-            wss_url="wss://stream.bybit.com/v5/private",  # Mainnet (금지)
+            wss_url="wss://stream-testnet.bybit.com/v5/private",  # Testnet (일치)
             clock=fake_clock,
         )
+        assert client.wss_url == "wss://stream-testnet.bybit.com/v5/private"
 
-    # When/Then: Testnet URL → 통과
-    client = BybitWsClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        wss_url="wss://stream-testnet.bybit.com/v5/private",  # Testnet (허용)
-        clock=fake_clock,
-    )
-    assert client.wss_url == "wss://stream-testnet.bybit.com/v5/private"
+    # When/Then: BYBIT_TESTNET=false + Mainnet URL → 통과 (Phase 12b)
+    with patch.dict(os.environ, {"BYBIT_TESTNET": "false"}):
+        client = BybitWsClient(
+            api_key=api_key,
+            api_secret=api_secret,
+            wss_url="wss://stream.bybit.com/v5/private",  # Mainnet (일치)
+            clock=fake_clock,
+        )
+        assert client.wss_url == "wss://stream.bybit.com/v5/private"
 
 
 def test_missing_api_key_prevents_ws_start():

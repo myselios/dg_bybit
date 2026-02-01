@@ -28,6 +28,7 @@ import argparse
 import time
 import logging
 import sys
+import os
 import traceback
 from pathlib import Path
 from datetime import datetime, timezone
@@ -42,8 +43,9 @@ from infrastructure.storage.log_storage import LogStorage
 from infrastructure.notification.telegram_notifier import TelegramNotifier
 from domain.state import State
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (명시적 경로 + override)
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 # Setup logging (Mainnet 전용 디렉토리)
 Path("logs/mainnet_dry_run").mkdir(parents=True, exist_ok=True)
@@ -235,7 +237,6 @@ def confirm_mainnet_execution() -> bool:
 def run_mainnet_dry_run(
     target_trades: int = 30,
     max_duration_hours: int = 24,
-    force_entry: bool = False,
 ):
     """
     Mainnet Dry-Run 실행
@@ -243,34 +244,47 @@ def run_mainnet_dry_run(
     Args:
         target_trades: 목표 거래 횟수 (default: 30)
         max_duration_hours: 최대 실행 시간 (default: 24 hours)
-        force_entry: Force entry 모드 (Grid spacing 무시)
     """
     logger.info("=" * 60)
-    logger.info("🚀 Mainnet Dry-Run Started (Phase 12b)")
+    logger.info("🚀 Mainnet Dry-Run Started")
     logger.info("=" * 60)
     logger.info(f"Target trades: {target_trades}")
     logger.info(f"Max duration: {max_duration_hours} hours")
-    logger.info(f"Force entry: {force_entry}")
 
-    if force_entry:
-        logger.warning("⚠️  Force Entry Mode: Grid spacing ignored (테스트 모드)")
+    # Bybit clients 초기화 (Mainnet)
+    api_key = os.getenv("BYBIT_API_KEY", "")
+    api_secret = os.getenv("BYBIT_API_SECRET", "")
+    mainnet_rest_url = "https://api.bybit.com"
+    mainnet_ws_url = "wss://stream.bybit.com/v5/private"
 
-    # Bybit clients 초기화
-    rest_client = BybitRestClient()
-    ws_client = BybitWsClient()
+    rest_client = BybitRestClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        base_url=mainnet_rest_url
+    )
+
+    ws_client = BybitWsClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        wss_url=mainnet_ws_url
+    )
+
     log_storage = LogStorage(log_dir=Path("logs/mainnet_dry_run"))
 
-    # BybitAdapter 초기화
+    # BybitAdapter 초기화 (Mainnet mode)
     bybit_adapter = BybitAdapter(
-        ws_client=ws_client,
         rest_client=rest_client,
-        log_storage=log_storage,
-        force_entry=force_entry,
+        ws_client=ws_client,
+        testnet=False  # Mainnet
     )
 
     # Market data 초기 로드 (equity, mark price 조회)
     logger.info("📊 Loading initial market data...")
     bybit_adapter.update_market_data()
+
+    # Phase 13b: 이전 체결 가격 무시 (Clean start)
+    bybit_adapter._last_fill_price = None
+
     initial_equity = bybit_adapter.get_equity_usdt()
     logger.info(f"✅ Equity: ${initial_equity:.2f} USDT")
 
@@ -296,26 +310,42 @@ def run_mainnet_dry_run(
     telegram = TelegramNotifier()
     if telegram.enabled:
         logger.info("✅ Telegram notifier enabled")
-        telegram.send_halt(
-            reason=f"Mainnet Dry-Run Started (Phase 12b) | Initial: ${initial_equity:.2f} | Target: {target_trades} trades",
-            equity=initial_equity
-        )
+        # Phase 12b Fix: Skip startup message (blocking issue)
+        # telegram.send_halt(
+        #     reason=f"Mainnet Dry-Run Started (Phase 12b) | Initial: ${initial_equity:.2f} | Target: {target_trades} trades",
+        #     equity=initial_equity
+        # )
     else:
         logger.info("ℹ️ Telegram notifier disabled")
 
     # Orchestrator 초기화
+    logger.info("🔍 About to initialize Orchestrator...")
     orchestrator = Orchestrator(
-        exchange_adapter=bybit_adapter,
-        force_entry=force_entry,
+        market_data=bybit_adapter,
+        rest_client=rest_client,
+        log_storage=log_storage,
     )
+    logger.info("✅ Orchestrator initialized successfully")
 
     # Main loop
     previous_state = State.FLAT
+
     start_time = time.time()
+
     tick_interval = 1.0  # 1초마다 tick
 
+    # 초기 상태 로깅
+    logger.info(f"📊 Initial state: {orchestrator.state}")
+    logger.info(f"📊 Initial position: {orchestrator.position}")
+    logger.info(f"🔄 Starting main loop (target_trades={target_trades}, max_duration={max_duration_hours}h)")
+
     try:
+        tick_count = 0
+
         while True:
+            tick_count += 1
+            logger.info(f"🔄 Tick {tick_count} (trades: {monitor.total_trades}/{target_trades})")
+
             # 종료 조건 확인
             if monitor.total_trades >= target_trades:
                 logger.info(f"✅ Target trades reached: {monitor.total_trades}/{target_trades}")
@@ -329,6 +359,24 @@ def run_mainnet_dry_run(
             try:
                 result = orchestrator.run_tick()
                 current_state = result.state
+
+                # Tick 결과 로깅 (상태 변경 시 또는 10 tick마다)
+                if tick_count % 10 == 0 or current_state != previous_state:
+                    logger.info(f"  → State: {current_state}, Halt: {result.halt_reason}")
+
+                # Entry 차단 이유 로깅 (처음 발생 시 또는 이유 변경 시)
+                if result.entry_blocked and tick_count <= 20:
+                    # ATR 값 추가 로깅
+                    if result.entry_block_reason == "atr_too_low":
+                        atr_pct = bybit_adapter.get_atr_pct_24h()
+                        logger.info(f"  → Entry blocked: {result.entry_block_reason} (ATR: {atr_pct:.2f}% < 3.0%)")
+                    elif result.entry_block_reason == "no_signal":
+                        # Regime-aware entry debug: 실제 ma_slope_pct, funding_rate 값 표시
+                        ma_slope = bybit_adapter.get_ma_slope_pct()
+                        funding = bybit_adapter.get_funding_rate()
+                        logger.info(f"  → Entry blocked: no_signal (ma_slope={ma_slope:.4f}%, funding={funding:.6f})")
+                    else:
+                        logger.info(f"  → Entry blocked: {result.entry_block_reason}")
 
             except Exception as e:
                 logger.error(f"❌ Tick error: {type(e).__name__}: {e}")
@@ -355,10 +403,7 @@ def run_mainnet_dry_run(
                     side_str = "Buy" if orchestrator.position.direction == Direction.LONG else "Sell"
 
                     # Entry 근거 생성
-                    if force_entry:
-                        entry_reason = "테스트 모드: 강제 진입 (Grid 조건 무시)"
-                    else:
-                        entry_reason = f"Grid {side_str}: 목표가 ${orchestrator.position.entry_price:,.2f} 도달"
+                    entry_reason = f"Grid {side_str}: 목표가 ${orchestrator.position.entry_price:,.2f} 도달"
 
                     # Entry 시간 추적
                     monitor.log_entry(orchestrator.position.entry_price)
@@ -509,11 +554,6 @@ def main():
         help="최대 실행 시간 (hours, default: 24)"
     )
     parser.add_argument(
-        "--force-entry",
-        action="store_true",
-        help="Force entry 모드 (Grid spacing 무시, 테스트용)"
-    )
-    parser.add_argument(
         "--yes",
         action="store_true",
         help="Skip confirmation prompt (⚠️ 위험: 자동 승인)"
@@ -535,7 +575,6 @@ def main():
     run_mainnet_dry_run(
         target_trades=min(args.target_trades, 50),  # Max 50 trades
         max_duration_hours=args.max_hours,
-        force_entry=args.force_entry,
     )
 
 

@@ -70,7 +70,7 @@ class BybitRestClient:
         api_secret: str,
         base_url: str,
         clock: Optional[Callable[[], float]] = None,
-        timeout: float = 5.0,
+        timeout: float = 10.0,
         max_retries: int = 3,
     ):
         """
@@ -128,8 +128,9 @@ class BybitRestClient:
             int: timestamp (ms)
 
         SSOT: docs/plans/task_plan.md Phase 7 - Clock 주입 (determinism)
+        Phase 13b: 3초 과거로 조정 (클라이언트 시간이 서버보다 미래인 문제 해결)
         """
-        return int(self.clock() * 1000)
+        return int((self.clock() - 3.0) * 1000)  # 3초 과거로 조정
 
     def _generate_signature(self, timestamp: int, params: Dict[str, Any], method: str = "GET") -> str:
         """
@@ -148,7 +149,7 @@ class BybitRestClient:
         - GET: timestamp + apiKey + recvWindow + queryString
         - POST: timestamp + apiKey + recvWindow + JSON_BODY
         """
-        recv_window = 5000  # Default 5000ms
+        recv_window = 20000  # Extended to 10000ms (시간 동기화 문제 대응)
 
         if method == "POST":
             # POST: JSON body 사용
@@ -229,7 +230,7 @@ class BybitRestClient:
             "X-BAPI-API-KEY": self.api_key,
             "X-BAPI-SIGN": signature,
             "X-BAPI-TIMESTAMP": str(timestamp),
-            "X-BAPI-RECV-WINDOW": "5000",
+            "X-BAPI-RECV-WINDOW": "20000",  # Extended to 10000ms (시간 동기화 문제 대응)
             "Content-Type": "application/json",
         }
 
@@ -259,6 +260,12 @@ class BybitRestClient:
 
                 # 응답 처리
                 response_json = response.json()
+
+                # Phase 13b: API 응답 디버깅 (231 bytes 문제 추적)
+                if endpoint == "/v5/account/wallet-balance":
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"🔍 API Response: endpoint={endpoint}, retCode={response_json.get('retCode')}, retMsg={response_json.get('retMsg')}, len={len(str(response_json))}")
 
                 # retCode 10006 → RateLimitError
                 if response_json.get("retCode") == 10006:

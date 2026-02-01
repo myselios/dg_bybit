@@ -80,7 +80,8 @@ if [ -z "$table_phase" ]; then
 fi
 
 # "0~12a-3" 형식에서 마지막 Phase만 추출 (비교용)
-status_last=$(echo "$status_phase" | grep -oE "[0-9]+[a-z]*-[0-9]+$" || echo "$status_phase")
+# "12c" (하이픈 없음), "12a-3" (하이픈 있음) 모두 지원
+status_last=$(echo "$status_phase" | grep -oE "[0-9]+[a-z]*(-[0-9]+)?$" || echo "$status_phase")
 
 if [ "$status_last" == "$table_phase" ]; then
   echo "  ✅ PASS: Status Line ($status_phase) matches Progress Table ($table_phase)"

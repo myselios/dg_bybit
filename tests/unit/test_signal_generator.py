@@ -172,11 +172,13 @@ def test_signal_contains_qty():
     assert signal.qty == 100
 
 
-# Test 9: 초기 상태 (last_fill_price = None) - 첫 진입 신호
+# Test 9: Regime-Aware Initial Entry (Phase 13c)
 def test_initial_entry_signal_when_no_last_fill():
     """
-    last_fill_price가 None이면 (FLAT 상태), 진입 신호를 생성하지 않는다.
-    (진입은 다른 로직에서 처리)
+    Phase 13c: Regime-Aware Initial Entry
+
+    Trend regime: MA slope 방향 우선
+    Range regime: Funding 극단값만 허용
     """
     from src.application.signal_generator import generate_signal
 
@@ -184,14 +186,48 @@ def test_initial_entry_signal_when_no_last_fill():
     last_fill_price = None
     grid_spacing = 100.0
 
-    signal = generate_signal(
+    # Case 1: Trend Up (ma_slope >= 0.5%) → Buy
+    signal_trend_up = generate_signal(
         current_price=current_price,
         last_fill_price=last_fill_price,
         grid_spacing=grid_spacing,
+        ma_slope_pct=0.6,  # Trend up
+        funding_rate=0.001,  # Ignored in trend
     )
+    assert signal_trend_up is not None
+    assert signal_trend_up.side == "Buy"
 
-    # last_fill_price가 None이면 grid 신호 생성 불가
-    assert signal is None
+    # Case 2: Trend Down (ma_slope <= -0.5%) → Sell
+    signal_trend_down = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=-0.8,  # Trend down
+        funding_rate=-0.001,  # Ignored in trend
+    )
+    assert signal_trend_down is not None
+    assert signal_trend_down.side == "Sell"
+
+    # Case 3: Range + Funding 극단 (> 1%) → Sell
+    signal_range_extreme = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=0.2,  # Range
+        funding_rate=0.015,  # 1.5% (극단)
+    )
+    assert signal_range_extreme is not None
+    assert signal_range_extreme.side == "Sell"
+
+    # Case 4: Range + Funding 낮음 → None (진입 보류)
+    signal_range_low = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=0.1,  # Range
+        funding_rate=0.0005,  # 0.05% (극단 아님)
+    )
+    assert signal_range_low is None  # 진입 보류
 
 
 # Test 10: 여러 grid level 떨어진 경우
@@ -214,3 +250,43 @@ def test_multiple_grid_levels_away():
     assert signal is not None
     assert signal.side == "Sell"
     # 신호는 1번만 (다음 grid 진입)
+
+
+# Test 11: Regime-Aware Entry with Real Market Scenario (Phase 13c)
+def test_initial_entry_regime_aware_realistic():
+    """
+    Phase 13c: Regime-Aware Entry (Realistic Scenarios)
+
+    하락 추세 + 음수 Funding (숏 과열):
+    - Trend regime → MA slope 우선 → Sell
+    - Funding은 무시 (Trend에서는 방향 고정)
+    """
+    from src.application.signal_generator import generate_signal
+
+    current_price = 104000.0
+    last_fill_price = None  # 첫 진입
+    grid_spacing = 2000.0
+
+    # Scenario: 하락 추세 (-0.8%) + 음수 Funding (-0.007)
+    # MA slope 우선 → Sell
+    signal = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=-0.8,  # 하락 추세
+        funding_rate=-0.007,  # 숏 과열 (역추세 유혹)
+    )
+    assert signal is not None, "Trend regime should generate signal"
+    assert signal.side == "Sell", "Trend down → Sell (Funding ignored)"
+    assert signal.price == current_price
+
+    # Scenario 2: Range + 극단 Funding → Funding 방향
+    signal2 = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=0.1,  # Range
+        funding_rate=-0.012,  # -1.2% (극단)
+    )
+    assert signal2 is not None
+    assert signal2.side == "Buy"  # 음수 funding → Buy
