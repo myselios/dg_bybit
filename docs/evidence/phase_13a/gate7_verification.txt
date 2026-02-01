@@ -1,0 +1,30 @@
+=== Gate 1a: Placeholder 표현 감지 ===
+tests/integration_real/conftest.py:29:        pytest.skip("Testnet API credentials not available (set BYBIT_TESTNET_API_KEY/API_SECRET)")
+
+=== Gate 1b: Skip/Xfail decorator 금지 ===
+✅ PASS: No skip/xfail decorators found
+
+=== Gate 1c: 의미있는 assert 존재 여부 ===
+Assert count: 579
+✅ PASS: Meaningful asserts found
+
+=== Gate 2a: 도메인 타입 이름 재정의 금지 ===
+✅ PASS: No domain type redefinitions
+
+=== Gate 3: transition SSOT 파일 존재 ===
+✅ PASS: transition.py exists
+
+=== Gate 7: pytest 결과 ===
+........................................................................ [ 19%]
+........................................................................ [ 39%]
+........................................................................ [ 59%]
+........................................................................ [ 78%]
+........................................................................ [ 98%]
+.....                                                                    [100%]
+=============================== warnings summary ===============================
+tests/unit/test_ab_comparator.py::test_is_significant_flag
+  /home/selios/dg_bybit/venv/lib/python3.12/site-packages/scipy/stats/_axis_nan_policy.py:592: RuntimeWarning: Precision loss occurred in moment calculation due to catastrophic cancellation. This occurs when the data are nearly identical. Results may be unreliable.
+    res = hypotest_fun_out(*samples, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+365 passed, 15 deselected, 1 warning in 1.44s

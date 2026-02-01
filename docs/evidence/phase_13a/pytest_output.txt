@@ -1,0 +1,46 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 30 items
+
+tests/unit/test_trade_analyzer.py::test_init_valid_log_dir PASSED        [  3%]
+tests/unit/test_trade_analyzer.py::test_init_nonexistent_dir_raises_error PASSED [  6%]
+tests/unit/test_trade_analyzer.py::test_load_trades_empty_period PASSED  [ 10%]
+tests/unit/test_trade_analyzer.py::test_load_trades_single_day PASSED    [ 13%]
+tests/unit/test_trade_analyzer.py::test_load_trades_multiple_days PASSED [ 16%]
+tests/unit/test_trade_analyzer.py::test_load_jsonl_invalid_json_warning PASSED [ 20%]
+tests/unit/test_trade_analyzer.py::test_calculate_metrics_basic PASSED   [ 23%]
+tests/unit/test_trade_analyzer.py::test_calculate_metrics_empty_trades PASSED [ 26%]
+tests/unit/test_trade_analyzer.py::test_calculate_pnl_from_trade PASSED  [ 30%]
+tests/unit/test_stat_test.py::test_t_test_basic PASSED                   [ 33%]
+tests/unit/test_stat_test.py::test_t_test_identical_groups PASSED        [ 36%]
+tests/unit/test_stat_test.py::test_t_test_insufficient_samples_raises_error PASSED [ 40%]
+tests/unit/test_stat_test.py::test_chi_square_test_basic PASSED          [ 43%]
+tests/unit/test_stat_test.py::test_chi_square_test_identical_winrates PASSED [ 46%]
+tests/unit/test_stat_test.py::test_chi_square_test_insufficient_samples_raises_error PASSED [ 50%]
+tests/unit/test_stat_test.py::test_confidence_interval_basic PASSED      [ 53%]
+tests/unit/test_stat_test.py::test_confidence_interval_single_value PASSED [ 56%]
+tests/unit/test_stat_test.py::test_confidence_interval_empty_list_raises_error PASSED [ 60%]
+tests/unit/test_ab_comparator.py::test_compare_basic_improvement PASSED  [ 63%]
+tests/unit/test_ab_comparator.py::test_compare_deterioration PASSED      [ 66%]
+tests/unit/test_ab_comparator.py::test_compare_identical_periods PASSED  [ 70%]
+tests/unit/test_ab_comparator.py::test_recommendation_keep_all_improved PASSED [ 73%]
+tests/unit/test_ab_comparator.py::test_recommendation_revert_all_worse PASSED [ 76%]
+tests/unit/test_ab_comparator.py::test_recommendation_insufficient_samples PASSED [ 80%]
+tests/unit/test_ab_comparator.py::test_is_significant_flag PASSED        [ 83%]
+tests/unit/test_ab_comparator.py::test_sharpe_delta_calculation PASSED   [ 86%]
+tests/unit/test_report_generator.py::test_generate_markdown PASSED       [ 90%]
+tests/unit/test_report_generator.py::test_generate_json PASSED           [ 93%]
+tests/unit/test_report_generator.py::test_generate_comparison_report PASSED [ 96%]
+tests/unit/test_report_generator.py::test_markdown_directory_creation PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/unit/test_ab_comparator.py::test_is_significant_flag
+  /home/selios/dg_bybit/venv/lib/python3.12/site-packages/scipy/stats/_axis_nan_policy.py:592: RuntimeWarning: Precision loss occurred in moment calculation due to catastrophic cancellation. This occurs when the data are nearly identical. Results may be unreliable.
+    res = hypotest_fun_out(*samples, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 30 passed, 1 warning in 0.93s =========================

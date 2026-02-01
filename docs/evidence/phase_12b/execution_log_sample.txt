@@ -1,0 +1,61 @@
+2026-01-27 19:25:55,348 - __main__ - INFO - 🔍 Mainnet Safety Verification...
+2026-01-27 19:25:55,348 - __main__ - INFO - ✅ BYBIT_TESTNET=false (Mainnet mode)
+2026-01-27 19:25:55,348 - __main__ - INFO - ✅ API credentials present
+2026-01-27 19:25:55,348 - __main__ - INFO - ✅ Mainnet credentials separate from Testnet
+2026-01-27 19:25:55,348 - __main__ - INFO - ✅ Mainnet Safety Verification PASSED
+2026-01-27 19:25:55,348 - __main__ - INFO - ============================================================
+2026-01-27 19:25:55,348 - __main__ - INFO - 🚀 Mainnet Dry-Run Started (Phase 12b)
+2026-01-27 19:25:55,348 - __main__ - INFO - ============================================================
+2026-01-27 19:25:55,348 - __main__ - INFO - Target trades: 30
+2026-01-27 19:25:55,348 - __main__ - INFO - Max duration: 24 hours
+2026-01-27 19:25:55,348 - __main__ - INFO - Force entry: True
+2026-01-27 19:25:55,348 - __main__ - WARNING - ⚠️  Force Entry Mode: Grid spacing ignored (테스트 모드)
+2026-01-27 19:25:55,349 - infrastructure.exchange.bybit_adapter - INFO - BybitAdapter initialized (testnet=False)
+2026-01-27 19:25:55,349 - __main__ - INFO - 📊 Loading initial market data...
+2026-01-27 19:25:55,906 - __main__ - INFO - ✅ Equity: $107.33 USDT
+2026-01-27 19:25:55,906 - __main__ - INFO - 🔌 Starting WebSocket connection...
+2026-01-27 19:25:56,028 - websocket - INFO - Websocket connected
+2026-01-27 19:25:58,988 - __main__ - INFO - ✅ WebSocket connected and subscribed to execution.linear
+2026-01-27 19:25:58,989 - __main__ - INFO - ✅ Telegram notifier enabled
+2026-01-27 19:25:58,989 - __main__ - INFO - 🔍 About to initialize Orchestrator...
+2026-01-27 19:26:00,163 - application.orchestrator - INFO - ✅ Position recovered: Buy 18 contracts @ $87930.00
+2026-01-27 19:26:00,163 - __main__ - INFO - ✅ Orchestrator initialized successfully
+2026-01-27 19:26:00,165 - application.orchestrator - INFO - 🔍 Force exit qty: 18 contracts = 0.018 BTC
+2026-01-27 19:26:00,276 - application.orchestrator - INFO - 🔍 Force exit API response: {'retCode': 0, 'retMsg': 'OK', 'result': {'orderId': 'd3633f66-4273-42b7-829d-a0d857d8b94a', 'orderLinkId': 'exit_recovered'}, 'retExtInfo': {}, 'time': 1769509560479}
+2026-01-27 19:26:00,276 - application.orchestrator - INFO - ✅ Force exit order placed: d3633f66-4273-42b7-829d-a0d857d8b94a (side=Sell, qty=0.018 BTC = 18 contracts)
+2026-01-27 19:26:01,277 - application.orchestrator - INFO - >>> Got 1 FILL events from WS
+2026-01-27 19:26:01,277 - application.orchestrator - INFO - >>> Processing FILL event: order_id=d3633f66-4273-42b7-829d-a0d857d8b94a, order_link_id=exit_recovered
+2026-01-27 19:26:01,277 - application.orchestrator - INFO - >>> Pending order: {'order_id': 'd3633f66-4273-42b7-829d-a0d857d8b94a', 'order_link_id': 'exit_recovered', 'side': 'Sell', 'qty': 18, 'price': 87973.2, 'signal_id': 'recovered'}
+2026-01-27 19:26:01,277 - application.orchestrator - INFO - >>> Match result: True
+2026-01-27 19:26:01,277 - application.event_processor - INFO - 🔍 create_position_from_fill (dataclass): filled_qty=18, entry_price=87965.4
+...
+2026-01-27 19:28:18,714 - application.orchestrator - INFO - >>> Processing FILL event: order_id=8cb80d4c-0632-4954-a288-4efcc6161aad, order_link_id=entry_1769509697
+2026-01-27 19:28:18,714 - application.orchestrator - INFO - >>> Pending order: {'order_id': '8cb80d4c-0632-4954-a288-4efcc6161aad', 'order_link_id': 'entry_1769509697', 'side': 'Buy', 'qty': 1, 'price': 87968.33, 'signal_id': '1769509697'}
+2026-01-27 19:28:18,714 - application.orchestrator - INFO - >>> Match result: True
+2026-01-27 19:28:18,714 - application.event_processor - INFO - 🔍 create_position_from_fill (dataclass): filled_qty=1, entry_price=87965.1
+2026-01-27 19:28:21,202 - application.orchestrator - INFO - 🔍 Force exit qty: 1 contracts = 0.001 BTC
+2026-01-27 19:28:21,305 - application.orchestrator - INFO - 🔍 Force exit API response: {'retCode': 0, 'retMsg': 'OK', 'result': {'orderId': 'e9e88c39-b6b1-4433-bd3e-cfa12651fe35', 'orderLinkId': 'exit_1769509697'}, 'retExtInfo': {}, 'time': 1769509701542}
+2026-01-27 19:28:21,306 - application.orchestrator - INFO - ✅ Force exit order placed: e9e88c39-b6b1-4433-bd3e-cfa12651fe35 (side=Sell, qty=0.001 BTC = 1 contracts)
+2026-01-27 19:28:22,306 - application.orchestrator - INFO - >>> Got 1 FILL events from WS
+2026-01-27 19:28:22,306 - application.orchestrator - INFO - >>> Processing FILL event: order_id=e9e88c39-b6b1-4433-bd3e-cfa12651fe35, order_link_id=exit_1769509697
+2026-01-27 19:28:22,306 - application.orchestrator - INFO - >>> Pending order: {'order_id': 'e9e88c39-b6b1-4433-bd3e-cfa12651fe35', 'order_link_id': 'exit_1769509697', 'side': 'Sell', 'qty': 1, 'price': 87967.87, 'signal_id': '1769509697'}
+2026-01-27 19:28:22,306 - application.orchestrator - INFO - >>> Match result: True
+2026-01-27 19:28:22,306 - application.event_processor - INFO - 🔍 create_position_from_fill (dataclass): filled_qty=1, entry_price=87965.0
+2026-01-27 19:28:23,418 - application.orchestrator - INFO - >>> Got 1 FILL events from WS
+2026-01-27 19:28:23,418 - application.orchestrator - INFO - >>> Processing FILL event: order_id=2b6f7fd4-015e-4d99-b999-d8282ce16d51, order_link_id=entry_1769509702
+2026-01-27 19:28:23,419 - application.orchestrator - INFO - >>> Pending order: {'order_id': '2b6f7fd4-015e-4d99-b999-d8282ce16d51', 'order_link_id': 'entry_1769509702', 'side': 'Buy', 'qty': 1, 'price': 87967.87, 'signal_id': '1769509702'}
+2026-01-27 19:28:23,419 - application.orchestrator - INFO - >>> Match result: True
+2026-01-27 19:28:23,419 - application.event_processor - INFO - 🔍 create_position_from_fill (dataclass): filled_qty=1, entry_price=87960.5
+2026-01-27 19:28:25,981 - application.orchestrator - INFO - 🔍 Force exit qty: 1 contracts = 0.001 BTC
+2026-01-27 19:28:26,088 - application.orchestrator - INFO - 🔍 Force exit API response: {'retCode': 0, 'retMsg': 'OK', 'result': {'orderId': 'ea375273-9a67-41ba-b031-9eb42f1fdf82', 'orderLinkId': 'exit_1769509702'}, 'retExtInfo': {}, 'time': 1769509706373}
+2026-01-27 19:28:26,089 - application.orchestrator - INFO - ✅ Force exit order placed: ea375273-9a67-41ba-b031-9eb42f1fdf82 (side=Sell, qty=0.001 BTC = 1 contracts)
+2026-01-27 19:28:27,089 - application.orchestrator - INFO - >>> Got 1 FILL events from WS
+2026-01-27 19:28:27,089 - application.orchestrator - INFO - >>> Processing FILL event: order_id=ea375273-9a67-41ba-b031-9eb42f1fdf82, order_link_id=exit_1769509702
+2026-01-27 19:28:27,089 - application.orchestrator - INFO - >>> Pending order: {'order_id': 'ea375273-9a67-41ba-b031-9eb42f1fdf82', 'order_link_id': 'exit_1769509702', 'side': 'Sell', 'qty': 1, 'price': 87966.93, 'signal_id': '1769509702'}
+2026-01-27 19:28:27,089 - application.orchestrator - INFO - >>> Match result: True
+2026-01-27 19:28:27,089 - application.event_processor - INFO - 🔍 create_position_from_fill (dataclass): filled_qty=1, entry_price=87960.4
+2026-01-27 19:28:28,293 - application.orchestrator - INFO - >>> Got 1 FILL events from WS
+2026-01-27 19:28:28,294 - application.orchestrator - INFO - >>> Processing FILL event: order_id=6e782672-d542-452a-8b28-b4f538985940, order_link_id=entry_1769509707
+2026-01-27 19:28:28,294 - application.orchestrator - INFO - >>> Pending order: {'order_id': '6e782672-d542-452a-8b28-b4f538985940', 'order_link_id': 'entry_1769509707', 'side': 'Buy', 'qty': 1, 'price': 87966.93, 'signal_id': '1769509707'}
+2026-01-27 19:28:28,294 - application.orchestrator - INFO - >>> Match result: True
+2026-01-27 19:28:28,294 - application.event_processor - INFO - 🔍 create_position_from_fill (dataclass): filled_qty=1, entry_price=87960.5
