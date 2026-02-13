@@ -1,7 +1,7 @@
 # docs/specs/account_builder_policy.md
 # Account Builder Policy Specification (Stable Defaults + Tunables)
-Last Updated: 2026-02-08 (KST)
-Version: 2.3
+Last Updated: 2026-02-13 (KST)
+Version: 2.4
 
 ## 목적 (Purpose)
 
@@ -175,12 +175,12 @@ Anti-flap (ENTRY evaluation time only):
 
 ### 5.1 Stage 1 — Expansion ($100 → $300) : Aggressive
 - default_leverage: 3x
-- max_loss_usd_cap: $3
-- loss_pct_cap: 3%
+- max_loss_usd_cap: $10 (v2.4: $3→$10, 수익 스케일링 위해 상향)
+- loss_pct_cap: 10% (v2.4: 3%→10%, 소액 계좌 3~5 contracts 진입 가능)
 - EV gate: expected_profit_usd >= estimated_fee_usd * 2.0
-- volatility: ATR_pct_24h > 3%
+- volatility: ATR_pct_24h > 2% (v2.4: 3%→2%, BTC 저변동 구간 진입 허용)
 - maker_only_default: true
-- max_trades/day: 5
+- max_trades/day: 10 (v2.4: 5→10, 소액 계좌 기회 포착 빈도 확보)
 - liq_distance_min_pct: 30%
 
 ### 5.2 Stage 2 — Acceleration ($300 → $700) : Balanced
@@ -217,12 +217,12 @@ Definitions:
 - equity_usdt = wallet_balance_usdt + unrealized_pnl_usdt (Bybit equity)
 
 Stage USD caps:
-- Stage 1: max_loss_usd_cap = $3
+- Stage 1: max_loss_usd_cap = $10 (v2.4: $3→$10)
 - Stage 2: max_loss_usd_cap = $20
 - Stage 3: max_loss_usd_cap = $30
 
 USDT percentage caps:
-- Stage 1: pct_cap = 3%
+- Stage 1: pct_cap = 10% (v2.4: 3%→10%)
 - Stage 2: pct_cap = 8%
 - Stage 3: pct_cap = 6%
 
@@ -342,15 +342,16 @@ If 3 consecutive maker timeouts for the same signal:
 
 ## 10.1 Position Sizing (Bybit Linear USDT) — ADR Required (math), Tunables (bounds)
 
-### 10.1.1 Step A: Stop Distance (Grid Strategy)
+### 10.1.1 Step A: Stop Distance (ATR-based Dynamic, v2.4)
 Inputs:
-- grid_spacing_pct
+- ATR (14-period, from market data)
+- entry_price
 
-Rule:
-- stop_distance_pct = clamp(grid_spacing_pct * 1.5, min=2.0%, max=6.0%)
+Rule (v2.4: Grid→ATR 전환, R:R 2.14:1 최적화):
+- stop_distance_pct = clamp(ATR * 0.7 / entry_price, min=0.5%, max=2.0%)
 
 Fallback:
-- if grid_spacing_pct unavailable => stop_distance_pct = 3.0%
+- if ATR unavailable or <= 0 => stop_distance_pct = 1.0%
 
 Reject:
 - if stop_distance_pct <= 0 or missing => REJECT
