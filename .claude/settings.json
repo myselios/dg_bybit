@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat TASKS.md 2>/dev/null | head -60 || echo 'TASKS.md not found'"
+          }
+        ]
+      }
+    ]
+  }
+}
