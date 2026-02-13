@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 6 items
+
+tests/dashboard/test_ui_components.py::test_render_metric_card PASSED    [ 16%]
+tests/dashboard/test_ui_components.py::test_render_pnl_chart PASSED      [ 33%]
+tests/dashboard/test_ui_components.py::test_render_trade_distribution PASSED [ 50%]
+tests/dashboard/test_ui_components.py::test_render_session_risk_gauge PASSED [ 66%]
+tests/dashboard/test_ui_components.py::test_sidebar_filters PASSED       [ 83%]
+tests/dashboard/test_ui_components.py::test_empty_dataframe_handling PASSED [100%]
+
+============================== 6 passed in 0.71s ===============================

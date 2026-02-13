@@ -1,7 +1,7 @@
 # docs/specs/account_builder_policy.md
 # Account Builder Policy Specification (Stable Defaults + Tunables)
-Last Updated: 2026-01-21 (KST)
-Version: 2.2
+Last Updated: 2026-02-08 (KST)
+Version: 2.3
 
 ## 목적 (Purpose)
 
@@ -305,9 +305,44 @@ If 3 consecutive maker timeouts for the same signal:
 
 ---
 
-## 10. Position Sizing (Bybit Linear USDT) — ADR Required (math), Tunables (bounds)
+## 10. Margin Mode & Position Sizing (Bybit Linear USDT)
 
-### 10.1 Step A: Stop Distance (Grid Strategy)
+### 10.0 Margin Mode (ADR-0012) — 협상 불가 (Immutable)
+
+**고정값**: Isolated Margin (격리 마진)
+
+**정책**:
+- 모든 포지션은 **Isolated Margin**으로만 진입 (Cross Margin 사용 금지)
+- 각 포지션마다 독립적인 증거금 할당
+- 한 포지션 청산 시 다른 포지션/잔고에 영향 없음 (리스크 격리)
+
+**Bybit Linear USDT API 파라미터**:
+- `category="linear"`
+- `symbol="BTCUSDT"`
+- `tradeMode=0` (0=Isolated, 1=Cross/Portfolio Margin)
+- `isLeverage=true` (Bybit Linear 기본값)
+
+**Margin Mode vs Leverage 분리**:
+- **Margin Mode**: Isolated 고정 (변경 금지)
+- **Leverage**: Stage별 동적 변경 (Section 5: Stage 1/2=3x, Stage 3=2x)
+- 두 개념은 독립적 (Isolated Margin에서도 Leverage 3x 사용 가능)
+
+**Trade-off**:
+- **단점**: 포지션당 독립 증거금 필요 (Cross 대비 포지션 크기 작음)
+- **현재 영향 없음**: Stage 1 (equity < $300)에서는 1회 1포지션만 진입
+- **장점**: 청산 리스크 격리 (Account Builder 목표 "청산 방지" 달성)
+
+**검증** (향후 구현, Phase 13+):
+- 프로세스 시작 시 Margin Mode 확인 (`get_position()` → `tradeMode=0` 검증)
+- Cross Margin 감지 시 프로세스 시작 거부 (`FatalConfigError`)
+
+**참조**: ADR-0012 (Margin Mode Isolated Enforcement)
+
+---
+
+## 10.1 Position Sizing (Bybit Linear USDT) — ADR Required (math), Tunables (bounds)
+
+### 10.1.1 Step A: Stop Distance (Grid Strategy)
 Inputs:
 - grid_spacing_pct
 
@@ -320,7 +355,7 @@ Fallback:
 Reject:
 - if stop_distance_pct <= 0 or missing => REJECT
 
-### 10.2 Step B: Compute qty from loss budget (Linear)
+### 10.1.2 Step B: Compute qty from loss budget (Linear)
 **Linear property**:
 - loss_usdt_at_stop = qty * entry_price_usd * stop_distance_pct
 
@@ -335,7 +370,7 @@ Constraints:
 - contracts >= 1 (최소 1 contract = 0.001 BTC)
 - contracts = floor(contracts)
 
-### 10.3 Step C: Margin feasibility (USDT-denominated)
+### 10.1.3 Step C: Margin feasibility (USDT-denominated)
 Definitions:
 - notional_usdt = qty * entry_price_usd
 - required_margin_usdt = notional_usdt / leverage
@@ -344,7 +379,7 @@ Definitions:
 Feasibility:
 - if required_margin_usdt + fee_buffer_usdt > equity_usdt => REJECT
 
-### 10.4 Step D: Liquidation safety buffer (no fake formula)
+### 10.1.4 Step D: Liquidation safety buffer (no fake formula)
 Preferred:
 - obtain liquidation distance from exchange endpoint if available
 - require: liq_distance_pct >= stage.liq_distance_min_pct
@@ -406,5 +441,6 @@ REVIEW TRIGGER:
 
 | Date | Version | Change | ADR |
 |------|---------|--------|-----|
+| 2026-02-08 | 2.3 | Margin Mode Isolated 정책 추가 (Section 10.0) | ADR-0012 |
 | 2026-01-21 | 2.2 | HALT vs COOLDOWN 정의 정렬 (SSOT 충돌 수정) | ADR-0007 |
 | 2026-01-18 | 2.1 | 정책 스펙을 "불변/튜닝 분리 + 데이터모델 스키마"로 정리 | - |

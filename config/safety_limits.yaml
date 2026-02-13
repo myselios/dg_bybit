@@ -40,9 +40,9 @@ session_risk:
 # Per-Trade Cap (Phase 9b, ADR-0001)
 per_trade_cap:
   # Stage 1 (equity < $300)
-  stage_1_max_loss_usd: 3.0  # $3 (3% equity at $100)
-  stage_1_loss_pct: 3.0  # 3%
-  stage_1_note: "ADR-0001: $10→$3 reduction (생존성 우선)"
+  stage_1_max_loss_usd: 10.0  # $10 (10% equity at $100)
+  stage_1_loss_pct: 10.0  # 10%
+  stage_1_note: "수익 스케일링 위해 $3→$10 상향 (3~5 contracts 가능)"
 
   # Stage 2 ($300 ≤ equity < $700)
   stage_2_max_loss_usd: 20.0  # $20
@@ -88,21 +88,43 @@ environment:
   testnet_enabled: true
   testnet_api_base_url: "https://api-testnet.bybit.com"
   testnet_ws_url: "wss://stream-testnet.bybit.com/v5/private"
-  testnet_symbol: "BTCUSD"
-  testnet_leverage: 1  # Testnet은 1배 레버리지 강제
+  testnet_symbol: "BTCUSDT"  # Linear USDT-Margined
+  testnet_leverage: 1  # ⚠️ 참고용 (실제 동작: 코드가 Stage별 leverage 사용)
+  # Testnet: 검증용으로 1x 권장, 실제 적용은 entry_coordinator.py 우선
 
   # Mainnet 설정 (Phase 12b: Mainnet Dry-Run)
   mainnet_enabled: true  # ⚠️ Phase 12b: Mainnet 활성화 (실거래 환경)
   mainnet_api_base_url: "https://api.bybit.com"
   mainnet_ws_url: "wss://stream.bybit.com/v5/private"
   mainnet_symbol: "BTCUSDT"  # Linear USDT-Margined
-  mainnet_leverage: 1  # ⚠️ 초기 1배 레버리지 (보수적 시작)
+  mainnet_leverage: 3  # ⚠️ 참고용 (실제 동작: Stage 1/2=3x, Stage 3=2x, entry_coordinator.py 참조)
+  # 실제 leverage는 코드에서 Stage별로 관리 (src/application/entry_coordinator.py:108-126)
+
+  # Margin Mode (ADR-0012): Isolated Margin 고정 (tradeMode=0)
+  # Cross Margin (tradeMode=1) 사용 금지
+  # 설정: Bybit 웹/앱에서 수동 설정 의존 (향후 set_margin_mode() 자동화 예정)
 
   # API Credentials (환경변수에서 로드)
   # BYBIT_TESTNET_API_KEY
   # BYBIT_TESTNET_API_SECRET
   # BYBIT_MAINNET_API_KEY
   # BYBIT_MAINNET_API_SECRET
+
+# Strategy Multipliers (R:R 비율 관리)
+strategy:
+  # Grid Entry Spacing (entry trigger)
+  grid_entry_multiplier: 0.3  # ATR * 0.3 (~$167 at ATR=$556)
+  grid_entry_note: "재진입 빈도 조절. 작을수록 자주 진입."
+
+  # Take-Profit Multiplier
+  tp_multiplier: 1.5  # ATR * 1.5 (~$834 at ATR=$556)
+  tp_note: "ATR 기반 TP. R:R >= 2:1 유지 목표."
+
+  # Stop-Loss Multiplier
+  sl_multiplier: 0.7  # ATR * 0.7 (~$389 at ATR=$556)
+  sl_min_pct: 0.005  # 최소 0.5%
+  sl_max_pct: 0.02   # 최대 2.0%
+  sl_note: "ATR 기반 SL. 고정 3% → 동적. R:R = TP/SL = 2.14:1"
 
 # Kill Switch (최소 구현, 추후 확장)
 killswitch:

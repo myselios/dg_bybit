@@ -36,6 +36,7 @@ def test_trade_log_v1_contains_all_execution_quality_fields():
         index_price=50001.0,
         orderbook_snapshot={"bid": 49999.0, "ask": 50001.0},
         market_regime="ranging",
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="1.0",
         config_hash="abc123",
         git_commit="5d928f5",
@@ -78,6 +79,7 @@ def test_trade_log_v1_market_regime_required():
         index_price=50000.0,
         orderbook_snapshot={},
         market_regime="ranging",  # 필수
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="1.0",
         config_hash="abc123",
         git_commit="5d928f5",
@@ -110,6 +112,7 @@ def test_trade_log_v1_schema_version_required():
         index_price=50000.0,
         orderbook_snapshot={},
         market_regime="ranging",
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="",  # 빈 문자열 → FAIL
         config_hash="abc123",
         git_commit="5d928f5",
@@ -139,6 +142,7 @@ def test_trade_log_v1_config_hash_required():
         index_price=50000.0,
         orderbook_snapshot={},
         market_regime="ranging",
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="1.0",
         config_hash="",  # 빈 문자열 → FAIL
         git_commit="5d928f5",
@@ -168,6 +172,7 @@ def test_trade_log_v1_git_commit_required():
         index_price=50000.0,
         orderbook_snapshot={},
         market_regime="ranging",
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="1.0",
         config_hash="abc123",
         git_commit="",  # 빈 문자열 → FAIL
@@ -227,6 +232,7 @@ def test_trade_log_v1_invalid_market_regime_fails():
         index_price=50000.0,
         orderbook_snapshot={},
         market_regime="invalid_regime",  # 잘못된 값
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="1.0",
         config_hash="abc123",
         git_commit="5d928f5",
@@ -256,6 +262,7 @@ def test_trade_log_v1_exchange_server_time_offset_required():
         index_price=50000.0,
         orderbook_snapshot={},
         market_regime="ranging",
+        side="Sell", direction="LONG", qty_btc=0.001, entry_price=49500.0, exit_price=50000.0, realized_pnl_usd=0.5, fee_usd=0.03,
         schema_version="1.0",
         config_hash="abc123",
         git_commit="5d928f5",
@@ -288,6 +295,7 @@ def test_trade_log_v1_full_validation_pass():
         index_price=50001.2,
         orderbook_snapshot={"bid": 49999.5, "ask": 50000.5, "spread": 1.0},
         market_regime="trending_up",
+        side="Buy", direction="SHORT", qty_btc=0.005, entry_price=50500.0, exit_price=50000.0, realized_pnl_usd=2.5, fee_usd=0.05,
         schema_version="1.0",
         config_hash="abc123def456",
         git_commit="5d928f5a1b2c3d4e",

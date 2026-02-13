@@ -57,7 +57,7 @@ def test_generate_signature_is_deterministic():
     )
 
     # When: 동일한 params로 서명 2번 생성
-    params = {"symbol": "BTCUSD", "side": "Buy", "qty": 100}
+    params = {"symbol": "BTCUSDT", "side": "Buy", "qty": 100}
     signature_1 = client._generate_signature(timestamp, params)
     signature_2 = client._generate_signature(timestamp, params)
 
@@ -76,7 +76,7 @@ def test_place_order_payload_satisfies_bybit_spec():
     검증:
     - 필수 필드: symbol, side, orderType, qty, timeInForce
     - orderLinkId 존재 (idempotency)
-    - category="inverse" (코인마진드)
+    - category="linear" (USDT-Margined)
     """
     from infrastructure.exchange.bybit_rest_client import BybitRestClient
 
@@ -106,7 +106,7 @@ def test_place_order_payload_satisfies_bybit_spec():
 
         order_link_id = "test_link_123"
         client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             order_link_id=order_link_id,
@@ -120,7 +120,7 @@ def test_place_order_payload_satisfies_bybit_spec():
         request_json = json.loads(request_data)
 
         # 필수 필드 존재
-        assert request_json["symbol"] == "BTCUSD"
+        assert request_json["symbol"] == "BTCUSDT"
         assert request_json["side"] == "Buy"
         assert request_json["orderType"] == "Market"  # Default
         assert request_json["qty"] == "100"  # V5 API: qty는 string
@@ -156,7 +156,7 @@ def test_order_link_id_max_length_36_chars():
     # When/Then: orderLinkId > 36자 → ValueError
     with pytest.raises(ValueError, match="orderLinkId must be <= 36 characters"):
         client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             order_link_id="a" * 37,  # 37자 (초과)
@@ -171,7 +171,7 @@ def test_order_link_id_max_length_36_chars():
         mock_post.return_value = mock_response
 
         client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             order_link_id="a" * 36,  # 36자 (정확히 max)
@@ -216,7 +216,7 @@ def test_rate_limit_headers_parsed_correctly():
         mock_post.return_value = mock_response
 
         result = client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             order_link_id="test_link",
@@ -270,7 +270,7 @@ def test_retcode_10006_triggers_backoff():
         # Then: RateLimitError 발생
         with pytest.raises(RateLimitError) as exc_info:
             client.place_order(
-                symbol="BTCUSD",
+                symbol="BTCUSDT",
                 side="Buy",
                 qty=100,
                 order_link_id="test_link",
@@ -317,7 +317,7 @@ def test_timeout_triggers_retry():
         # Then: TimeoutError 발생 (3회 재시도 후)
         with pytest.raises(requests.exceptions.Timeout):
             client.place_order(
-                symbol="BTCUSD",
+                symbol="BTCUSDT",
                 side="Buy",
                 qty=100,
                 order_link_id="test_link",
@@ -468,7 +468,7 @@ def test_cancel_order_payload_satisfies_bybit_spec():
 
     검증:
     - 필수 필드: symbol, orderId (또는 orderLinkId)
-    - category="inverse"
+    - category="linear"
     """
     from infrastructure.exchange.bybit_rest_client import BybitRestClient
 
@@ -497,7 +497,7 @@ def test_cancel_order_payload_satisfies_bybit_spec():
         mock_post.return_value = mock_response
 
         client.cancel_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             order_id="test_order_123",
         )
 
@@ -509,6 +509,6 @@ def test_cancel_order_payload_satisfies_bybit_spec():
         request_json = json.loads(request_data)
 
         # 필수 필드 존재
-        assert request_json["symbol"] == "BTCUSD"
+        assert request_json["symbol"] == "BTCUSDT"
         assert request_json["orderId"] == "test_order_123"
         assert request_json["category"] == "linear"  # Default (V5 Linear USDT)

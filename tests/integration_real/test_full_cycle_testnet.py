@@ -60,6 +60,8 @@ class MockRestClient:
         # Calculate contracts from BTC qty (contract_size = 0.001 BTC)
         contracts = round(qty_btc * 1000) if qty_btc else None
         order = {
+            "retCode": 0,
+            "retMsg": "OK",
             "result": {
                 "orderId": order_id,
                 "orderLinkId": order_link_id,

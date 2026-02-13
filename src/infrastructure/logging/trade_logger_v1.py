@@ -60,6 +60,15 @@ class TradeLogV1:
     orderbook_snapshot: Dict[str, Any]
     market_regime: str
 
+    # 거래 결과 필드
+    side: str  # "Buy" or "Sell" (exit side)
+    direction: str  # "LONG" or "SHORT"
+    qty_btc: float  # 수량 (BTC)
+    entry_price: float  # 진입 가격 (USD)
+    exit_price: float  # 청산 가격 (USD)
+    realized_pnl_usd: float  # 실현 손익 (USD)
+    fee_usd: float  # 수수료 (USD)
+
     # 무결성 필드
     schema_version: str
     config_hash: str

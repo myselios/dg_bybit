@@ -5,13 +5,14 @@ Fee spike detection and tightening logic (FLOW Section 6.2)
 Purpose:
 - Fee spike 감지 (actual / estimated > 1.5)
 - Tightening 규칙 (24시간 지속, EV gate K × 1.5)
-- Inverse Fee 계산 (contracts = USD notional)
+- Linear USDT Fee 계산 (fee = qty × price × fee_rate, 단위: USDT)
 
 SSOT:
 - FLOW.md Section 6.2: Fee Post-Trade Verification
+- ADR-0002: Inverse → Linear USDT 마이그레이션 완료
 
 Exports:
-- estimate_fee_usd(): Fee 예상 (USD 기준)
+- estimate_fee_usdt(): Fee 예상 (USDT 기준)
 - verify_fee_post_trade(): Fee spike 감지 + tightening
 - apply_fee_spike_tightening(): EV gate 배수 조정
 """
@@ -30,36 +31,34 @@ class FeeVerificationResult:
     tighten_until_ts: float | None = None
 
 
-def estimate_fee_usd(contracts: int, fee_rate: float) -> float:
+def estimate_fee_usdt(qty: float, price: float, fee_rate: float) -> float:
     """
-    Fee 예상 (Bybit Inverse, USD 기준)
+    Fee 예상 (Bybit Linear USDT 기준)
 
-    FLOW Section 6.2:
-        Inverse: contracts = USD notional
-        fee_usd = contracts × fee_rate
+    Linear USDT:
+        fee_usdt = qty × price × fee_rate
 
     Args:
-        contracts: 계약 수량 (Inverse: 1 contract = 1 USD notional)
-        fee_rate: 수수료율 (예: 0.0001 = 0.01%)
+        qty: 수량 (BTC, 예: 0.001)
+        price: 체결가 (USDT/BTC)
+        fee_rate: 수수료율 (예: 0.00055 = 0.055% taker)
 
     Returns:
-        estimated_fee_usd: 예상 수수료 (USD)
+        estimated_fee_usdt: 예상 수수료 (USDT)
     """
-    return contracts * fee_rate
+    return qty * price * fee_rate
 
 
 def verify_fee_post_trade(
-    estimated_fee_usd: float,
-    actual_fee_btc: float,
-    exec_price: float,
+    estimated_fee_usdt: float,
+    actual_fee_usdt: float,
     estimated_fee_rate: float,
 ) -> FeeVerificationResult:
     """
     Fee spike 감지 (FLOW Section 6.2)
 
-    FLOW Section 6.2:
-        actual_fee_usd = actual_fee_btc × exec_price
-        fee_ratio = actual_fee_usd / estimated_fee_usd
+    Linear USDT:
+        fee_ratio = actual_fee_usdt / estimated_fee_usdt
         if fee_ratio > 1.5 → spike_detected = True
 
     Tightening:
@@ -68,20 +67,16 @@ def verify_fee_post_trade(
         - EV gate K × 1.5
 
     Args:
-        estimated_fee_usd: 예상 수수료 (USD)
-        actual_fee_btc: 실제 수수료 (BTC)
-        exec_price: 체결가 (USD/BTC)
+        estimated_fee_usdt: 예상 수수료 (USDT)
+        actual_fee_usdt: 실제 수수료 (USDT, Bybit Linear에서 직접 USDT로 지급)
         estimated_fee_rate: 예상 수수료율 (디버깅용)
 
     Returns:
         FeeVerificationResult(spike_detected, fee_ratio, tightening_required, tighten_until_ts)
     """
-    # Actual fee 계산 (BTC → USD)
-    actual_fee_usd = actual_fee_btc * exec_price
-
-    # Fee ratio 계산
-    if estimated_fee_usd > 0:
-        fee_ratio = actual_fee_usd / estimated_fee_usd
+    # Fee ratio 계산 (둘 다 USDT 단위이므로 직접 비교)
+    if estimated_fee_usdt > 0:
+        fee_ratio = actual_fee_usdt / estimated_fee_usdt
     else:
         fee_ratio = 0.0
 

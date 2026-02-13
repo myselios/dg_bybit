@@ -3,7 +3,7 @@ tests/unit/test_liquidation_gate.py
 Unit tests for liquidation distance gate (FLOW Section 7.5)
 
 Purpose:
-- Liquidation distance 계산 (Bybit Inverse, 보수적 근사)
+- Liquidation distance 계산 (Bybit Linear USDT, 보수적 근사)
 - 동적 기준 검증 (stop_distance × multiplier + min_absolute)
 - REJECT 이유코드 반환 검증
 - Fallback 규칙 (API 실패 시)
@@ -38,7 +38,7 @@ class LiquidationParams:
     contracts: int
     leverage: float
     direction: str  # "LONG" or "SHORT"
-    equity_btc: float
+    equity_usdt: float
     stop_distance_pct: float
     stage_id: int
 
@@ -62,7 +62,7 @@ def test_calculate_liquidation_distance_long():
         contracts=1000,  # contracts는 근사에 영향 없음 (simplified)
         leverage=3.0,
         direction="LONG",
-        equity_btc=0.01,  # equity_btc도 근사에 영향 없음 (simplified)
+        equity_usdt=0.01,  # equity_usdt도 근사에 영향 없음 (simplified)
     )
 
     # LONG, leverage 3x → liq_distance ≈ 25%
@@ -89,7 +89,7 @@ def test_calculate_liquidation_distance_short():
         contracts=1000,
         leverage=3.0,
         direction="SHORT",
-        equity_btc=0.01,
+        equity_usdt=0.01,
     )
 
     # SHORT, leverage 3x → liq_distance ≈ 50%
@@ -109,7 +109,7 @@ def test_gate_rejects_too_close():
         contracts=1000,
         leverage=5.0,  # 높은 leverage (liq_distance 감소)
         direction="LONG",
-        equity_btc=0.01,
+        equity_usdt=0.01,
         stop_distance_pct=0.02,  # 2%
         stage_id=1,
     )
@@ -162,7 +162,7 @@ def test_gate_passes_sufficient_distance():
         contracts=1000,
         leverage=3.0,
         direction="LONG",
-        equity_btc=0.01,
+        equity_usdt=0.01,
         stop_distance_pct=0.02,  # 2%
         stage_id=1,
     )
@@ -191,7 +191,7 @@ def test_dynamic_criteria_stage1():
         contracts=1000,
         leverage=3.0,
         direction="LONG",
-        equity_btc=0.01,
+        equity_usdt=0.01,
         stop_distance_pct=0.03,  # 3%
         stage_id=1,
     )
@@ -229,7 +229,7 @@ def test_dynamic_criteria_stage3():
         contracts=1000,
         leverage=2.0,  # Stage 3는 2x leverage
         direction="LONG",
-        equity_btc=0.01,
+        equity_usdt=0.01,
         stop_distance_pct=0.05,  # 5%
         stage_id=3,
     )
@@ -255,7 +255,7 @@ def test_fallback_api_failure_high_leverage():
         contracts=1000,
         leverage=4.0,  # leverage > 3
         direction="LONG",
-        equity_btc=0.01,
+        equity_usdt=0.01,
         stop_distance_pct=0.02,
         stage_id=1,
     )
@@ -280,7 +280,7 @@ def test_fallback_api_failure_large_stop():
         contracts=1000,
         leverage=3.0,  # leverage <= 3 (PASS)
         direction="LONG",
-        equity_btc=0.01,
+        equity_usdt=0.01,
         stop_distance_pct=0.06,  # 6% > 5%
         stage_id=1,
     )

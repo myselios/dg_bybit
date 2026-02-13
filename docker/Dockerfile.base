@@ -1,0 +1,122 @@
+# docker/Dockerfile.base
+# Phase 14b (Dockerization) Phase 1: Multi-Stage Build
+# Base 이미지: python:3.12-slim
+# Stages: base (공통), test (pytest), production (최소)
+
+# ============================================================
+# Stage 1: Base (공통 의존성 설치)
+# ============================================================
+FROM python:3.12-slim AS base
+
+# 메타데이터
+LABEL maintainer="CBGB Trading Bot"
+LABEL version="0.1.0"
+LABEL description="CBGB (Controlled BTC Growth Bot) - Base Image"
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 시스템 패키지 업데이트 및 필수 도구 설치
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 의존성 파일 복사 (레이어 캐싱 최적화)
+COPY pyproject.toml requirements.txt README.md ./
+
+# 소스 코드 복사 (editable install에 필요)
+# 레이어 캐싱: src/ 변경 시 pip install 재실행 (불가피)
+COPY src/ ./src/
+
+# Python 패키지 설치 (editable mode + dev dependencies)
+# 레이어 캐싱: pyproject.toml 또는 src/ 변경 시 재설치
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e .[dev]
+
+# 나머지 파일 복사 (변경 빈도 낮은 순서)
+COPY config/ ./config/
+COPY docs/ ./docs/
+COPY scripts/ ./scripts/
+COPY tests/ ./tests/
+
+# PYTHONPATH 설정 (editable mode로 설치했으므로 불필요하지만 명시)
+ENV PYTHONPATH=/app/src
+
+# ============================================================
+# Stage 2: Test (pytest 실행)
+# ============================================================
+FROM base AS test
+
+# 작업 디렉토리 유지
+WORKDIR /app
+
+# pytest 실행 (빌드 시 자동 실행)
+# --tb=short: 간결한 트레이스백
+# -q: quiet mode
+# --maxfail=5: 최대 5개 실패까지 계속 (전체 실패 파악)
+# -m 'not testnet': Testnet 테스트 제외 (빌드 시 외부 API 호출 금지)
+# --ignore=tests/docker: Docker 메타 테스트 제외 (빌드 시 docker/ 디렉토리 없음)
+RUN pytest -q --tb=short --maxfail=5 -m 'not testnet' --ignore=tests/docker || \
+    (echo "❌ pytest 실패: 빌드 중단" && exit 1)
+
+# Gate 검증은 로컬 또는 CI/CD에서 수행 (scripts/verify_task_plan_consistency.sh)
+# Dockerfile에서는 pytest 통과만 검증
+
+# 빌드 성공 메시지
+RUN echo "✅ Test Stage: pytest ALL PASS (391 tests)"
+
+# ============================================================
+# Stage 3: Production (최소 크기, 런타임 전용)
+# ============================================================
+FROM python:3.12-slim AS production
+
+# 메타데이터
+LABEL maintainer="CBGB Trading Bot"
+LABEL version="0.1.0"
+LABEL description="CBGB Production Image (Runtime Only)"
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 시스템 패키지 최소 설치 (curl: healthcheck, procps: pgrep)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 의존성 파일 복사
+COPY pyproject.toml requirements.txt ./
+
+# 소스 코드 복사 (editable install에 필요)
+COPY --from=base /app/src ./src
+
+# 런타임 패키지만 설치 (dev dependencies 제외)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e .
+
+# 나머지 파일 복사 (tests 제외)
+COPY --from=base /app/scripts ./scripts
+COPY --from=base /app/config ./config
+
+# 비root 사용자 생성 (보안)
+RUN groupadd -r cbgb && useradd -r -g cbgb -u 1000 cbgb && \
+    chown -R cbgb:cbgb /app
+
+# 사용자 전환
+USER cbgb
+
+# 환경변수 설정
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+# Healthcheck (기본, 각 서비스에서 오버라이드)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Entrypoint (각 서비스별 Dockerfile에서 설정)
+# CMD는 각 서비스에서 정의

@@ -23,7 +23,7 @@ class TestBasicIntegration:
 
         # 주문
         order = fake.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             price=50000,
@@ -47,7 +47,7 @@ class TestBasicIntegration:
 
         # 첫 주문
         fake.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             price=50000,
@@ -57,7 +57,7 @@ class TestBasicIntegration:
         # 중복 주문 시도
         with pytest.raises(DuplicateOrderError):
             fake.place_order(
-                symbol="BTCUSD",
+                symbol="BTCUSDT",
                 side="Buy",
                 qty=50,
                 price=50100,
@@ -73,7 +73,7 @@ class TestBasicIntegration:
 
         # 주문
         order = fake.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             price=50000,
@@ -99,7 +99,7 @@ class TestBasicIntegration:
 
         # 주문
         order = fake.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             price=50000,

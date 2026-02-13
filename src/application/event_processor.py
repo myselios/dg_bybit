@@ -138,21 +138,21 @@ def create_position_from_fill(
 
     if hasattr(event, 'filled_qty'):
         # ExecutionEvent dataclass
-        qty = event.filled_qty
+        # Note: filled_qty는 개별 execution qty (partial fill 가능)
+        # pending_order["qty"]가 있으면 전체 주문 qty 사용 (partial fill 대응)
+        qty = pending_order["qty"] if pending_order and "qty" in pending_order else event.filled_qty
         entry_price = event.exec_price
     else:
         # dict (backward compatibility)
-        # Phase 12a-5e: Linear (BTCUSDT)는 BTC 단위 → contracts 변환 필요
-        # Inverse (BTCUSD)는 이미 contracts 단위 → 그대로 사용
-        symbol = event.get("symbol", "")
-        exec_qty_value = float(event.get("execQty", 0.0))
-
-        if "USDT" in symbol:
-            # Linear: BTC to contracts (0.001 BTC per contract)
-            qty = int(exec_qty_value * 1000)
+        # pending_order["qty"]가 있으면 전체 주문 qty 사용
+        if pending_order and "qty" in pending_order:
+            qty = pending_order["qty"]
         else:
-            # Inverse: Already in contracts
-            qty = int(exec_qty_value)
+            # Linear USDT: execQty는 BTC 수량 → contracts 변환
+            # Bybit BTCUSDT: 1 contract = 0.001 BTC
+            exec_qty_value = float(event.get("execQty", 0.0))
+            contract_size = 0.001
+            qty = int(round(exec_qty_value / contract_size))
 
         entry_price = float(event["execPrice"])
 
@@ -165,8 +165,11 @@ def create_position_from_fill(
     # Direction 계산
     direction = Direction.LONG if side == "Buy" else Direction.SHORT
 
-    # Stop price 계산 (3% stop distance)
-    stop_distance_pct = 0.03
+    # Stop price 계산 (ATR 기반 동적 SL, fallback 1%)
+    # pending_order에 stop_distance가 있으면 사용, 없으면 1% fallback
+    stop_distance_pct = 0.01  # Fallback 1%
+    if pending_order and "stop_distance_pct" in pending_order:
+        stop_distance_pct = pending_order["stop_distance_pct"]
     if direction == Direction.LONG:
         stop_price = entry_price * (1 - stop_distance_pct)
     else:  # SHORT

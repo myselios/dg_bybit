@@ -1,0 +1,31 @@
+# .streamlit/config.toml
+# Phase 14b (Dockerization) Phase 3: Streamlit 설정 (컨테이너 최적화)
+
+[server]
+# 포트 설정 (docker-compose.yml과 일치)
+port = 8501
+address = "0.0.0.0"
+
+# Headless 모드 (브라우저 자동 열기 비활성화)
+headless = true
+
+# 파일 감시 비활성화 (컨테이너 환경에서는 성능 저하 원인)
+runOnSave = false
+
+# CORS 설정 (Docker 네트워크 허용)
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# 브라우저 자동 열기 비활성화
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[theme]
+# 테마 설정 (Dashboard UI 최적화)
+primaryColor = "#4F46E5"  # Indigo (gradient와 일치)
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F6F7FB"  # Light gray (카드 배경)
+textColor = "#111827"  # Dark gray (가독성)
+font = "sans serif"

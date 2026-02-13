@@ -219,15 +219,26 @@ def test_initial_entry_signal_when_no_last_fill():
     assert signal_range_extreme is not None
     assert signal_range_extreme.side == "Sell"
 
-    # Case 4: Range + Funding 낮음 → None (진입 보류)
-    signal_range_low = generate_signal(
+    # Case 4: Range + Funding 낮음 + 약한 방향성 → MA 방향 진입
+    signal_range_mild = generate_signal(
         current_price=current_price,
         last_fill_price=last_fill_price,
         grid_spacing=grid_spacing,
-        ma_slope_pct=0.1,  # Range
+        ma_slope_pct=0.1,  # Range, 약한 양(+) 방향성 (>= 0.02%)
         funding_rate=0.0005,  # 0.05% (극단 아님)
     )
-    assert signal_range_low is None  # 진입 보류
+    assert signal_range_mild is not None  # 약한 방향성 진입
+    assert signal_range_mild.side == "Buy"  # MA slope 양(+) → Buy
+
+    # Case 5: Range + Funding 낮음 + dead flat → None (진입 보류)
+    signal_dead_flat = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=0.01,  # Dead flat (< 0.02%)
+        funding_rate=0.0005,  # 0.05% (극단 아님)
+    )
+    assert signal_dead_flat is None  # 완전 무방향 → 진입 보류
 
 
 # Test 10: 여러 grid level 떨어진 경우

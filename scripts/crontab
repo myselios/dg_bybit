@@ -1,0 +1,22 @@
+# /etc/cron.d/cbgb-analysis
+# Phase 14b (Dockerization) Phase 4: 주기적 거래 분석 Cron 스케줄
+#
+# 포맷: 분 시 일 월 요일 명령어
+# 예: 0 0 * * * /path/to/command (매일 자정)
+#
+# 주의: cron은 절대 경로 필요, 환경변수 설정 필요
+
+# 환경변수 설정
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+SHELL=/bin/bash
+
+# 매일 오전 1시: 거래 분석 (전일 데이터)
+0 1 * * * cd /app && python scripts/analyze_trades.py >> /app/logs/analysis.log 2>&1
+
+# 매일 오전 2시: 세션 리스크 분석
+0 2 * * * cd /app && python scripts/analyze_session_risk.py >> /app/logs/analysis.log 2>&1
+
+# 매주 월요일 오전 3시: 수동 거래 분석 (주간 리포트)
+0 3 * * 1 cd /app && python scripts/analyze_manual_trades.py >> /app/logs/analysis.log 2>&1
+
+# 빈 줄 필수 (cron 요구사항)

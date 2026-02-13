@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/run_mainnet_dry_run.py
+scripts/run_mainnet.py
 Phase 12b: Mainnet Dry-Run Script (⚠️ 실거래 환경)
 
 목표:
@@ -14,7 +14,7 @@ Phase 12b: Mainnet Dry-Run Script (⚠️ 실거래 환경)
 - 초기 제한: 30 trades, Daily -5%, Per-trade $3
 
 실행:
-    python scripts/run_mainnet_dry_run.py --target-trades 30
+    python scripts/run_mainnet.py --target-trades 30
 
 ⚠️ 안전 장치:
 - 초기 잔고 >= $100 검증
@@ -48,15 +48,17 @@ env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
 # Setup logging (Mainnet 전용 디렉토리)
-Path("logs/mainnet_dry_run").mkdir(parents=True, exist_ok=True)
+Path("logs/mainnet").mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/mainnet_dry_run/mainnet_dry_run.log'),
+        logging.FileHandler('logs/mainnet/mainnet.log'),
         logging.StreamHandler()
     ]
 )
+# signal_generator만 DEBUG (no_signal 디버깅용)
+logging.getLogger("application.signal_generator").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -234,7 +236,7 @@ def confirm_mainnet_execution() -> bool:
     return response.strip() == "MAINNET"
 
 
-def run_mainnet_dry_run(
+def run_mainnet(
     target_trades: int = 30,
     max_duration_hours: int = 24,
 ):
@@ -251,93 +253,145 @@ def run_mainnet_dry_run(
     logger.info(f"Target trades: {target_trades}")
     logger.info(f"Max duration: {max_duration_hours} hours")
 
-    # Bybit clients 초기화 (Mainnet)
-    api_key = os.getenv("BYBIT_API_KEY", "")
-    api_secret = os.getenv("BYBIT_API_SECRET", "")
-    mainnet_rest_url = "https://api.bybit.com"
-    mainnet_ws_url = "wss://stream.bybit.com/v5/private"
-
-    rest_client = BybitRestClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=mainnet_rest_url
-    )
-
-    ws_client = BybitWsClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        wss_url=mainnet_ws_url
-    )
-
-    log_storage = LogStorage(log_dir=Path("logs/mainnet_dry_run"))
-
-    # BybitAdapter 초기화 (Mainnet mode)
-    bybit_adapter = BybitAdapter(
-        rest_client=rest_client,
-        ws_client=ws_client,
-        testnet=False  # Mainnet
-    )
-
-    # Market data 초기 로드 (equity, mark price 조회)
-    logger.info("📊 Loading initial market data...")
-    bybit_adapter.update_market_data()
-
-    # Phase 13b: 이전 체결 가격 무시 (Clean start)
-    bybit_adapter._last_fill_price = None
-
-    initial_equity = bybit_adapter.get_equity_usdt()
-    logger.info(f"✅ Equity: ${initial_equity:.2f} USDT")
-
-    # 초기 잔고 검증 (최소 $100)
-    if initial_equity < 100.0:
-        logger.error(f"❌ FAIL: Insufficient equity (${initial_equity:.2f} < $100.00)")
-        logger.error("   Minimum $100 required for Mainnet Dry-Run")
-        return
-
-    # WebSocket 시작 (execution events 수신)
-    logger.info("🔌 Starting WebSocket connection...")
-    ws_client.start()
-    time.sleep(3)  # Wait for connection/auth/subscribe
-    if ws_client.is_connected():
-        logger.info("✅ WebSocket connected and subscribed to execution.linear")
-    else:
-        logger.warning("⚠️ WebSocket connection in progress...")
-
-    # Monitor 초기화
-    monitor = MainnetMonitor(initial_equity=initial_equity)
-
-    # Telegram notifier 초기화
+    # Telegram notifier 초기화 (전역 에러 처리용)
     telegram = TelegramNotifier()
-    if telegram.enabled:
-        logger.info("✅ Telegram notifier enabled")
-        # Phase 12b Fix: Skip startup message (blocking issue)
-        # telegram.send_halt(
-        #     reason=f"Mainnet Dry-Run Started (Phase 12b) | Initial: ${initial_equity:.2f} | Target: {target_trades} trades",
-        #     equity=initial_equity
-        # )
-    else:
-        logger.info("ℹ️ Telegram notifier disabled")
 
-    # Orchestrator 초기화
-    logger.info("🔍 About to initialize Orchestrator...")
-    orchestrator = Orchestrator(
-        market_data=bybit_adapter,
-        rest_client=rest_client,
-        log_storage=log_storage,
-    )
-    logger.info("✅ Orchestrator initialized successfully")
+    try:
+        # Bybit clients 초기화 (Mainnet)
+        api_key = os.getenv("BYBIT_API_KEY", "")
+        api_secret = os.getenv("BYBIT_API_SECRET", "")
+        mainnet_rest_url = "https://api.bybit.com"
+        mainnet_ws_url = "wss://stream.bybit.com/v5/private"
+
+        rest_client = BybitRestClient(
+            api_key=api_key,
+            api_secret=api_secret,
+            base_url=mainnet_rest_url
+        )
+
+        ws_client = BybitWsClient(
+            api_key=api_key,
+            api_secret=api_secret,
+            wss_url=mainnet_ws_url
+        )
+
+        log_storage = LogStorage(log_dir=Path("logs/mainnet"))
+
+        # BybitAdapter 초기화 (Mainnet mode)
+        bybit_adapter = BybitAdapter(
+            rest_client=rest_client,
+            ws_client=ws_client,
+            testnet=False  # Mainnet
+        )
+
+        # Market data 초기 로드 (equity, mark price 조회)
+        logger.info("📊 Loading initial market data...")
+        bybit_adapter.update_market_data()
+
+        # Phase 13b: 이전 체결 가격 무시 (Clean start)
+        bybit_adapter._last_fill_price = None
+
+        initial_equity = bybit_adapter.get_equity_usdt()
+        logger.info(f"✅ Equity: ${initial_equity:.2f} USDT")
+
+        # 초기 잔고 검증 (최소 $100)
+        if initial_equity < 100.0:
+            logger.error(f"❌ FAIL: Insufficient equity (${initial_equity:.2f} < $100.00)")
+            logger.error("   Minimum $100 required for Mainnet Dry-Run")
+            return
+
+        # Leverage 설정 (Stage 1: 3x, Isolated Margin)
+        try:
+            leverage_result = rest_client.set_margin_mode(
+                symbol="BTCUSDT",
+                buy_leverage="3",
+                sell_leverage="3",
+                category="linear",
+                trade_mode=0,  # Isolated Margin
+            )
+            logger.info(f"✅ Leverage set to 3x (Isolated Margin): retCode={leverage_result.get('retCode')}")
+        except Exception as e:
+            logger.warning(f"⚠️ Leverage setting failed (may already be set): {e}")
+
+        # WebSocket 시작 (execution events 수신)
+        logger.info("🔌 Starting WebSocket connection...")
+        ws_client.start()
+        time.sleep(3)  # Wait for connection/auth/subscribe
+        if ws_client.is_connected():
+            logger.info("✅ WebSocket connected and subscribed to execution.linear")
+        else:
+            logger.warning("⚠️ WebSocket connection in progress...")
+
+        # Monitor 초기화
+        monitor = MainnetMonitor(initial_equity=initial_equity)
+
+        # Telegram notifier 활성화 확인 + 시작 알림
+        if telegram.enabled:
+            logger.info("✅ Telegram notifier enabled")
+            telegram.send_summary(trades=0, wins=0, losses=0, pnl=0.0)
+            logger.info("📱 Telegram startup notification sent")
+        else:
+            logger.info("ℹ️ Telegram notifier disabled")
+
+        # Git commit hash + Config hash 계산
+        import subprocess
+        import hashlib
+        git_commit = os.getenv("GIT_COMMIT", "").strip()
+        if not git_commit or git_commit == "unknown":
+            try:
+                git_commit = subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=Path(__file__).parent.parent,
+                    stderr=subprocess.DEVNULL,
+                ).decode().strip()[:12]
+            except Exception:
+                git_commit = "unknown"
+
+        config_path = Path(__file__).parent.parent / "config" / "safety_limits.yaml"
+        if config_path.exists():
+            config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()[:12]
+        else:
+            config_hash = "unknown"
+
+        logger.info(f"📋 git_commit={git_commit}, config_hash={config_hash}")
+
+        # Orchestrator 초기화
+        logger.info("🔍 About to initialize Orchestrator...")
+        orchestrator = Orchestrator(
+            market_data=bybit_adapter,
+            rest_client=rest_client,
+            log_storage=log_storage,
+            config_hash=config_hash,
+            git_commit=git_commit,
+        )
+        logger.info("✅ Orchestrator initialized successfully")
+
+    except Exception as e:
+        logger.error(f"❌ Initialization failed: {type(e).__name__}: {e}")
+        traceback.print_exc()
+
+        # Telegram 에러 알림
+        telegram.send_error(
+            error_type="InitializationError",
+            error_message=f"{type(e).__name__}: {str(e)}",
+            context="Bot initialization"
+        )
+        return
 
     # Main loop
     previous_state = State.FLAT
 
     start_time = time.time()
 
-    tick_interval = 1.0  # 1초마다 tick
+    tick_interval = 1.0  # 1초마다 tick (WS 이벤트 처리용)
+    market_data_refresh_interval = 30.0  # 30초마다 시장 데이터 갱신
+    last_market_refresh = 0.0  # 즉시 첫 갱신 트리거
 
     # 초기 상태 로깅
     logger.info(f"📊 Initial state: {orchestrator.state}")
     logger.info(f"📊 Initial position: {orchestrator.position}")
     logger.info(f"🔄 Starting main loop (target_trades={target_trades}, max_duration={max_duration_hours}h)")
+    logger.info(f"📊 Market data refresh interval: {market_data_refresh_interval}s")
 
     try:
         tick_count = 0
@@ -354,6 +408,20 @@ def run_mainnet_dry_run(
             if (time.time() - start_time) > (max_duration_hours * 3600):
                 logger.info(f"⏱️ Max duration reached: {max_duration_hours} hours")
                 break
+
+            # Market data 갱신 (30초 간격)
+            now = time.time()
+            if now - last_market_refresh >= market_data_refresh_interval:
+                try:
+                    bybit_adapter.update_market_data()
+                    last_market_refresh = now
+                    if tick_count <= 5 or tick_count % 60 == 0:
+                        logger.info(f"  📊 Market data refreshed: mark_price=${bybit_adapter.get_mark_price():,.2f}, "
+                                    f"ma_slope={bybit_adapter.get_ma_slope_pct():.4f}%, "
+                                    f"funding={bybit_adapter.get_funding_rate():.6f}, "
+                                    f"atr={bybit_adapter.get_atr()}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Market data refresh failed: {e}")
 
             # Tick 실행
             try:
@@ -374,13 +442,23 @@ def run_mainnet_dry_run(
                         # Regime-aware entry debug: 실제 ma_slope_pct, funding_rate 값 표시
                         ma_slope = bybit_adapter.get_ma_slope_pct()
                         funding = bybit_adapter.get_funding_rate()
-                        logger.info(f"  → Entry blocked: no_signal (ma_slope={ma_slope:.4f}%, funding={funding:.6f})")
+                        lfp = bybit_adapter.get_last_fill_price()
+                        gs = orchestrator.grid_spacing if hasattr(orchestrator, 'grid_spacing') else None
+                        logger.info(f"  → Entry blocked: no_signal (ma_slope={ma_slope:.4f}%, funding={funding:.6f}, last_fill={lfp}, grid_spacing={gs})")
                     else:
                         logger.info(f"  → Entry blocked: {result.entry_block_reason}")
 
             except Exception as e:
                 logger.error(f"❌ Tick error: {type(e).__name__}: {e}")
                 traceback.print_exc()
+
+                # Telegram 에러 알림
+                telegram.send_error(
+                    error_type="TickError",
+                    error_message=f"{type(e).__name__}: {str(e)}",
+                    context=f"Tick {tick_count}"
+                )
+
                 break
 
             # HALT 감지
@@ -505,6 +583,17 @@ def run_mainnet_dry_run(
     except KeyboardInterrupt:
         logger.info("🛑 Mainnet Dry-Run interrupted by user")
 
+    except Exception as e:
+        logger.error(f"❌ Fatal error in main loop: {type(e).__name__}: {e}")
+        traceback.print_exc()
+
+        # Telegram 에러 알림
+        telegram.send_error(
+            error_type="FatalError",
+            error_message=f"{type(e).__name__}: {str(e)}",
+            context="Main loop"
+        )
+
     finally:
         # WebSocket 정리
         ws_client.stop()
@@ -536,7 +625,7 @@ def verify_trade_logs(log_storage: LogStorage, expected_count: int):
     else:
         logger.warning(f"⚠️ Trade log mismatch: {actual_count}/{expected_count}")
 
-    logger.info(f"📂 Trade logs saved: logs/mainnet_dry_run/")
+    logger.info(f"📂 Trade logs saved: logs/mainnet/")
 
 
 def main():
@@ -572,7 +661,7 @@ def main():
             sys.exit(0)
 
     # Mainnet Dry-Run 실행
-    run_mainnet_dry_run(
+    run_mainnet(
         target_trades=min(args.target_trades, 50),  # Max 50 trades
         max_duration_hours=args.max_hours,
     )

@@ -50,7 +50,7 @@ def test_orchestrator_tick_order_emergency_first():
         ["emergency", "events", "position", "entry"]
     """
     # Setup
-    market_data = FakeMarketData(current_price=50000.0, equity_btc=0.002)
+    market_data = FakeMarketData(current_price=50000.0, equity_usdt=100.0)
     orchestrator = Orchestrator(market_data=market_data)
 
     # When
@@ -85,7 +85,7 @@ def test_orchestrator_full_cycle_flat_to_in_position_to_flat():
         state=FLAT 유지 (full cycle 미구현)
     """
     # Setup
-    market_data = FakeMarketData(current_price=50000.0, equity_btc=0.002)
+    market_data = FakeMarketData(current_price=50000.0, equity_usdt=100.0)
     orchestrator = Orchestrator(market_data=market_data)
 
     # Tick 실행
@@ -115,7 +115,7 @@ def test_orchestrator_halt_on_emergency():
         - HALT 전환
 
     Example:
-        equity_btc=0 (balance_too_low)
+        equity_usdt=0 (balance_too_low)
         → Emergency check → HALT
 
     Expected:
@@ -123,7 +123,7 @@ def test_orchestrator_halt_on_emergency():
         halt_reason="balance_too_low"
     """
     # Setup: balance_too_low
-    market_data = FakeMarketData(current_price=50000.0, equity_btc=0.0)
+    market_data = FakeMarketData(current_price=50000.0, equity_usdt=0.0)
     orchestrator = Orchestrator(market_data=market_data)
 
     # When
@@ -153,7 +153,7 @@ def test_orchestrator_degraded_mode_blocks_entry():
         state=FLAT 유지
     """
     # Setup
-    market_data = FakeMarketData(current_price=50000.0, equity_btc=0.002)
+    market_data = FakeMarketData(current_price=50000.0, equity_usdt=100.0)
     orchestrator = Orchestrator(market_data=market_data)
 
     # WS degraded mode 진입
@@ -189,7 +189,7 @@ def test_orchestrator_degraded_timeout_triggers_halt():
         halt_reason="degraded_mode_timeout"
     """
     # Setup
-    market_data = FakeMarketData(current_price=50000.0, equity_btc=0.002)
+    market_data = FakeMarketData(current_price=50000.0, equity_usdt=100.0)
     orchestrator = Orchestrator(market_data=market_data)
 
     # WS degraded mode 진입 (61초 전)

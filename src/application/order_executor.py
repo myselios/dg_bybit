@@ -81,16 +81,16 @@ def place_entry_order(
     Entry 주문 실행 (FLOW Section 4.5 Entry 계약)
 
     FLOW Section 4.5:
-        - category="inverse"
+        - category="linear"
         - positionIdx=0 (One-way 모드)
         - orderType="Limit"
         - orderLinkId="{signal_id}_{side}"
 
     Args:
-        symbol: 심볼 (예: "BTCUSD")
+        symbol: 심볼 (예: "BTCUSDT")
         side: "Buy" or "Sell"
         qty: 수량 (contracts)
-        price: 가격 (USD)
+        price: 가격 (USDT)
         signal_id: Signal ID (idempotency key)
         direction: "LONG" or "SHORT"
 
@@ -154,7 +154,7 @@ def place_stop_loss(
         - orderLinkId="{signal_id}_stop_Buy"
 
     Args:
-        symbol: 심볼 (예: "BTCUSD")
+        symbol: 심볼 (예: "BTCUSDT")
         qty: 수량 (contracts)
         stop_price: Stop 가격 (triggerPrice)
         direction: "LONG" or "SHORT"

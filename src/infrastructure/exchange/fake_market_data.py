@@ -34,21 +34,18 @@ class FakeMarketData:
     def __init__(
         self,
         current_price: float = 42000.0,
-        equity_btc: float = 0.0025,
-        equity_usdt: Optional[float] = None,
+        equity_usdt: float = 105.0,
     ):
         """
         Initialize with safe defaults (no emergency triggers).
 
         Args:
             current_price: Mark price (USD, default 42000.0)
-            equity_btc: Equity (BTC, default 0.0025) — DEPRECATED, Linear USDT 전환 후 제거
-            equity_usdt: Equity (USDT, Linear) — 지정 시 이 값 사용, 미지정 시 equity_btc * current_price
+            equity_usdt: Equity (USDT, Linear, default 105.0)
 
         Defaults:
           - mark_price: 42000.0 (USD)
-          - equity_btc: 0.0025 (safe, > 0)
-          - equity_usdt: None (auto-calculated from equity_btc)
+          - equity_usdt: 105.0 (safe, > 0)
           - rest_latency_p95_1m: 0.15 (safe, < 5.0s)
           - ws_last_heartbeat_ts: current time (fresh)
           - ws_event_drop_count: 0 (no drops)
@@ -57,8 +54,7 @@ class FakeMarketData:
           - price_5m_ago: 42000.0 (no drop)
         """
         self._mark_price = current_price
-        self._equity_btc = equity_btc
-        self._equity_usdt = equity_usdt if equity_usdt is not None else (equity_btc * current_price)
+        self._equity_usdt = equity_usdt
         self._rest_latency_p95_1m = 0.15
         self._ws_last_heartbeat_ts = time.time()
         self._ws_event_drop_count = 0
@@ -98,15 +94,9 @@ class FakeMarketData:
         """현재 BTC Mark Price (USD)."""
         return self._mark_price
 
-    def get_equity_btc(self) -> float:
-        """계정 Equity (BTC) — DEPRECATED."""
-        return self._equity_btc
-
     def get_equity_usdt(self) -> float:
         """계정 Equity (USDT) — Linear USDT-Margined."""
-        # Linear USDT: equity_usdt = equity_btc * mark_price (근사)
-        # 하지만 Fake에서는 직접 값 저장 (테스트 제어 편의성)
-        return getattr(self, '_equity_usdt', self._equity_btc * self._mark_price)
+        return self._equity_usdt
 
     def get_rest_latency_p95_1m(self) -> float:
         """REST latency p95 (seconds)."""
@@ -164,7 +154,7 @@ class FakeMarketData:
 
         현재는 (A) equity = 0 주입.
         """
-        self._equity_btc = 0.0
+        self._equity_usdt = 0.0
 
     def inject_ws_event(self, heartbeat_ok: bool, event_drop_count: int):
         """
@@ -260,15 +250,19 @@ class FakeMarketData:
 
         Args:
             order_id: Order ID (Bybit 서버 생성)
-            filled_qty: 체결 수량
+            filled_qty: 체결 수량 (contracts, int)
             order_link_id: Order Link ID (클라이언트 ID, Optional)
             side: "Buy" or "Sell" (Optional)
             price: 체결 가격 (Optional)
         """
+        # contracts → BTC qty 변환 (Bybit Linear API 형식 시뮬레이션)
+        contract_size = 0.001  # BTCUSDT: 1 contract = 0.001 BTC
+        qty_btc = filled_qty * contract_size
         event = {
             "type": "FILL",
             "orderId": order_id,  # Bybit API 형식 (camelCase)
-            "execQty": str(filled_qty),  # Bybit API는 string
+            "execQty": str(qty_btc),  # Bybit API: BTC qty as string
+            "symbol": "BTCUSDT",
         }
         if order_link_id:
             event["orderLinkId"] = order_link_id
@@ -292,15 +286,19 @@ class FakeMarketData:
 
         Args:
             order_id: Order ID (Bybit 서버 생성)
-            filled_qty: 청산 수량
+            filled_qty: 청산 수량 (contracts, int)
             order_link_id: Order Link ID (클라이언트 ID, Optional)
             side: "Buy" or "Sell" (Optional)
             price: 체결 가격 (Optional)
         """
+        # contracts → BTC qty 변환 (Bybit Linear API 형식 시뮬레이션)
+        contract_size = 0.001
+        qty_btc = filled_qty * contract_size
         event = {
             "type": "EXIT",
             "orderId": order_id,
-            "execQty": str(filled_qty),
+            "execQty": str(qty_btc),
+            "symbol": "BTCUSDT",
         }
         if order_link_id:
             event["orderLinkId"] = order_link_id

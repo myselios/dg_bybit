@@ -189,11 +189,35 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
         testnet=True
     )
 
+    # Git commit hash + Config hash 계산
+    import subprocess
+    import hashlib
+    git_commit = os.getenv("GIT_COMMIT", "").strip()
+    if not git_commit or git_commit == "unknown":
+        try:
+            git_commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=Path(__file__).parent.parent,
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()[:12]
+        except Exception:
+            git_commit = "unknown"
+
+    config_path = Path(__file__).parent.parent / "config" / "safety_limits.yaml"
+    if config_path.exists():
+        config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()[:12]
+    else:
+        config_hash = "unknown"
+
+    logger.info(f"📋 git_commit={git_commit}, config_hash={config_hash}")
+
     # Orchestrator 초기화 (BybitAdapter 사용)
     orchestrator = Orchestrator(
         market_data=bybit_adapter,
         rest_client=rest_client,
         log_storage=log_storage,
+        config_hash=config_hash,
+        git_commit=git_commit,
     )
 
     # Market data 초기 로드 (equity, mark price 조회)
@@ -235,6 +259,7 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
 
     try:
         logger.info("🔄 Starting main loop...")
+        tick_count = 0
         while monitor.total_trades < target_trades:
             # 시간 제한 체크
             if time.time() - start_time > max_duration_seconds:
@@ -242,7 +267,8 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
                 break
 
             # Tick 실행
-            logger.info(f">>> Executing Tick #{monitor.total_trades+1}")
+            tick_count += 1
+            logger.info(f">>> Executing Tick #{tick_count}")
             try:
                 logger.info(">>> Calling orchestrator.run_tick()...")
                 result = orchestrator.run_tick()

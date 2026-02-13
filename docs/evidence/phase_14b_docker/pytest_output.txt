@@ -1,0 +1,30 @@
+$ pytest tests/docker/ -v
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0
+
+tests/docker/test_analysis_container.py::test_analysis_container_starts PASSED
+tests/docker/test_analysis_container.py::test_cron_jobs_scheduled PASSED
+tests/docker/test_analysis_container.py::test_analysis_script_execution PASSED
+tests/docker/test_analysis_container.py::test_report_generation PASSED
+tests/docker/test_analysis_container.py::test_analysis_logs_separate PASSED
+tests/docker/test_bot_container.py::test_bot_container_starts PASSED
+tests/docker/test_bot_container.py::test_env_variables_loaded PASSED
+tests/docker/test_bot_container.py::test_log_volume_mounted PASSED
+tests/docker/test_bot_container.py::test_mainnet_safety_check PASSED
+tests/docker/test_bot_container.py::test_bot_graceful_shutdown PASSED
+tests/docker/test_dashboard_container.py::test_dashboard_container_starts PASSED
+tests/docker/test_dashboard_container.py::test_streamlit_port_accessible PASSED
+tests/docker/test_dashboard_container.py::test_dashboard_reads_bot_logs PASSED
+tests/docker/test_dashboard_container.py::test_dashboard_auto_refresh PASSED
+tests/docker/test_dashboard_container.py::test_dashboard_independent_restart PASSED
+tests/docker/test_dockerfile_build.py::test_base_image_build PASSED
+tests/docker/test_dockerfile_build.py::test_dependencies_installed PASSED
+tests/docker/test_dockerfile_build.py::test_test_stage_pytest PASSED
+tests/docker/test_dockerfile_build.py::test_production_stage_minimal PASSED
+tests/docker/test_dockerfile_build.py::test_entrypoint_executable PASSED
+
+============================== 20 passed in 4.88s ==============================
+
+$ pytest -q
+410 passed, 15 deselected, 1 warning in 13.02s

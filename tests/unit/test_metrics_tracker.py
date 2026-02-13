@@ -42,11 +42,11 @@ def test_calculate_winrate_rolling_window():
 
     Example:
         closed_trades = [
-            {"pnl_btc": 0.001},  # win
-            {"pnl_btc": -0.0005},  # loss
-            {"pnl_btc": 0.002},  # win
-            {"pnl_btc": 0.0001},  # win
-            {"pnl_btc": -0.001},  # loss
+            {"pnl": 0.001},  # win
+            {"pnl": -0.0005},  # loss
+            {"pnl": 0.002},  # win
+            {"pnl": 0.0001},  # win
+            {"pnl": -0.001},  # loss
         ]
         wins = 3, total = 5
         winrate = 3 / 5 = 0.6 (60%)
@@ -55,11 +55,11 @@ def test_calculate_winrate_rolling_window():
         winrate = 0.6
     """
     closed_trades = [
-        {"pnl_btc": 0.001},  # win
-        {"pnl_btc": -0.0005},  # loss
-        {"pnl_btc": 0.002},  # win
-        {"pnl_btc": 0.0001},  # win
-        {"pnl_btc": -0.001},  # loss
+        {"pnl": 0.001},  # win
+        {"pnl": -0.0005},  # loss
+        {"pnl": 0.002},  # win
+        {"pnl": 0.0001},  # win
+        {"pnl": -0.001},  # loss
     ]
 
     winrate = calculate_winrate(closed_trades, window_size=50)
@@ -73,24 +73,24 @@ def test_update_metrics_on_closed_trade_win():
     pnl > 0 → win_streak++, loss_streak=0 (FLOW Section 9)
 
     FLOW Section 9:
-        if pnl_btc > 0:
+        if pnl > 0:
             win_streak += 1
             loss_streak = 0
 
     Example:
-        pnl_btc = 0.001 (win)
+        pnl = 0.001 (win)
         win_streak = 1, loss_streak = 2
 
     Expected:
         new_win_streak = 2
         new_loss_streak = 0
     """
-    pnl_btc = 0.001  # win
+    pnl = 0.001  # win
     win_streak = 1
     loss_streak = 2
 
     new_win_streak, new_loss_streak = update_streak_on_closed_trade(
-        pnl_btc=pnl_btc,
+        pnl=pnl,
         win_streak=win_streak,
         loss_streak=loss_streak,
     )
@@ -110,19 +110,19 @@ def test_update_metrics_on_closed_trade_loss():
             win_streak = 0
 
     Example:
-        pnl_btc = -0.0005 (loss)
+        pnl = -0.0005 (loss)
         win_streak = 2, loss_streak = 0
 
     Expected:
         new_win_streak = 0
         new_loss_streak = 1
     """
-    pnl_btc = -0.0005  # loss
+    pnl = -0.0005  # loss
     win_streak = 2
     loss_streak = 0
 
     new_win_streak, new_loss_streak = update_streak_on_closed_trade(
-        pnl_btc=pnl_btc,
+        pnl=pnl,
         win_streak=win_streak,
         loss_streak=loss_streak,
     )

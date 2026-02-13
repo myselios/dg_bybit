@@ -11,12 +11,16 @@ DoD:
 - Regime-aware initial entry (MA slope + Funding)
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
 # ========== SSOT: 임계값 정의 (Phase 13c) ==========
 # 단위 명확화: ma_slope_pct는 % 단위 (예: -0.5 = -0.5%)
-T_TREND = 0.5  # MA slope >= 0.5% → Trend regime
+T_TREND = 0.5  # MA slope >= 0.5% → Trend regime (강한 방향성)
+T_RANGE_ENTRY = 0.02  # MA slope >= 0.02% → Range 진입 허용 (약한 방향성)
 F_EXTREME = 0.01  # abs(funding) >= 0.01 (1%) → 극단 과열
 # Conflict는 Range에서만 보류, Trend에서는 size 조절
 # =================================================
@@ -105,6 +109,8 @@ def generate_signal(
     Returns:
         Optional[Signal]: 신호 (없으면 None)
     """
+    logger.debug(f"generate_signal: price={current_price}, lfp={last_fill_price}, gs={grid_spacing:.2f}, ma={ma_slope_pct}, fr={funding_rate}")
+
     # 첫 진입: Regime-aware 방향 결정
     if last_fill_price is None:
         regime, direction = determine_regime(ma_slope_pct)
@@ -115,13 +121,19 @@ def generate_signal(
             return Signal(side=side, price=current_price, qty=qty)
 
         else:
-            # Range regime: Funding 극단값만 허용
-            if abs(funding_rate) < F_EXTREME:
-                return None  # 과열 아님, 진입 보류
+            # Range regime: 3단계 진입 판정
+            # 1) Extreme funding → 역추세 진입 (최우선)
+            if abs(funding_rate) >= F_EXTREME:
+                side = "Sell" if funding_rate > 0 else "Buy"
+                return Signal(side=side, price=current_price, qty=qty)
 
-            # Funding 극단 → 역추세 진입
-            side = "Sell" if funding_rate > 0 else "Buy"
-            return Signal(side=side, price=current_price, qty=qty)
+            # 2) 약한 방향성 → MA 방향 진입 (Grid 시작점 설정)
+            if abs(ma_slope_pct) >= T_RANGE_ENTRY:
+                side = "Buy" if ma_slope_pct > 0 else "Sell"
+                return Signal(side=side, price=current_price, qty=qty)
+
+            # 3) 완전 무방향 → 진입 보류
+            return None
 
     # Grid up: 가격 상승 → Sell 신호
     if current_price >= last_fill_price + grid_spacing:

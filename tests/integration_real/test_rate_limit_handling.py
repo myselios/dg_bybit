@@ -57,7 +57,7 @@ def test_rate_limit_headers_present(rest_client):
     # When: 주문 발주 (실패해도 OK, 헤더만 확인)
     try:
         response = rest_client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=1,
             order_link_id=order_link_id,
@@ -71,7 +71,7 @@ def test_rate_limit_headers_present(rest_client):
             order_id = result.get("orderId")
             if order_id:
                 time.sleep(1.0)
-                rest_client.cancel_order(symbol="BTCUSD", order_id=order_id)
+                rest_client.cancel_order(symbol="BTCUSDT", order_id=order_id)
 
     except Exception:
         # 주문 실패는 괜찮음 (헤더만 확인)
@@ -108,7 +108,7 @@ def test_rate_limit_error_retry_after_calculation(rest_client):
 
     try:
         response = rest_client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=1,
             order_link_id=order_link_id,
@@ -122,7 +122,7 @@ def test_rate_limit_error_retry_after_calculation(rest_client):
             order_id = result.get("orderId")
             if order_id:
                 time.sleep(1.0)
-                rest_client.cancel_order(symbol="BTCUSD", order_id=order_id)
+                rest_client.cancel_order(symbol="BTCUSDT", order_id=order_id)
 
     except Exception:
         pass
@@ -157,7 +157,7 @@ def test_rate_limit_info_updated_after_request(rest_client):
 
     try:
         rest_client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=1,
             order_link_id=order_link_id_1,
@@ -177,7 +177,7 @@ def test_rate_limit_info_updated_after_request(rest_client):
 
     try:
         rest_client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=1,
             order_link_id=order_link_id_2,

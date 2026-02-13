@@ -96,9 +96,9 @@ def log_trade_exit(
     side: str,
     qty: int,
     price: float,
-    pnl_btc: float,
+    pnl_usdt: float,
     pnl_usd: float,
-    fee_btc: float,
+    fee_usdt: float,
     fee_usd: float,
     estimated_fee_usd: float,
     policy_version: str = "unknown",
@@ -115,9 +115,9 @@ def log_trade_exit(
         side: "Sell" or "Buy"
         qty: 수량 (contracts)
         price: 청산 가격 (USD)
-        pnl_btc: PnL (BTC)
+        pnl_usdt: PnL (USDT)
         pnl_usd: PnL (USD)
-        fee_btc: Fee (BTC)
+        fee_usdt: Fee (USDT)
         fee_usd: Fee (USD, actual)
         estimated_fee_usd: Fee (USD, estimated)
         policy_version: 정책 버전
@@ -145,9 +145,9 @@ def log_trade_exit(
         "side": side,
         "qty": qty,
         "price": price,
-        "pnl_btc": pnl_btc,
+        "pnl_usdt": pnl_usdt,
         "pnl_usd": pnl_usd,
-        "fee_btc": fee_btc,
+        "fee_usdt": fee_usdt,
         "fee_usd": fee_usd,
         "fee_ratio": fee_ratio,
         "policy_version": policy_version,
@@ -189,7 +189,7 @@ def validate_trade_schema(log_entry: Dict[str, Any]) -> None:
         - side, qty, price
 
     Required fields (EXIT):
-        - side, qty, price, pnl_btc, pnl_usd, fee_btc, fee_usd
+        - side, qty, price, pnl_usdt, pnl_usd, fee_usdt, fee_usd
     """
     # (1) 기본 필수 필드
     required_fields = ["signal_id", "timestamp", "event_type"]
@@ -210,7 +210,7 @@ def validate_trade_schema(log_entry: Dict[str, Any]) -> None:
                 )
 
     elif event_type == "EXIT":
-        exit_required = ["side", "qty", "price", "pnl_btc", "pnl_usd", "fee_btc", "fee_usd"]
+        exit_required = ["side", "qty", "price", "pnl_usdt", "pnl_usd", "fee_usdt", "fee_usd"]
         for field in exit_required:
             if field not in log_entry:
                 raise TradeLogValidationError(

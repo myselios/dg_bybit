@@ -307,6 +307,43 @@ class TelegramNotifier:
 
         return self._send_message(text)
 
+    def send_error(
+        self,
+        error_type: str,
+        error_message: str,
+        context: str = "",
+    ) -> bool:
+        """
+        에러 알림 전송 (봇 실행 중 예외 발생 시)
+
+        Args:
+            error_type: 에러 타입 (예: "TickError", "InitializationError")
+            error_message: 에러 메시지
+            context: 추가 컨텍스트 (optional, 예: "Tick 125", "Entry flow")
+
+        Returns:
+            bool: 전송 성공 여부
+
+        Example:
+            🔥 *BOT ERROR*
+            Type: TickError
+            Context: Tick 125
+            Message: Connection timeout
+
+            ⚠️ 봇이 중단되었습니다. 로그를 확인하세요.
+        """
+        if not self.enabled:
+            return False
+
+        text = "🔥 *BOT ERROR*\n"
+        text += f"Type: {error_type}\n"
+        if context:
+            text += f"Context: {context}\n"
+        text += f"Message: {error_message}\n\n"
+        text += "⚠️ 봇이 중단되었습니다. 로그를 확인하세요."
+
+        return self._send_message(text)
+
     def _format_portfolio(
         self,
         wallet_balance: float,

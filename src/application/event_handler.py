@@ -121,7 +121,7 @@ def execute_intents(
             if position:
                 try:
                     place_stop_loss(
-                        symbol="BTCUSD",  # 실제로는 position.symbol 사용
+                        symbol="BTCUSDT",
                         qty=stop_intent.desired_qty,
                         stop_price=position.stop_price,
                         direction=position.direction.value,
@@ -167,7 +167,7 @@ def execute_intents(
                     cancel_order(order_id=position.stop_order_id)
                     # Place 새 Stop
                     place_stop_loss(
-                        symbol="BTCUSD",
+                        symbol="BTCUSDT",
                         qty=stop_intent.desired_qty,
                         stop_price=position.stop_price,
                         direction=position.direction.value,

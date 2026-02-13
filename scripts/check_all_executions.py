@@ -55,42 +55,11 @@ def check_all_executions():
     except Exception as e:
         print(f"   ❌ Error: {e}")
 
-    # Test 2: Inverse BTCUSD
-    print("\n2️⃣ Inverse BTCUSD:")
-    try:
-        response = rest_client.get_execution_list(
-            category="inverse",
-            symbol="BTCUSD",
-            limit=10
-        )
-        executions = response.get("result", {}).get("list", [])
-        print(f"   Found {len(executions)} executions")
-        if executions:
-            latest = executions[0]
-            print(f"   Latest: {latest.get('side')} {latest.get('execQty')} @ ${latest.get('execPrice')}")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-
-    # Test 3: Linear 전체 (symbol 필터 없음)
-    print("\n3️⃣ Linear All Symbols:")
+    # Test 2: Linear 전체 (symbol 필터 없음)
+    print("\n2️⃣ Linear All Symbols:")
     try:
         response = rest_client.get_execution_list(
             category="linear",
-            limit=10
-        )
-        executions = response.get("result", {}).get("list", [])
-        print(f"   Found {len(executions)} executions")
-        if executions:
-            for i, exec in enumerate(executions[:3], 1):
-                print(f"   {i}. {exec.get('symbol')} {exec.get('side')} {exec.get('execQty')} @ ${exec.get('execPrice')}")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-
-    # Test 4: Inverse 전체 (symbol 필터 없음)
-    print("\n4️⃣ Inverse All Symbols:")
-    try:
-        response = rest_client.get_execution_list(
-            category="inverse",
             limit=10
         )
         executions = response.get("result", {}).get("list", [])

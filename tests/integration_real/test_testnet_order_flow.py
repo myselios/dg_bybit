@@ -56,9 +56,9 @@ def test_place_order_success(rest_client):
     # Given: orderLinkId 생성 (UUID 기반)
     order_link_id = f"test_{uuid.uuid4().hex[:16]}"
 
-    # When: 소액 주문 발주 (BTCUSD, 1 contract, Market)
+    # When: 소액 주문 발주 (BTCUSDT, 1 contract, Market)
     response = rest_client.place_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
         qty=1,
         order_link_id=order_link_id,
@@ -83,7 +83,7 @@ def test_place_order_success(rest_client):
 
         # Cleanup: 주문 취소
         time.sleep(1.0)  # 주문 처리 대기
-        cancel_response = rest_client.cancel_order(symbol="BTCUSD", order_id=order_id)
+        cancel_response = rest_client.cancel_order(symbol="BTCUSDT", order_id=order_id)
         assert cancel_response.get("retCode") in [0, 110001], "Cancel should succeed or order already filled/cancelled"
 
 
@@ -102,7 +102,7 @@ def test_place_order_idempotency(rest_client):
 
     # When: 첫 번째 주문 발주
     response1 = rest_client.place_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
         qty=1,
         order_link_id=order_link_id,
@@ -122,7 +122,7 @@ def test_place_order_idempotency(rest_client):
 
         # When: 동일 orderLinkId로 2번째 주문 시도
         response2 = rest_client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=1,
             order_link_id=order_link_id,
@@ -137,7 +137,7 @@ def test_place_order_idempotency(rest_client):
 
         # Cleanup: 주문 취소
         time.sleep(1.0)
-        cancel_response = rest_client.cancel_order(symbol="BTCUSD", order_id=order_id1)
+        cancel_response = rest_client.cancel_order(symbol="BTCUSDT", order_id=order_id1)
         # 이미 체결/취소된 경우 110001 반환 가능
         assert cancel_response.get("retCode") in [0, 110001]
 
@@ -155,7 +155,7 @@ def test_cancel_order_success(rest_client):
     # Given: 주문 발주
     order_link_id = f"test_cancel_{uuid.uuid4().hex[:16]}"
     response = rest_client.place_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
         qty=1,
         order_link_id=order_link_id,
@@ -173,7 +173,7 @@ def test_cancel_order_success(rest_client):
         time.sleep(1.0)
 
         # When: 주문 취소
-        cancel_response = rest_client.cancel_order(symbol="BTCUSD", order_id=order_id)
+        cancel_response = rest_client.cancel_order(symbol="BTCUSDT", order_id=order_id)
 
         # Then: 취소 성공 (0) 또는 이미 체결/취소됨 (110001)
         cancel_ret_code = cancel_response.get("retCode")
@@ -195,7 +195,7 @@ def test_order_link_id_max_length(rest_client):
     # When/Then: ValueError 발생
     with pytest.raises(ValueError, match="orderLinkId must be <= 36 characters"):
         rest_client.place_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=1,
             order_link_id=long_order_link_id,
@@ -207,7 +207,7 @@ def test_order_link_id_max_length(rest_client):
 
     # When: 주문 발주
     response = rest_client.place_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
         qty=1,
         order_link_id=valid_order_link_id,
@@ -224,4 +224,4 @@ def test_order_link_id_max_length(rest_client):
         order_id = result.get("orderId")
         if order_id:
             time.sleep(1.0)
-            rest_client.cancel_order(symbol="BTCUSD", order_id=order_id)
+            rest_client.cancel_order(symbol="BTCUSDT", order_id=order_id)

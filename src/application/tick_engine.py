@@ -34,9 +34,8 @@ def tick(snapshot: Dict[str, Any]) -> TransitionIntents:
             "atr_pct_24h": float,
 
             # Account
-            "equity_btc": float,
-            "equity_usd": float,
-            "margin_used_btc": float,
+            "equity_usdt": float,
+            "margin_used_usdt": float,
 
             # Orders
             "pending_orders": List[PendingOrder],

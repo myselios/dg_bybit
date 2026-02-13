@@ -203,7 +203,7 @@ def track_rest_call():
 ┌─────────────────────────────────────────┐
 │ [1] Update Snapshot (항상)              │
 │   - Market: price, ATR, drops, latency  │
-│   - Account: equity_btc, margin, upnl   │
+│   - Account: equity_usdt, margin, upnl  │
 │   - Orders: status, fills, cancels      │
 └─────────────────────────────────────────┘
   │
@@ -925,20 +925,21 @@ else:
 ---
 
 
-## 3. Bybit Inverse Futures 특성 (계산 기준)
+## 3. Bybit Linear USDT Futures 특성 (계산 기준)
 
-### 3.1 BTC-Denominated + Position Mode Contract
+> **ADR-0013**: Inverse → Linear USDT 동기화 (2026-02-08)
+> **ADR-0002**: Inverse → Linear USDT 마이그레이션 결정 (2026-01-25)
 
-Bybit Inverse Futures는 **BTC로 작동**한다.
+### 3.1 USDT-Denominated + Position Mode Contract
 
-- Balance: BTC
-- Margin: BTC
-- Fee: BTC
-- PnL: BTC
+Bybit Linear USDT Futures는 **USDT로 작동**한다.
 
-**USD는 표시/목표 측정용으로만 사용.**
+- Balance: USDT
+- Margin: USDT
+- Fee: USDT
+- PnL: USDT
 
-모든 계산은 **BTC 기준**으로 하고, USD는 마지막에 환산.
+모든 계산은 **USDT 기준**으로 한다.
 
 #### Position Mode (강제 계약)
 
@@ -969,7 +970,7 @@ get_orders(..., positionIdx=0)
 ```python
 # 시스템 시작 시 경고용 (HALT 안 함)
 def check_position_mode():
-    mode = bybit_adapter.get_position_mode(category="inverse", symbol="BTCUSD")
+    mode = bybit_adapter.get_position_mode(category="linear", symbol="BTCUSDT")
 
     if mode != "MergedSingle":
         log_warning("position_mode_unexpected", {
@@ -1001,17 +1002,15 @@ place_order(...)  # positionIdx 누락
 ---
 
 
-### 3.2 Inverse PnL Formula (Direction별 정확한 공식)
+### 3.2 Linear USDT PnL Formula (Direction별 정확한 공식)
 
-**Bybit Inverse Futures PnL**:
+**Bybit Linear USDT Futures PnL**:
 ```
-PnL (BTC) = Position Size (contracts) × (1/Entry Price - 1/Exit Price)
-
 Long:
-  PnL = contracts × (1/entry - 1/exit)
+  PnL (USDT) = qty × (exit_price - entry_price)
 
 Short:
-  PnL = contracts × (1/exit - 1/entry)
+  PnL (USDT) = qty × (entry_price - exit_price)
 ```
 
 **Stop Price 정의 (Direction별)**:
@@ -1026,38 +1025,20 @@ Short:
 ```
 
 **Stop Loss 발동 시 손실**:
-
-**Long**:
 ```
-stop_price = entry × (1 - d)
+Long:
+  loss_usdt = qty × (entry_price - stop_price)
+            = qty × entry_price × stop_distance_pct
 
-loss_btc = contracts × (1/entry - 1/stop_price)
-         = contracts × (1/entry - 1/(entry×(1-d)))
-         = contracts × (1/entry) × (1 - 1/(1-d))
-         = contracts × (1/entry) × (-d / (1-d))
-
-where d = stop_distance_pct
+Short:
+  loss_usdt = qty × (stop_price - entry_price)
+            = qty × entry_price × stop_distance_pct
 ```
 
-**Short**:
+**Direction에 관계없이 동일한 간결한 공식**:
 ```
-stop_price = entry × (1 + d)
-
-loss_btc = contracts × (1/entry - 1/stop_price)
-         = contracts × (1/entry - 1/(entry×(1+d)))
-         = contracts × (1/entry) × (1 - 1/(1+d))
-         = contracts × (1/entry) × (d / (1+d))
-
-where d = stop_distance_pct
+loss_usdt = qty × entry_price × stop_distance_pct
 ```
-
-**근사 (d < 0.05 일 때만)**:
-```
-Long:  loss_btc ≈ (contracts / entry) × d
-Short: loss_btc ≈ (contracts / entry) × d
-```
-
-**d ≥ 0.05 (5%) 이상**일 때는 정확한 공식 사용 필수.
 
 ---
 
@@ -1125,76 +1106,46 @@ stop_distance_pct = 0.03  # Grid spacing 무시 불가
 ---
 
 
-### 3.4 Position Sizing (Direction별 정확한 공식)
+### 3.4 Position Sizing (Linear USDT 공식)
 
-**목표**: `max_loss_btc`를 초과하지 않는 최대 contracts
+**목표**: `max_loss_usdt`를 초과하지 않는 최대 qty (BTC)
 
-**정확한 역산 (Direction별)**:
-
-**Long**:
+**공식** (Direction에 관계없이 동일):
 ```
-# max_loss_btc = contracts × (1/entry) × (-d/(1-d))
-# where d = stop_distance_pct
+# loss_usdt = qty × entry_price × stop_distance_pct
+# → qty = max_loss_usdt / (entry_price × stop_distance_pct)
 
-contracts = max_loss_btc / ((1/entry) × (-d/(1-d)))
-          = (max_loss_btc × entry × (1-d)) / (-d)
-
-# 간소화 (음수 제거):
-contracts = (max_loss_btc × entry × (1 - stop_distance_pct)) / stop_distance_pct
+qty = max_loss_usdt / (entry_price × stop_distance_pct)
 ```
 
-**Short**:
-```
-# max_loss_btc = contracts × (1/entry) × (d/(1+d))
-
-contracts = max_loss_btc / ((1/entry) × (d/(1+d)))
-          = (max_loss_btc × entry × (1+d)) / d
-
-# 간소화:
-contracts = (max_loss_btc × entry × (1 + stop_distance_pct)) / stop_distance_pct
-```
-
-**근사 공식** (d < 0.03일 때만 허용, Long/Short 동일):
-```
-contracts ≈ (max_loss_btc × entry) / stop_distance_pct
-```
-
-**구현 규칙**:
-- stop_distance_pct < 0.03 (3%): 근사 공식 사용 가능
-- stop_distance_pct ≥ 0.03: Direction별 정확한 공식 사용 필수
+**Inverse와 달리 Direction별 차이 없음** — Linear의 핵심 장점.
 
 ---
 
 ---
 
 
-### 3.4 Margin Calculation
+### 3.4 Margin Calculation (Linear USDT)
 
-**Position Value (BTC)**:
+**Position Value (USDT)**:
 ```
-position_value_btc = contracts / entry_price
-```
-
-**Required Margin (BTC)**:
-```
-required_margin_btc = position_value_btc / leverage
+position_value_usdt = qty × entry_price
 ```
 
-**Fee Buffer (BTC)** (Entry + Exit):
+**Required Margin (USDT)**:
 ```
-fee_buffer_btc = position_value_btc × fee_rate × 2
+required_margin_usdt = position_value_usdt / leverage
+```
+
+**Fee Buffer (USDT)** (Entry + Exit):
+```
+fee_buffer_usdt = position_value_usdt × fee_rate × 2
 ```
 
 **Feasibility Check**:
 ```
-if required_margin_btc + fee_buffer_btc > equity_btc:
+if required_margin_usdt + fee_buffer_usdt > equity_usdt:
     REJECT
-```
-
-**USD 환산** (로깅/표시용만):
-```
-required_margin_usd = required_margin_btc × entry_price
-equity_usd = equity_btc × entry_price
 ```
 
 ### Tick/Lot Size 준수 (주문 거절 방지)
@@ -1205,7 +1156,7 @@ equity_usd = equity_btc × entry_price
 
 ```python
 # 1. Instrument Info 조회 (캐싱)
-instrument_info = exchange.get_instrument_info("BTCUSD")
+instrument_info = exchange.get_instrument_info("BTCUSDT")
 qty_step = instrument_info.qty_step      # 예: 1 (최소 수량 단위)
 tick_size = instrument_info.tick_size    # 예: 0.5 (최소 가격 단위)
 
@@ -1223,10 +1174,10 @@ def round_to_tick(price, tick_size):
 # 4. 보정 후 재검증 (필수)
 
 # 4-1. Margin feasibility 재확인
-required_margin_btc = (contracts / entry_price) / leverage
-fee_buffer_btc = (contracts / entry_price) × fee_rate × 2
+required_margin_usdt = (qty × entry_price) / leverage
+fee_buffer_usdt = qty × entry_price × fee_rate × 2
 
-if required_margin_btc + fee_buffer_btc > equity_btc:
+if required_margin_usdt + fee_buffer_usdt > equity_usdt:
     REJECT(reason="margin_insufficient_after_rounding")
 
 # 4-2. Liquidation gate 재확인
@@ -1246,8 +1197,8 @@ if contracts < qty_step:
 
 # 5. 검증 통과 후 주문
 place_order(
-    symbol="BTCUSD",
-    qty=contracts,      # Lot size 보정됨
+    symbol="BTCUSDT",
+    qty=qty,            # Lot size 보정됨
     price=entry_price,  # Tick size 보정됨
     ...
 )
@@ -1260,7 +1211,7 @@ place_order(
 4. **최소 수량 검증**: qty < qtyStep → REJECT (주문 자체 불가)
 
 **Trade-off**:
-- **보정으로 인한 수량 감소**: floor(contracts) → 실제 손실 < max_loss_btc
+- **보정으로 인한 수량 감소**: floor(qty) → 실제 손실 < max_loss_usdt
 - **수용 가능**: 보수적 접근 (손실 예산 범위 내)
 
 ---
@@ -1275,17 +1226,17 @@ place_order(
 **이유**:
 - Stop Loss는 가격 변동에 의한 손실 (청산 아님)
 - Leverage는 **margin 크기**와 **청산 거리**에만 영향
-- Loss budget (max_loss_btc)은 Stop 발동 시 손실 = PnL 계산 기반
+- Loss budget (max_loss_usdt)은 Stop 발동 시 손실 = PnL 계산 기반
 - **PnL 계산에는 leverage가 없음**
 
 **올바른 사용**:
 ```
 Loss Budget Sizing:
-  - contracts = f(max_loss_btc, stop_distance_pct, entry_price)
+  - qty = f(max_loss_usdt, stop_distance_pct, entry_price)
   - Leverage 사용 안 함 ✓
 
 Margin Check:
-  - required_margin_btc = (contracts / entry) / leverage
+  - required_margin_usdt = (qty × entry_price) / leverage
   - Leverage 사용 ✓
 
 Liquidation Check:
@@ -1296,7 +1247,7 @@ Liquidation Check:
 **금지**:
 ```python
 # ❌ 잘못된 예시
-contracts = (max_loss_btc × entry × leverage) / stop_distance_pct
+qty = (max_loss_usdt × leverage) / (entry_price × stop_distance_pct)
 # Leverage를 loss sizing에 넣으면 손실 예산 붕괴
 ```
 
@@ -1313,16 +1264,16 @@ contracts = (max_loss_btc × entry × leverage) / stop_distance_pct
 
 **해결**:
 ```python
-# Step 1: Margin 기준 최대 contracts 계산
-available_btc = equity_btc × 0.8  # 80%만 사용 (buffer)
-max_position_value_btc = available_btc × leverage
-max_contracts_from_margin = max_position_value_btc × entry_price
+# Step 1: Margin 기준 최대 qty 계산
+available_usdt = equity_usdt × 0.8  # 80%만 사용 (buffer)
+max_position_value_usdt = available_usdt × leverage
+max_qty_from_margin = max_position_value_usdt / entry_price
 
-# Step 2: Loss budget 기준 최대 contracts 계산
-max_contracts_from_loss = (max_loss_btc × entry × (1-d)) / d
+# Step 2: Loss budget 기준 최대 qty 계산
+max_qty_from_loss = max_loss_usdt / (entry_price × stop_distance_pct)
 
 # Step 3: 둘 중 작은 값
-contracts = min(max_contracts_from_margin, max_contracts_from_loss)
+qty = min(max_qty_from_margin, max_qty_from_loss)
 ```
 
 **이유**: Margin 부족으로 주문 실패하는 것보다, 작은 포지션이라도 진입하는 게 낫다.
@@ -1434,29 +1385,26 @@ class Orchestrator:
 ---
 
 
-### 4.3 USD-based Calculation
+### 4.3 단위 혼용 금지 (Linear USDT) *(ADR-0013)*
 
 **금지**:
 ```python
-# ❌ USD로 계산
-required_margin_usd = contracts / leverage
-if required_margin_usd <= balance_usd:
+# ❌ BTC 단위로 margin 계산 (Inverse 잔재)
+required_margin_btc = position_value_btc / leverage
+if required_margin_btc <= equity_btc:
     place_order(...)
 ```
 
-**이유**: BTC 가격 변동 시 계산 오류
+**이유**: Linear USDT는 USDT 단위가 기본. BTC 단위 혼용 시 계산 오류.
 
 **올바른 방식**:
 ```python
-# ✅ BTC로 계산
-position_value_btc = contracts / entry_price
-required_margin_btc = position_value_btc / leverage
+# ✅ USDT로 직접 계산 (Linear USDT)
+position_value_usdt = qty × entry_price
+required_margin_usdt = position_value_usdt / leverage
 
-if required_margin_btc <= equity_btc:
+if required_margin_usdt <= equity_usdt:
     place_order(...)
-
-# USD는 로깅용
-margin_usd = required_margin_btc × entry_price
 ```
 
 ---
@@ -1495,37 +1443,48 @@ if state == ENTRY_PENDING and order.filled:
 
 **⚠️ SSOT: Stop Loss 주문 계약 정의 (API 파라미터)**
 
-**문제**: `reduceOnly + stopLoss` 파라미터 혼용 → Bybit Inverse에서 거절됨
+**문제**: `reduceOnly + stopLoss` 파라미터 혼용 → Bybit에서 거절됨
 
 **헌법 규칙**: Account Builder는 **방식 B(Conditional Order) 고정**
 
+**시장**: Bybit Linear USDT Futures (ADR-0002)
+**Margin Mode**: Isolated Margin (ADR-0012)
+
 #### Entry와 Stop 주문 분리
 
-**Entry 주문**:
+**Entry 주문** (Linear USDT):
 ```python
 # Entry 주문 (reduceOnly=False, stopLoss 파라미터 없음)
 entry_order = bybit_adapter.place_order(
-    category="inverse",
-    symbol="BTCUSD",
-    side="Buy",  # or "Sell"
+    category="linear",        # Linear USDT (ADR-0002)
+    symbol="BTCUSDT",         # Linear symbol (ADR-0002)
+    side="Buy",               # or "Sell"
     orderType="Limit",
-    qty=contracts,
+    qty=contracts,            # contracts (1 contract = 0.001 BTC)
     price=entry_price,
 
+    # Margin Mode: Isolated (ADR-0012)
+    # isLeverage=true (Bybit Linear 기본값, tradeMode=0)
+
     # reduceOnly는 설정 안 함 (기본: False)
-    positionIdx=0,
+    positionIdx=0,            # One-way mode
     orderLinkId=client_order_id
 )
 ```
 
-**Stop Loss 주문 (별도)**:
+**Stop Loss 주문 (별도)** (Linear USDT):
 ```python
 # Stop Loss 주문 생성 (필수 파라미터 포함)
 def place_stop_loss(position_qty, stop_price, direction, signal_id):
     """
-    Stop Loss 주문 계약 (Conditional Order 방식 — Bybit v5)
+    Stop Loss 주문 계약 (Conditional Order 방식 — Bybit v5 Linear USDT)
+
+    시장: Linear USDT (ADR-0002)
+    Margin Mode: Isolated (ADR-0012)
 
     필수 파라미터:
+    - category: "linear" (USDT-Margined)
+    - symbol: "BTCUSDT"
     - triggerPrice: Stop trigger price (필수)
     - triggerDirection: 1 (rising), 2 (falling) (필수)
     - triggerBy: "LastPrice" or "MarkPrice" (기본: LastPrice)
@@ -1539,6 +1498,7 @@ def place_stop_loss(position_qty, stop_price, direction, signal_id):
     - triggerPrice 누락 (Conditional의 핵심)
     - reduceOnly=False
     - positionIdx 누락
+    - category="inverse" 또는 symbol="BTCUSD" (ADR-0002 위반)
     """
     # Direction별 side/triggerDirection 결정
     if direction == "LONG":
@@ -1551,13 +1511,13 @@ def place_stop_loss(position_qty, stop_price, direction, signal_id):
     # Stop client_order_id
     stop_client_order_id = f"{signal_id}_stop_{stop_side}"
 
-    # Bybit v5 Conditional Stop Market 주문
+    # Bybit v5 Conditional Stop Market 주문 (Linear USDT)
     stop_order = bybit_adapter.place_order(
-        category="inverse",
-        symbol="BTCUSD",
+        category="linear",    # Linear USDT (ADR-0002)
+        symbol="BTCUSDT",     # Linear symbol (ADR-0002)
         side=stop_side,
-        orderType="Market",  # 트리거 시 시장가 청산
-        qty=position_qty,
+        orderType="Market",   # 트리거 시 시장가 청산
+        qty=position_qty,     # contracts (1 contract = 0.001 BTC)
 
         # Conditional trigger (필수)
         triggerPrice=str(stop_price),  # Trigger price (string)
@@ -1730,7 +1690,7 @@ taker_fee_rate = 0.0006
 ```python
 # ✅ Config + API + Fallback
 # config/fee_config.yaml
-bybit_inverse_fees:
+bybit_linear_fees:
   # Default (VIP 0 기준, 2026-01 기준)
   default_maker_rate: 0.0002
   default_taker_rate: 0.00055
@@ -1748,8 +1708,8 @@ def get_fee_rates():
     if config.use_api_fee_rate:
         try:
             fee_info = bybit_adapter.get_fee_rate(
-                category="inverse",  # 필수: inverse category 명시
-                symbol="BTCUSD"
+                category="linear",   # Linear USDT Futures
+                symbol="BTCUSDT"
             )
             maker_rate = fee_info.maker_fee_rate
             taker_rate = fee_info.taker_fee_rate
@@ -1780,8 +1740,8 @@ def get_fee_rates():
 ```
 GET /v5/account/fee-rate
 Parameters:
-  - category: "inverse" (필수)
-  - symbol: "BTCUSD"
+  - category: "linear" (필수)
+  - symbol: "BTCUSDT"
 ```
 
 **Fallback 우선순위**:
@@ -1807,45 +1767,39 @@ Parameters:
 - Fee rate가 체결 시점에 변경됨
 - Slippage로 인한 notional 변화
 
-**Bybit Inverse Fee 계산 (단위 명시)**:
+**Bybit Linear USDT Fee 계산 (단위 명시)** *(ADR-0013)*:
 
 **핵심 특성**:
-- Bybit Inverse Futures: **1 contract = 1 USD notional**
-- Fee는 BTC로 지불되지만, USD notional 기준으로 계산됨
-- `fee_btc = (contracts × fee_rate) / price`
+- Bybit Linear USDT Futures: **qty = BTC 수량** (예: 0.001 BTC)
+- Fee는 USDT로 직접 지불
+- `fee_usdt = qty × price × fee_rate`
 
 **규칙**:
 
 ```python
 # Entry 시점: 예상 수수료 저장
-def on_entry_order_placed(order, contracts, fee_rate, entry_price):
-    # Inverse: contracts = USD notional
-    estimated_fee_notional_usd = contracts * fee_rate  # USD 기준
+def on_entry_order_placed(order, qty, fee_rate, entry_price):
+    # Linear: fee = qty × price × fee_rate (USDT 직접)
+    estimated_fee_usdt = qty * entry_price * fee_rate
 
-    # BTC로 변환 (예상)
-    estimated_fee_btc = estimated_fee_notional_usd / entry_price
-
-    # 저장 (USD 기준으로 비교)
-    session.estimated_fee_usd = estimated_fee_notional_usd
+    # 저장
+    session.estimated_fee_usdt = estimated_fee_usdt
     session.estimated_fee_rate = fee_rate
 
 # 체결 완료 시점: 실제 수수료 검증
 def on_fill(fill_event):
-    # Bybit fill event에서 실제 수수료 (BTC)
-    actual_fee_btc = fill_event.fee_paid
+    # Bybit fill event에서 실제 수수료 (USDT)
+    actual_fee_usdt = fill_event.fee_paid  # Linear: USDT 직접
 
-    # USD로 변환 (비교용)
-    actual_fee_usd = actual_fee_btc * fill_event.exec_price
+    estimated_fee_usdt = session.estimated_fee_usdt
 
-    estimated_fee_usd = session.estimated_fee_usd
-
-    # Fee spike 감지 (USD 기준)
-    fee_ratio = actual_fee_usd / estimated_fee_usd
+    # Fee spike 감지 (USDT 기준)
+    fee_ratio = actual_fee_usdt / estimated_fee_usdt
 
     if fee_ratio > 1.5:  # 50% 초과
         log_warning("fee_spike_detected", {
-            "estimated_usd": estimated_fee_usd,
-            "actual_usd": actual_fee_usd,
+            "estimated_usdt": estimated_fee_usdt,
+            "actual_usdt": actual_fee_usdt,
             "ratio": fee_ratio,
             "expected_rate": session.estimated_fee_rate,
             "fill_price": fill_event.exec_price
@@ -1857,8 +1811,8 @@ def on_fill(fill_event):
 
     # Trade log에 필수 기록
     trade_log["fee"] = {
-        "estimated_usd": estimated_fee_usd,
-        "actual_usd": actual_fee_usd,
+        "estimated_usdt": estimated_fee_usdt,
+        "actual_usdt": actual_fee_usdt,
         "fee_ratio": fee_ratio,
         "spike_detected": fee_ratio > 1.5
     }
@@ -1873,7 +1827,7 @@ if session.fee_spike_mode and now() < session.fee_spike_until:
     ev_gate_multiplier = stage_config.ev_gate_k * 1.5
 
     # 예: Stage 1 기본 K=2 → K=3
-    # expected_profit_usd >= estimated_fee_usd * 3
+    # expected_profit_usdt >= estimated_fee_usdt * 3
 ```
 
 **Spike Mode 해제**:
@@ -1898,22 +1852,22 @@ if now() >= session.fee_spike_until:
 **필수**: Sizing 후 Margin feasibility 재확인
 
 ```python
-# Step 1: Loss budget 기준 contracts 계산
-contracts_from_loss = (max_loss_btc × entry × (1-d)) / d
+# Step 1: Loss budget 기준 qty 계산 (Linear USDT, ADR-0013)
+qty_from_loss = max_loss_usdt / (entry_price × stop_distance_pct)
 
-# Step 2: Margin 기준 최대 contracts
-available_btc = equity_btc × 0.8
-max_position_btc = available_btc × leverage
-contracts_from_margin = max_position_btc × entry
+# Step 2: Margin 기준 최대 qty
+available_usdt = equity_usdt × 0.8
+max_position_usdt = available_usdt × leverage
+qty_from_margin = max_position_usdt / entry_price
 
 # Step 3: 둘 중 작은 값
-contracts = min(contracts_from_loss, contracts_from_margin)
+qty = min(qty_from_loss, qty_from_margin)
 
 # Step 4: Margin 재확인 (필수)
-required_margin = (contracts / entry) / leverage
-fee_buffer = (contracts / entry) × fee_rate × 2
+required_margin_usdt = (qty × entry_price) / leverage
+fee_buffer_usdt = qty × entry_price × fee_rate × 2
 
-if required_margin + fee_buffer > equity_btc:
+if required_margin_usdt + fee_buffer_usdt > equity_usdt:
     REJECT  # 이론적으로 발생하지 않아야 하지만, 안전장치
 ```
 
@@ -1935,15 +1889,15 @@ if required_margin + fee_buffer > equity_btc:
 
 ```python
 # Sizing 완료 (Section 7)
-contracts = min(contracts_from_loss, contracts_from_margin)
+qty = min(qty_from_loss, qty_from_margin)
 
 # Gate: Liquidation distance 계산 및 강제 확인
 liq_distance_pct = calculate_liquidation_distance(
     entry_price=entry_price,
-    contracts=contracts,
+    qty=qty,
     leverage=leverage,
     direction=direction,
-    equity_btc=equity_btc
+    equity_usdt=equity_usdt
 )
 
 # Stage별 동적 기준 (stop_distance 기반)
@@ -1971,12 +1925,12 @@ if liq_distance_pct < min_required_liq_distance:
     REJECT(reason=f"liquidation_too_close: {liq_distance_pct:.1%} < {min_required_liq_distance:.1%} (stop={stop_distance_pct:.1%} × {liq_distance_multiplier[stage]})")
 ```
 
-**Liquidation Distance 계산** (Bybit Inverse):
+**Liquidation Distance 계산** (Bybit Linear USDT, ADR-0013):
 
 ```python
-def calculate_liquidation_distance(entry_price, contracts, leverage, direction, equity_btc):
+def calculate_liquidation_distance(entry_price, qty, leverage, direction, equity_usdt):
     """
-    Bybit Inverse Futures 청산가 계산
+    Bybit Linear USDT Futures 청산가 계산
 
     Bankruptcy Price:
       Long:  entry × leverage / (leverage + 1)
@@ -2238,9 +2192,9 @@ client_order_id = f"{signal_id}_Buy"
 # 주문 실패 시 재시도
 try:
     order = place_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
-        qty=contracts,
+        qty=qty,
         price=entry_price,
         client_order_id=client_order_id  # 동일 ID 유지
     )
@@ -2301,13 +2255,13 @@ if position_pnl > 0:
     win_streak += 1  # 아직 청산 안 됨
 
 # ✅ 올바른 방식
-def on_position_closed(position, pnl_btc):
+def on_position_closed(position, pnl_usdt):
     closed_trades.append({
-        "pnl_btc": pnl_btc,
-        "is_win": pnl_btc > 0
+        "pnl_usdt": pnl_usdt,
+        "is_win": pnl_usdt > 0
     })
 
-    if pnl_btc > 0:
+    if pnl_usdt > 0:
         win_streak += 1
         loss_streak = 0
     else:
@@ -2560,6 +2514,13 @@ grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
   - 실거래 영향: 없음 (문서 정리만, 로직 변경 없음)
   - 참조: ADR-0009
 
+- v1.11 (2026-02-08): Margin Mode Isolated 정책 추가 및 Linear USDT 마이그레이션 완료 (ADR-0012)
+  - **Section 4.5 Linear USDT 마이그레이션**: category="linear", symbol="BTCUSDT" (ADR-0002 반영)
+  - **Section 4.5 Margin Mode 정책 추가**: Isolated Margin 고정 (tradeMode=0), Cross Margin 금지
+  - **Entry/Stop 주문 예시 업데이트**: Linear USDT API 파라미터 반영
+  - 실거래 영향: 청산 리스크 격리 (한 포지션 청산 시 다른 포지션/잔고 보호)
+  - 참조: ADR-0012 (Margin Mode Isolated Enforcement)
+
 - v1.10 (2026-01-23): 문서 우선 작업 흐름 강제 (Document-First Workflow)
   - **Section 10.2 추가**: 모든 작업은 문서 리뷰 → 문서 업데이트 → 구현 순서 강제
   - Pre-flight Check: Phase 시작 전 docs/plans/task_plan.md 상태 확인 필수
@@ -2627,6 +2588,16 @@ grep -A 3 "Phase N" docs/plans/task_plan.md | grep "Evidence:"
   - **WS Reconcile 규칙**: WS Primary + REST 저빈도 합치기 (10~30초)
   - **Idempotency Key 규칙**: 결정적 ID 생성 + 재시도 시 동일 ID 유지
   - **Stop Distance 출처 계약**: Grid spacing 기반 자동 계산 (grid × 1.5, clamp 2~6%)
+
+- v2.0 (2026-02-08): Inverse → Linear USDT 전면 동기화 (ADR-0013)
+  - Section 3: Bybit Inverse → Linear USDT Futures 특성 전환
+  - Section 3.2: PnL 공식 Inverse → Linear USDT 재작성
+  - Section 3.4: Sizing/Margin 공식 BTC → USDT 재작성
+  - Section 6: Fee config/API/Post-Trade 검증 Linear USDT 전환
+  - Section 7: Sizing Double-Check BTC → USDT 전환
+  - Section 7.5: Liquidation Gate equity_btc → equity_usdt
+  - Section 9: pnl_btc → pnl_usdt
+  - 전체: equity_btc → equity_usdt, BTCUSD → BTCUSDT, contracts → qty
 
 - v1.1 (2026-01-18): 6가지 치명적 구멍 수정
   - 상태 수 정정 (5 → 6)

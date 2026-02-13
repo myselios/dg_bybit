@@ -7,7 +7,7 @@ SSOT:
 - FLOW.md Section 2.5: Event Processing (WS execution events)
 
 테스트 범위:
-1. subscribe topic 정확성 (execution.inverse)
+1. subscribe topic 정확성 (execution.linear)
 2. disconnect/reconnect → DEGRADED 플래그
 3. ping-pong timeout 처리
 4. WS queue maxsize + overflow 정책 (실거래 함정 1)
@@ -24,41 +24,6 @@ import time
 from typing import Callable
 from unittest.mock import Mock, patch, MagicMock
 import pytest
-
-
-def test_subscribe_topic_correctness_inverse():
-    """
-    Subscribe topic 정확성 (execution.inverse)
-
-    SSOT: docs/plans/task_plan.md Phase 7 - subscribe topic 정확성
-
-    검증:
-    - Inverse futures는 execution.inverse topic 사용
-    - Subscribe payload가 Bybit 스펙 만족
-    """
-    from infrastructure.exchange.bybit_ws_client import BybitWsClient
-
-    # Given: WS client (Inverse category)
-    api_key = "test_key"
-    api_secret = "test_secret"
-    fake_clock = lambda: 1640000000.0
-
-    client = BybitWsClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        wss_url="wss://stream-testnet.bybit.com/v5/private",
-        clock=fake_clock,
-        category="inverse",
-    )
-
-    # When: Subscribe payload 생성
-    subscribe_payload = client.get_subscribe_payload()
-
-    # Then: topic이 execution.inverse
-    assert "op" in subscribe_payload
-    assert subscribe_payload["op"] == "subscribe"
-    assert "args" in subscribe_payload
-    assert "execution.inverse" in subscribe_payload["args"]
 
 
 def test_subscribe_topic_correctness_linear():

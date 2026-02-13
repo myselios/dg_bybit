@@ -49,8 +49,8 @@ def verify_environment() -> bool:
     if not api_key or not api_secret:
         logger.error("❌ FAIL: BYBIT_API_KEY or BYBIT_API_SECRET missing")
         return False
-    logger.info(f"✅ BYBIT_API_KEY: {api_key[:8]}***")
-    logger.info(f"✅ BYBIT_API_SECRET: {api_secret[:8]}***")
+    logger.info(f"✅ BYBIT_API_KEY: {api_key[:4]}*** (set)")
+    logger.info(f"✅ BYBIT_API_SECRET: {api_secret[:4]}*** (set)")
 
     # 3. Testnet credentials와 다른지 확인
     testnet_key = os.getenv("BYBIT_TESTNET_API_KEY", "")

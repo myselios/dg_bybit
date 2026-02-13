@@ -28,7 +28,7 @@ def calculate_winrate(closed_trades: List[Dict], window_size: int = 50) -> float
     Winrate 계산 (최근 50 closed trades 기준)
 
     Args:
-        closed_trades: CLOSED 거래 목록 (각 거래는 {"pnl_btc": float})
+        closed_trades: CLOSED 거래 목록 (각 거래는 {"pnl": float})
         window_size: Rolling window 크기 (기본 50)
 
     Returns:
@@ -47,7 +47,7 @@ def calculate_winrate(closed_trades: List[Dict], window_size: int = 50) -> float
     recent_trades = closed_trades[-window_size:]
 
     # pnl > 0 → win
-    wins = sum(1 for trade in recent_trades if trade.get("pnl_btc", 0) > 0)
+    wins = sum(1 for trade in recent_trades if trade.get("pnl", 0) > 0)
     total = len(recent_trades)
 
     if total == 0:
@@ -57,7 +57,7 @@ def calculate_winrate(closed_trades: List[Dict], window_size: int = 50) -> float
 
 
 def update_streak_on_closed_trade(
-    pnl_btc: float,
+    pnl: float,
     win_streak: int,
     loss_streak: int,
 ) -> Tuple[int, int]:
@@ -65,7 +65,7 @@ def update_streak_on_closed_trade(
     Streak 갱신 (win/loss)
 
     Args:
-        pnl_btc: 청산 PnL (BTC)
+        pnl: 청산 PnL (USDT)
         win_streak: 현재 연승 수
         loss_streak: 현재 연패 수
 
@@ -73,14 +73,14 @@ def update_streak_on_closed_trade(
         (new_win_streak, new_loss_streak)
 
     FLOW Section 9:
-        if pnl_btc > 0:
+        if pnl > 0:
             win_streak += 1
             loss_streak = 0
         else:
             loss_streak += 1
             win_streak = 0
     """
-    if pnl_btc > 0:
+    if pnl > 0:
         # Win → win_streak++, loss_streak=0
         return win_streak + 1, 0
     else:

@@ -47,6 +47,8 @@ class MockRestClient:
             raise Exception("Order placement failed (mock)")
 
         order = {
+            "retCode": 0,
+            "retMsg": "OK",
             "result": {
                 "orderId": "mock_order_123",
                 "orderLinkId": order_link_id,
@@ -86,7 +88,7 @@ def test_event_processing_entry_fill_success():
         - Pending order: None (cleaned up)
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # ENTRY_PENDING 상태 설정 (수동)
@@ -118,7 +120,7 @@ def test_event_processing_entry_fill_success():
     assert orchestrator.position.qty == 100, f"Position qty should be 100, got {orchestrator.position.qty}"
     assert orchestrator.position.entry_price == 50000.0, f"Position entry_price should be 50000.0, got {orchestrator.position.entry_price}"
     assert orchestrator.position.direction == Direction.LONG, f"Position direction should be LONG, got {orchestrator.position.direction}"
-    assert orchestrator.position.stop_price == 48500.0, f"Position stop_price should be 48500.0 (50000*0.97), got {orchestrator.position.stop_price}"
+    assert orchestrator.position.stop_price == 49500.0, f"Position stop_price should be 49500.0 (50000*0.99, fallback 1%), got {orchestrator.position.stop_price}"
     assert orchestrator.pending_order is None, "Pending order should be cleaned up"
 
 
@@ -144,7 +146,7 @@ def test_event_processing_exit_fill_success():
         - Pending order: None (cleaned up)
     """
     # Given
-    fake_data = FakeMarketData(current_price=51000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=51000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # EXIT_PENDING 상태 설정 (수동)
@@ -203,7 +205,7 @@ def test_event_processing_no_pending_order():
         - Position: None (변화 없음)
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # FLAT 상태 (pending_order = None)
@@ -247,7 +249,7 @@ def test_event_processing_order_id_mismatch():
         - Pending order: 유지
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # ENTRY_PENDING 상태 설정
@@ -298,7 +300,7 @@ def test_event_processing_dual_id_matching_order_id():
         - Position: Created
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # ENTRY_PENDING 상태 설정
@@ -349,7 +351,7 @@ def test_event_processing_dual_id_matching_order_link_id():
         - Position: Created
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # ENTRY_PENDING 상태 설정
@@ -399,7 +401,7 @@ def test_state_consistency_check_position_without_state():
         - Halt reason: "position_state_inconsistent"
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # 일관성 위반 설정 (Position != None but State = FLAT)
@@ -439,7 +441,7 @@ def test_state_consistency_check_state_without_position():
         - Halt reason: "position_state_inconsistent"
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     # 일관성 위반 설정 (Position = None but State = IN_POSITION)
@@ -472,7 +474,7 @@ def test_state_consistency_check_normal():
         - Self-healing check 통과 (HALT 없음)
     """
     # Case 1: FLAT + Position None
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.0025)
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=125.0)
     orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
 
     assert orchestrator.state == State.FLAT

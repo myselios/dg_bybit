@@ -93,7 +93,7 @@ def test_balance_anomaly_zero_equity_halts():
     """
     equity <= 0이면 HALT (balance anomaly).
 
-    Given: equity_btc = 0.0
+    Given: equity_usdt = 0.0
     When: check_emergency 호출
     Then: is_halt=True, is_cooldown=False
 

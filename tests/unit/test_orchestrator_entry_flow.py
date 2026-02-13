@@ -45,6 +45,8 @@ class MockRestClient:
             raise Exception("Order placement failed (mock)")
 
         order = {
+            "retCode": 0,
+            "retMsg": "OK",
             "result": {
                 "orderId": "mock_order_123",
                 "orderLinkId": order_link_id,
@@ -112,7 +114,7 @@ def test_entry_flow_success():
     assert len(mock_rest_client.orders) == 1, "1 order should be placed"
     assert mock_rest_client.orders[0]["side"] == "Sell"
     assert mock_rest_client.orders[0]["orderType"] == "Limit"
-    assert mock_rest_client.orders[0]["timeInForce"] == "PostOnly"
+    assert mock_rest_client.orders[0]["timeInForce"] == "GTC"
 
 
 # ========== Test 2: State Not FLAT ==========
@@ -203,9 +205,9 @@ def test_entry_blocked_no_signal():
     Given:
         - State: FLAT
         - WS: Normal
-        - ATR: 100.0 (Grid spacing = 200.0)
+        - ATR: 100.0 (Grid spacing = 30.0, multiplier=0.3)
         - Last fill price: 49800.0
-        - Current price: 49900.0 (Grid spacing 범위 밖, no signal)
+        - Current price: 49810.0 (Grid spacing 범위 내, no signal)
 
     When:
         - run_tick() 실행
@@ -215,11 +217,12 @@ def test_entry_blocked_no_signal():
         - Reason: no_signal
     """
     # Given
-    fake_data = FakeMarketData(current_price=49900.0, equity_usdt=1000.0)
+    fake_data = FakeMarketData(current_price=49810.0, equity_usdt=1000.0)
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
-    # Current price = 49900, Grid up = 49800 + 200 = 50000, Grid down = 49800 - 200 = 49600
-    # 49900은 범위 밖 → no signal
+    # Grid spacing = ATR * 0.3 = 30.0
+    # Current price = 49810, Grid up = 49800 + 30 = 49830, Grid down = 49800 - 30 = 49770
+    # 49810은 범위 내 → no signal
 
     mock_rest_client = MockRestClient()
     orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_rest_client)
@@ -294,7 +297,7 @@ def test_entry_blocked_sizing_fail():
         - Reason: qty_below_minimum or margin_insufficient
     """
     # Given
-    fake_data = FakeMarketData(current_price=50000.0, equity_btc=0.00001)  # Very low equity
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=0.5)  # Very low equity
     fake_data.inject_atr(100.0)
     fake_data.inject_last_fill_price(49800.0)
     fake_data.inject_atr_pct_24h(0.03)

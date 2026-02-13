@@ -1,7 +1,7 @@
 # docs/plans/task_plan.md
-# Task Plan: Account Builder Implementation (v2.42, Phase 13b 완료: Initial Entry Fix)
-Last Updated: 2026-02-01 (KST, Phase 13b 완료: 치명적 결함 수정 - Force Entry 제거 후 첫 진입 로직 복구)
-Status: **Phase 0~13b COMPLETE** | Gate 1-9 ALL PASS | **366 tests passed** | ✅ Phase 13b: Initial Entry Fix 완료 (치명적 결함 수정) | ✅ Phase 13a: Analysis Toolkit 완료 (Trade Analyzer + A/B Comparator + Statistical Testing + CLI Tool) | ✅ Phase 12c: Force Entry 완전 제거 (Production Ready) | ✅ Phase 12b: Mainnet Dry-Run 50 거래 완료 | ✅ Testnet 검증 완료 (90회 Entry-Exit cycle) | 원칙: 100% 완료만 DONE 표시
+# Task Plan: Account Builder Implementation (v2.43, Phase 14b 완료: Docker Containerization)
+Last Updated: 2026-02-08 (KST, Phase 14a/14b 완료: Dashboard + Docker + Inverse→Linear USDT 마이그레이션)
+Status: **Phase 0~14b COMPLETE** | Gate 1-9 ALL PASS | **410 tests passed** | ✅ Phase 14b: Docker Containerization 완료 (3-service orchestration) | ✅ Phase 14a: Dashboard 완료 (Streamlit + Korean UI + 25 tests) | ✅ Inverse→Linear USDT 마이그레이션 완료 (ADR-0013) | ✅ Phase 13b: Initial Entry Fix | ✅ Phase 12b: Mainnet Dry-Run 50 거래 | 원칙: 100% 완료만 DONE 표시
 Policy: docs/specs/account_builder_policy.md
 Flow: docs/constitution/FLOW.md
 
@@ -10,7 +10,7 @@ Flow: docs/constitution/FLOW.md
 ## 0. Goal
 
 Account Builder ($100 → $1,000) 봇을 **실거래 가능한 수준**으로 구현한다.
-- Bybit Inverse Futures 제약 준수
+- Bybit Linear USDT Futures 제약 준수
 - survival-first + growth-enforcing (시간/스테이지 목표)
 - 결정 규칙은 반드시 **결정론적(deterministic)** 이고 **테스트로 고정**된다
 
@@ -67,7 +67,7 @@ Non-goal
     - Linear: `"execution.linear"` (카테고리 전용)
     - All-In-One: `"execution"` (모든 카테고리, **Categorised와 동일 요청 혼용 불가**)
 - Reconcile 히스테리시스(연속 3회, 5초 COOLDOWN)
-- Fee 단위: contracts = USD notional
+- Fee 단위: fee_usdt = qty × price × fee_rate (Linear USDT)
 - Liquidation gate(거래소-derived 우선)
 - Idempotency key `{signal_id}_{direction}` (SHA1 축약)
 - Stop 주문 속성: reduceOnly=True, positionIdx=0
@@ -84,7 +84,7 @@ Non-goal
 
 ## 2. Repo Map (Single Source of Location)
 
-### 2.1 Implemented (Phase 0-13b 완료, 실제 존재)
+### 2.1 Implemented (Phase 0-14b 완료, 실제 존재)
 
 ```
 src/
@@ -101,7 +101,7 @@ src/
 │   ├── emergency.py # ✅ Phase 1: emergency policy + recovery + cooldown (Policy Section 7.1/7.2/7.3)
 │   ├── ws_health.py # ✅ Phase 1: ws health tracker + degraded rules (FLOW Section 2.4)
 │   ├── entry_allowed.py # ✅ Phase 2: entry gates (policy-driven, 8 gates + reject reasons)
-│   ├── sizing.py # ✅ Phase 2: Bybit inverse sizing (contracts, LONG/SHORT formulas)
+│   ├── sizing.py # ✅ Phase 2: Bybit Linear USDT sizing (contracts, loss budget 기반)
 │   ├── liquidation_gate.py # ✅ Phase 2: liquidation distance checks + fallback rules
 │   ├── fee_verification.py # ✅ Phase 3: fee spike detection + taker/maker validation
 │   ├── order_executor.py # ✅ Phase 3: intents -> exchange calls (place/cancel/amend)
@@ -122,6 +122,15 @@ src/
 │   ├── stat_test.py # ✅ Phase 13a: 통계 검증 (t-test, chi-square, confidence interval: 170 LOC, scipy 1.17.0)
 │   ├── ab_comparator.py # ✅ Phase 13a: A/B 비교 (compare, statistical testing, recommendation logic: 265 LOC)
 │   └── report_generator.py # ✅ Phase 13a: Report 생성 (Markdown/JSON output: 261 LOC)
+│
+├── dashboard/ # (Phase 14a)
+│   ├── __init__.py # ✅ Phase 14a: Package init
+│   ├── app.py # ✅ Phase 14a: Streamlit entry point (689 LOC, Korean UI, full dashboard)
+│   ├── data_pipeline.py # ✅ Phase 14a: JSONL loading, trade log parsing (127 LOC)
+│   ├── metrics_calculator.py # ✅ Phase 14a: Summary/Regime/Risk/Slippage/Latency metrics (245 LOC)
+│   ├── ui_components.py # ✅ Phase 14a: Chart rendering (PnL, distribution, gauge: 264 LOC)
+│   ├── file_watcher.py # ✅ Phase 14a: Directory modification detection (73 LOC)
+│   └── export.py # ✅ Phase 14a: Date filtering, CSV export (74 LOC)
 │
 └── infrastructure/
     ├── exchange/
@@ -145,7 +154,19 @@ scripts/
 ├── run_testnet_dry_run.py # ✅ Phase 12a-3: Testnet dry-run orchestrator
 ├── run_mainnet_dry_run.py # ✅ Phase 12b: Mainnet dry-run orchestrator
 ├── generate_dry_run_report.py # ✅ Phase 12a-3: Trade log analysis + Session Risk verification
-└── analyze_trades.py # ✅ Phase 13a: CLI tool (analyze, compare commands: 200 LOC, argparse)
+├── analyze_trades.py # ✅ Phase 13a: CLI tool (analyze, compare commands: 200 LOC, argparse)
+└── run_dashboard.sh # ✅ Phase 14a: Streamlit dashboard launcher
+
+docker/ # (Phase 14b)
+├── Dockerfile.base # ✅ Phase 14b: Multi-stage build (base → test → production, 122 LOC)
+├── Dockerfile.bot # ✅ Phase 14b: Bot service (Testnet/Mainnet, 40 LOC)
+├── Dockerfile.dashboard # ✅ Phase 14b: Dashboard service (Streamlit 8501, 53 LOC)
+├── Dockerfile.analysis # ✅ Phase 14b: Analysis service (Cron, 42 LOC)
+└── docker-entrypoint.sh # ✅ Phase 14b: Env validation + directory setup (75 LOC)
+
+docker-compose.yml # ✅ Phase 14b: 3-service orchestration (bot, dashboard, analysis: 160 LOC)
+docker-compose.override.yml # ✅ Phase 14b: Local development overrides (60 LOC)
+.dockerignore # ✅ Phase 14b: Build context optimization (121 LOC)
 
 tests/
 ├── oracles/
@@ -161,7 +182,7 @@ tests/
 │   ├── test_ws_health.py # ✅ Phase 1: WS Health tests (5 cases)
 │   ├── test_ids.py # ✅ Phase 2: orderLinkId validation (6 cases)
 │   ├── test_entry_allowed.py # ✅ Phase 2: entry gates (9 cases)
-│   ├── test_sizing.py # ✅ Phase 2: inverse sizing (8 cases)
+│   ├── test_sizing.py # ✅ Phase 2: Linear USDT sizing (8 cases)
 │   ├── test_liquidation_gate.py # ✅ Phase 2: liq distance (8 cases)
 │   ├── test_fee_verification.py # ✅ Phase 3: fee spike detection (5 cases)
 │   ├── test_order_executor.py # ✅ Phase 3: order execution (8 cases)
@@ -187,6 +208,17 @@ tests/
 │   ├── test_stat_test.py # ✅ Phase 13a: StatTest tests (9 cases: t-test, chi-square, confidence interval)
 │   ├── test_ab_comparator.py # ✅ Phase 13a: ABComparator tests (8 cases: A/B comparison, recommendation logic)
 │   └── test_report_generator.py # ✅ Phase 13a: ReportGenerator tests (4 cases: Markdown/JSON/Comparison reports)
+├── dashboard/ # (Phase 14a)
+│   ├── test_data_pipeline.py # ✅ Phase 14a: Data pipeline tests (5 cases: JSONL loading, parsing, DataFrame)
+│   ├── test_metrics_calculator.py # ✅ Phase 14a: Metrics calculator tests (5 cases: summary, risk, regime, slippage, latency)
+│   ├── test_ui_components.py # ✅ Phase 14a: UI components tests (6 cases: metric card, charts, gauge, filters)
+│   ├── test_file_watcher.py # ✅ Phase 14a: File watcher tests (5 cases: modification detection, polling)
+│   └── test_export.py # ✅ Phase 14a: Export tests (4 cases: date filter, CSV export)
+├── docker/ # (Phase 14b)
+│   ├── test_dockerfile_build.py # ✅ Phase 14b: Dockerfile build tests (5 cases: base image, deps, stages, entrypoint)
+│   ├── test_bot_container.py # ✅ Phase 14b: Bot container tests (5 cases: start, env, volume, safety, shutdown)
+│   ├── test_dashboard_container.py # ✅ Phase 14b: Dashboard container tests (5 cases: start, port, logs, refresh, restart)
+│   └── test_analysis_container.py # ✅ Phase 14b: Analysis container tests (5 cases: start, cron, script, report, logs)
 ├── integration/
 │   ├── test_orchestrator.py # ✅ Phase 6: tick loop integration (5 cases)
 │   └── test_dry_run_orchestrator.py # ✅ Phase 12a-3: Dry-run infrastructure tests (8 cases)
@@ -199,19 +231,19 @@ tests/
     └── test_full_cycle_testnet.py # ✅ Phase 11b: Testnet full cycle (FLAT → Entry → Exit → FLAT, 6 cases)
 ```
 
-**Phase 0-13b DONE 증거**: 366 tests passed (Phase 0-11b: 267 + Phase 12a-1: 14 + Phase 12a-2: 31 + Phase 12a-3: 8 + Phase 12a-5: 14 + Phase 13a: 30 + Phase 13b: 1 + Phase 12b/12c: -6 force_entry tests removed + Others: 7), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_13b/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-13b`, `./scripts/verify_task_plan_consistency.sh`)
+**Phase 0-14b DONE 증거**: 410 tests passed (Phase 0-13b: 366 + Phase 14a Dashboard: 25 + Phase 14b Docker: 20 + Inverse→Linear migration: -1 inverse test removed), Gate 1-9 ALL PASS, Evidence Artifacts (docs/evidence/phase_0 ~ phase_14b_docker/), 새 세션 검증 가능 (`./scripts/verify_phase_completion.sh 0-14b`, `./scripts/verify_task_plan_consistency.sh`)
 
 ---
 
-### 2.2 Planned (Phase 13c+ 예정, 아직 미생성)
+### 2.2 Planned (Phase 15+ 예정, 아직 미생성)
 
-**구현 완료된 항목**: ✅ Section 2.1 Implemented로 이동 완료 (Progress Table에서 DONE 표시된 모든 Phase)
+**구현 완료된 항목**: ✅ Section 2.1 Implemented로 이동 완료 (Progress Table에서 DONE 표시된 모든 Phase, Phase 0~14b)
 
-**Phase 14+: 운영 최적화 (선택 사항)**:
-- Trade Log 대시보드 (Grafana/Streamlit)
+**Phase 15+: 운영 최적화 (선택 사항)**:
 - 자동 파라미터 튜닝 (Grid spacing, Session Risk thresholds)
-- 실시간 모니터링 (Telegram/Slack Bot)
+- 실시간 모니터링 (Telegram/Slack Bot 고도화)
 - 백테스트 엔진 (Historical data replay)
+- Grafana 연동 (Prometheus metrics export)
 
 ---
 
@@ -411,7 +443,7 @@ Goal: 정책에 따른 emergency 판단과 degraded/health를 구현한다.
 **1a. Market Data Interface** (선행 필수):
 - `src/infrastructure/exchange/market_data_interface.py`
   - `get_mark_price() -> float`
-  - `get_equity_btc() -> float`
+  - `get_equity_usdt() -> float`
   - `get_rest_latency_p95_1m() -> float`
   - `get_ws_last_heartbeat_ts() -> float`
   - `get_ws_event_drop_count() -> int`
@@ -678,7 +710,7 @@ Goal: "네트워크 I/O를 붙이되, 실패해도 안전하게 멈추는 연결
   - Rate limit 헤더 처리 로직 (가짜 헤더 주입)
   - retCode 10006 → backoff 동작
 - `tests/unit/test_bybit_ws_client.py` (5~7케이스)
-  - subscribe topic 정확성 (execution 또는 execution.inverse)
+  - subscribe topic 정확성 (execution.linear)
   - disconnect/reconnect 시 DEGRADED 플래그 설정
   - ping-pong timeout 처리
 - `tests/unit/test_bybit_adapter.py` (5케이스)
@@ -714,7 +746,7 @@ Goal: 실제 네트워크/거래소에서 "핵심 위험 이벤트"가 예상대
 1. **연결/인증/구독 성공 + heartbeat 정상**
    - wss://stream-testnet.bybit.com/v5/private 연결
    - auth 성공
-   - execution.inverse topic 구독 성공
+   - execution.linear topic 구독 성공
    - heartbeat 10초 이내 수신
 2. **소액 주문 발주→취소 성공 (idempotency 포함)**
    - place_entry_order() 호출 → orderLinkId 생성
@@ -767,9 +799,9 @@ Goal: 실제 네트워크/거래소에서 "핵심 위험 이벤트"가 예상대
 3. **Bybit V5 WebSocket 프로토콜 준수** (SSOT: Bybit 공식 문서):
    - **연결**: `wss://stream-testnet.bybit.com/v5/private` (Private stream)
    - **Auth**: HMAC-SHA256 서명 (`"GET/realtime{expires}"`)
-   - **Subscribe**: `execution.inverse` topic (Categorised)
+   - **Subscribe**: `execution.linear` topic (Categorised)
    - **Ping/Pong**: 클라이언트 ping (20초 주기) → 서버 pong
-   - **Execution 메시지**: `{"topic": "execution.inverse", "data": [...]}`
+   - **Execution 메시지**: `{"topic": "execution.linear", "data": [...]}`
 
 4. **구현된 메서드** (24 메서드: public 14 + private 10):
    - **Public (14개)**: `__init__`, `get_subscribe_payload`, `on_disconnect`, `on_reconnect`, `is_degraded`, `get_degraded_entered_at`, `on_pong_received`, `check_pong_timeout`, `enqueue_message`, `dequeue_message`, `get_queue_size`, `get_drop_count`, `start`, `stop`
@@ -1179,7 +1211,7 @@ Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완
    - GET /v5/execution/list (Trade history 조회 → PnL/Loss streak 계산)
 
 2. **WebSocket Integration**:
-   - `execution.inverse` topic subscribe (FILL event 수신)
+   - `execution.linear` topic subscribe (FILL event 수신)
    - WS heartbeat monitoring (degraded 감지)
    - Event queue processing (FILL → domain ExecutionEvent 변환)
 
@@ -1192,7 +1224,7 @@ Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완
 - [x] BybitAdapter 구현 (`src/infrastructure/exchange/bybit_adapter.py`)
   - MarketDataInterface 모든 메서드 구현
   - REST API 통합 (4 endpoints)
-  - WebSocket event 처리 (execution.inverse)
+  - WebSocket event 처리 (execution.linear)
   - State caching + 1초마다 업데이트
 - [x] Tests: `tests/unit/test_bybit_adapter.py` (14 cases, 10+ 초과)
   - REST API 응답 → MarketDataInterface 변환
@@ -1549,7 +1581,7 @@ Goal: **완전 자동화된 Testnet/Mainnet Dry-Run** → **실거래 준비 완
     if current_state == State.HALT:
         halt_reason = result.get("halt_reason", "Unknown")
         if telegram.enabled:
-            equity = market_data.get_equity_btc() * market_data.get_current_price()
+            equity = market_data.get_equity_usdt()
             telegram.send_halt(halt_reason, equity)
     ```
   - [ ] 실행 완료 시 요약 전송:
@@ -1771,7 +1803,7 @@ docs/evidence/
   - WebSocket event → ExecutionEvent 변환
   - State caching 동작 검증
   - DEGRADED 모드 전환 검증
-  - get_mark_price(), get_equity_btc(), get_atr() 등
+  - get_mark_price(), get_equity_usdt(), get_atr() 등
 
 - `test_atr_calculator.py`: 8+ cases
   - calculate_atr(): Kline → ATR (14-period)
@@ -1924,6 +1956,8 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 | 12c | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_12c/completion_checklist.md), [Force Entry Removal Proof](../evidence/phase_12c/force_entry_removal_proof.md), [pytest](../evidence/phase_12c/pytest_output.txt). **Tests**: **335 passed in 0.53s** (341 → 335, -6 force_entry tests removed). **No new tests** (code removal only). | **Application**: [orchestrator.py](../../src/application/orchestrator.py) (force_entry 필드/Force Exit 로직 제거), [signal_generator.py](../../src/application/signal_generator.py) (force_entry 파라미터 제거), [entry_allowed.py](../../src/application/entry_allowed.py) (force_entry bypass 제거, 8 gates 항상 강제), **Scripts**: [run_mainnet_dry_run.py](../../scripts/run_mainnet_dry_run.py), [run_testnet_dry_run.py](../../scripts/run_testnet_dry_run.py) (--force-entry 플래그 제거). **Tests Deleted**: test_signal_generator_force_entry.py, test_orchestrator_position_recovery.py. **SSOT**: Production 안전성 (Force Entry 위험 제거). | **Evidence**: [phase_12c/](../evidence/phase_12c/). **Phase 12c 완료** (Force Entry 완전 제거: 6개 파일 수정, Grid spacing 항상 강제, Entry gates 항상 강제, Maker-only 고정, Production Ready 확인). **완료**: 2026-01-27. **Production Ready**: ✅ 실거래 투입 가능. **다음**: Phase 13 (운영 최적화) 또는 Production 배포. |
 | 13a | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_13a/completion_checklist.md), [Gate 7](../evidence/phase_13a/gate7_verification.txt), [pytest](../evidence/phase_13a/pytest_output.txt). **Tests**: [test_trade_analyzer.py](../../tests/unit/test_trade_analyzer.py) (9) + [test_stat_test.py](../../tests/unit/test_stat_test.py) (9) + [test_ab_comparator.py](../../tests/unit/test_ab_comparator.py) (8) + [test_report_generator.py](../../tests/unit/test_report_generator.py) (4) = **30 passed**. Total: **365 passed in 1.44s** (335 → 365, +30). **Gate 7**: ALL PASS (579 asserts). | **Analysis**: [trade_analyzer.py](../../src/analysis/trade_analyzer.py) (472 LOC: load_trades, calculate_metrics, 11 helper methods), [stat_test.py](../../src/analysis/stat_test.py) (170 LOC: t-test, chi-square, confidence interval, scipy 1.17.0), [ab_comparator.py](../../src/analysis/ab_comparator.py) (265 LOC: A/B comparison, statistical testing, 4-level recommendation logic), [report_generator.py](../../src/analysis/report_generator.py) (261 LOC: Markdown/JSON/Comparison reports). **Scripts**: [analyze_trades.py](../../scripts/analyze_trades.py) (200 LOC: CLI tool, argparse, normal + A/B modes). **SSOT**: task_plan Phase 13a (Analysis Toolkit), phase_13a_detailed_implementation.md (코드 수준 상세 설계). | **Evidence**: [phase_13a/](../evidence/phase_13a/). **Phase 13a 완료** (Trade Log 분석 + A/B 비교 + 통계 검증 + Report 생성 + CLI Tool). **새 세션 검증 가능**. **완료**: 2026-02-01. |
 | 13b | [x] DONE | **Tests**: [test_signal_generator.py](../../tests/unit/test_signal_generator.py) (+1 case: test_initial_entry_generates_buy_signal, 기존 test_initial_entry_signal_when_no_last_fill 수정). Total: **366 passed in 1.44s** (365 → 366, +1). | **Bug Fix**: [signal_generator.py](../../src/application/signal_generator.py) (Line 72-74: last_fill_price=None일 때 현재가 기준 Buy 신호 생성). **Issue**: Phase 12c Force Entry 제거 후 첫 진입 로직 누락 → 영원히 진입 불가. **Fix**: Initial Entry 조건 추가 (last_fill_price=None → Buy signal). | **Phase 13b 완료** (Initial Entry Fix: 치명적 결함 수정). **완료**: 2026-02-01. |
+| 14a | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_14a_dashboard/completion_checklist.md), [Korean UI](../evidence/phase_14a_dashboard/korean_ui_completion.md), [Phase 4-5](../evidence/phase_14a_dashboard/phase_4_5_completion.md), [pytest](../evidence/phase_14a_dashboard/pytest_output.txt), [pytest Phase 4-5](../evidence/phase_14a_dashboard/phase_4_5_pytest_output.txt). **Tests**: [test_data_pipeline.py](../../tests/dashboard/test_data_pipeline.py) (5) + [test_metrics_calculator.py](../../tests/dashboard/test_metrics_calculator.py) (5) + [test_ui_components.py](../../tests/dashboard/test_ui_components.py) (6) + [test_file_watcher.py](../../tests/dashboard/test_file_watcher.py) (5) + [test_export.py](../../tests/dashboard/test_export.py) (4) = **25 passed**. Total: **410 passed in 13.02s**. | **Dashboard**: [app.py](../../src/dashboard/app.py) (689 LOC: Streamlit UI, Korean localization), [data_pipeline.py](../../src/dashboard/data_pipeline.py) (127 LOC: JSONL loading, trade log parsing), [metrics_calculator.py](../../src/dashboard/metrics_calculator.py) (245 LOC: Summary/Regime/Risk metrics), [ui_components.py](../../src/dashboard/ui_components.py) (264 LOC: PnL chart, distribution, gauge), [file_watcher.py](../../src/dashboard/file_watcher.py) (73 LOC: Directory modification detection), [export.py](../../src/dashboard/export.py) (74 LOC: Date filter, CSV export). **Config**: [.streamlit/config.toml](../../.streamlit/config.toml), [run_dashboard.sh](../../scripts/run_dashboard.sh). | **Phase 14a 완료** (Trade Log Dashboard: Streamlit + Korean UI + Real-time file monitoring + Date filter + CSV export). **완료**: 2026-02-01. |
+| 14b | [x] DONE | **Evidence Artifacts**: [Completion Checklist](../evidence/phase_14b_docker/completion_checklist.md), [pytest](../evidence/phase_14b_docker/pytest_output.txt). **Tests**: [test_dockerfile_build.py](../../tests/docker/test_dockerfile_build.py) (5) + [test_bot_container.py](../../tests/docker/test_bot_container.py) (5) + [test_dashboard_container.py](../../tests/docker/test_dashboard_container.py) (5) + [test_analysis_container.py](../../tests/docker/test_analysis_container.py) (5) = **20 passed**. Total: **410 passed in 13.02s**. | **Docker**: [Dockerfile.base](../../docker/Dockerfile.base) (122 LOC: multi-stage build), [Dockerfile.bot](../../docker/Dockerfile.bot) (40 LOC), [Dockerfile.dashboard](../../docker/Dockerfile.dashboard) (53 LOC), [Dockerfile.analysis](../../docker/Dockerfile.analysis) (42 LOC), [docker-entrypoint.sh](../../docker/docker-entrypoint.sh) (75 LOC: env validation). **Compose**: [docker-compose.yml](../../docker-compose.yml) (160 LOC: 3-service orchestration), [docker-compose.override.yml](../../docker-compose.override.yml) (60 LOC: local dev). | **Phase 14b 완료** (Docker Containerization: 3-service orchestration, multi-stage build, graceful shutdown, named volumes). **완료**: 2026-02-08. |
 
 ---
 
@@ -2008,8 +2042,8 @@ Phase 13+는 실거래 최적화 단계로, 선택적으로 진행:
 
 | ID | Preconditions | Event | Expected State | Expected Intents | Evidence |
 |----|---------------|-------|----------------|------------------|----------|
-| EX-1 | REST로 소액 주문 발주 (Market order, BTCUSD, 1 contract) | WS execution 메시지 수신 | - | ExecutionEvent(FILL) 변환 성공, orderId/execQty 일치 | TBD |
-| EX-2 | REST로 소액 주문 발주 (Limit order, BTCUSD, 10 contracts, 부분 체결 가능) | WS execution 메시지 수신 (부분 체결) | - | ExecutionEvent(PARTIAL_FILL) 변환 성공, execQty < orderQty | TBD |
+| EX-1 | REST로 소액 주문 발주 (Market order, BTCUSDT, 0.001 BTC) | WS execution 메시지 수신 | - | ExecutionEvent(FILL) 변환 성공, orderId/execQty 일치 | TBD |
+| EX-2 | REST로 소액 주문 발주 (Limit order, BTCUSDT, 0.01 BTC, 부분 체결 가능) | WS execution 메시지 수신 (부분 체결) | - | ExecutionEvent(PARTIAL_FILL) 변환 성공, execQty < orderQty | TBD |
 | EX-3 | REST로 주문 발주 후 즉시 취소 | WS execution 메시지 수신 (CANCEL) | - | ExecutionEvent(CANCEL) 변환 성공, execQty=0 | TBD |
 
 **Notes:**

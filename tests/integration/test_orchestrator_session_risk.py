@@ -34,7 +34,7 @@ class FakeMarketDataWithSessionRisk(MarketDataInterface):
     """
 
     def __init__(self):
-        self.equity_btc = 0.01
+        self.equity_usdt = 1000.0
         self.btc_mark_price_usd = 100000.0
         self.ws_degraded = False
         self.degraded_start_time = None
@@ -49,13 +49,9 @@ class FakeMarketDataWithSessionRisk(MarketDataInterface):
         # Phase 9d: Slippage anomaly test용 timestamp 설정
         self.current_timestamp = time.time()  # Default: 현재 시각
 
-    def get_equity_btc(self) -> float:
-        return self.equity_btc
-
     def get_equity_usdt(self) -> float:
         """계정 Equity (USDT) — Linear USDT-Margined"""
-        # Linear USDT: equity_usdt = equity_btc * mark_price (근사)
-        return self.equity_btc * self.btc_mark_price_usd
+        return self.equity_usdt
 
     def get_btc_mark_price_usd(self) -> float:
         return self.btc_mark_price_usd
@@ -118,7 +114,7 @@ def test_daily_loss_cap_triggers_halt():
     """
     # Given: equity $1000, daily_pnl = -$60 (-6%), cap = 5%
     market_data = FakeMarketDataWithSessionRisk()
-    market_data.equity_btc = 0.01  # 0.01 BTC
+    market_data.equity_usdt = 1000.0  # 1000 USDT
     market_data.btc_mark_price_usd = 100000.0  # $1000 equity
     market_data.daily_realized_pnl_usd = -60.0  # -6% equity
 
@@ -146,7 +142,7 @@ def test_weekly_loss_cap_triggers_cooldown():
     """
     # Given: equity $1000, weekly_pnl = -$150 (-15%), cap = 12.5%
     market_data = FakeMarketDataWithSessionRisk()
-    market_data.equity_btc = 0.01  # 0.01 BTC
+    market_data.equity_usdt = 1000.0  # 1000 USDT
     market_data.btc_mark_price_usd = 100000.0  # $1000 equity
     market_data.weekly_realized_pnl_usd = -150.0  # -15% equity
 
@@ -173,7 +169,7 @@ def test_loss_streak_3_triggers_halt():
     """
     # Given: loss_streak_count = 3
     market_data = FakeMarketDataWithSessionRisk()
-    market_data.equity_btc = 0.01
+    market_data.equity_usdt = 1000.0
     market_data.loss_streak_count = 3
 
     orchestrator = Orchestrator(market_data)
@@ -198,7 +194,7 @@ def test_fee_anomaly_triggers_halt():
     """
     # Given: fee_ratio_history = [1.6, 1.7], threshold = 1.5
     market_data = FakeMarketDataWithSessionRisk()
-    market_data.equity_btc = 0.01
+    market_data.equity_usdt = 1000.0
     market_data.fee_ratio_history = [1.6, 1.7]
 
     orchestrator = Orchestrator(market_data)
@@ -224,7 +220,7 @@ def test_slippage_anomaly_triggers_halt():
     """
     # Given: slippage spike 3회, 10분 내
     market_data = FakeMarketDataWithSessionRisk()
-    market_data.equity_btc = 0.01
+    market_data.equity_usdt = 1000.0
     market_data.slippage_history = [
         {"slippage_usd": -2.1, "timestamp": 1737600000.0},
         {"slippage_usd": -2.5, "timestamp": 1737600200.0},  # 3분 20초 후

@@ -1,0 +1,52 @@
+# docker/Dockerfile.dashboard
+# Phase 14b (Dockerization) Phase 3: Dashboard Service Dockerfile
+# Base: Dockerfile.base production stage
+# Purpose: Streamlit Dashboard (Trade Log 시각화)
+
+# Production 이미지 기반
+ARG BASE_IMAGE=cbgb:production
+FROM ${BASE_IMAGE}
+
+# 메타데이터
+LABEL maintainer="CBGB Trading Bot"
+LABEL version="0.1.0"
+LABEL description="CBGB Dashboard - Trade Log Analytics"
+
+# Dashboard 의존성은 이미 pyproject.toml dev에 포함되어 있음
+# (streamlit, plotly, watchdog, pandas, scipy)
+# production stage에서 pip install -e .[dev] 실행하지 않으므로,
+# 여기서 필요한 패키지만 추가 설치
+USER root
+RUN pip install --no-cache-dir \
+    streamlit==1.30.0 \
+    plotly==5.18.0 \
+    watchdog==3.0.0 \
+    pandas>=2.0.0 \
+    scipy>=1.10.0
+
+# Dashboard 소스 코드는 이미 production stage에서 복사됨
+# (src/dashboard/ 포함)
+
+# Streamlit 포트 노출
+EXPOSE 8501
+
+# Healthcheck (Streamlit /_stcore/health 엔드포인트)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+# Dashboard는 API 키 불필요하므로 entrypoint 검증 생략
+# 로그 디렉토리만 생성
+RUN mkdir -p /app/logs /app/reports && \
+    chown -R cbgb:cbgb /app/logs /app/reports
+
+# PYTHONPATH 설정 (src 모듈 import를 위해)
+ENV PYTHONPATH=/app
+
+USER cbgb
+
+# CMD: Streamlit 직접 실행 (entrypoint 없음)
+CMD ["streamlit", "run", "src/dashboard/app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true", \
+     "--server.runOnSave=false"]

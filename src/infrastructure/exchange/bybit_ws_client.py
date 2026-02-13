@@ -38,7 +38,7 @@ class BybitWsClient:
     Bybit WebSocket Client (골격만, Contract tests only)
 
     SSOT: docs/plans/task_plan.md Phase 7
-    - subscribe topic 정확성 (execution.inverse)
+    - subscribe topic 정확성 (execution.linear)
     - disconnect/reconnect → DEGRADED 플래그
     - ping-pong timeout 처리
     - WS queue maxsize + overflow 정책 (실거래 함정 1)
@@ -293,10 +293,10 @@ class BybitWsClient:
 
     def _send_subscribe(self) -> None:
         """
-        Subscribe 메시지 전송 (execution.inverse topic)
+        Subscribe 메시지 전송 (execution topic)
 
         SSOT: Bybit V5 WebSocket Private Execution
-        메시지: {"op": "subscribe", "args": ["execution.inverse"]}
+        메시지: {"op": "subscribe", "args": ["execution.{category}"]}
         """
         if not self._ws:
             return
@@ -349,7 +349,7 @@ class BybitWsClient:
         - op=auth 응답: {"success": true, "op": "auth"}
         - op=subscribe 응답: {"success": true, "op": "subscribe"}
         - op=pong 응답: {"success": true, "op": "pong"}
-        - execution 메시지: {"topic": "execution.inverse", "data": [...]}
+        - execution 메시지: {"topic": "execution.{category}", "data": [...]}
         """
         try:
             msg = json.loads(message)
@@ -526,7 +526,7 @@ class BybitWsClient:
             list: execution event 목록 (dict 형식)
                 [
                     {
-                        "symbol": "BTCUSD",
+                        "symbol": "BTCUSDT",
                         "orderId": "abc123",
                         "orderLinkId": "grid_xyz_l",
                         "side": "Buy",

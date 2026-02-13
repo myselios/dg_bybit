@@ -95,16 +95,16 @@ def test_log_trade_exit_includes_pnl_and_fee():
         - side ("Sell" or "Buy")
         - qty (int)
         - price (float)
-        - pnl_btc (float)
+        - pnl_usdt (float)
         - pnl_usd (float)
-        - fee_btc (float)
+        - fee_usdt (float)
         - fee_usd (float)
         - fee_ratio (float, actual/estimated)
 
     Example:
-        pnl_btc=0.001
+        pnl_usdt=0.001
         pnl_usd=50.0
-        fee_btc=0.00002
+        fee_usdt=0.00002
         fee_usd=1.0
 
     Expected:
@@ -117,18 +117,18 @@ def test_log_trade_exit_includes_pnl_and_fee():
         side="Sell",
         qty=100,
         price=51000.0,
-        pnl_btc=0.001,
+        pnl_usdt=0.001,
         pnl_usd=50.0,
-        fee_btc=0.00002,
+        fee_usdt=0.00002,
         fee_usd=1.0,
         estimated_fee_usd=0.8,
     )
 
     # 필수 필드 검증
     assert log_entry["event_type"] == "EXIT"
-    assert log_entry["pnl_btc"] == 0.001
+    assert log_entry["pnl_usdt"] == 0.001
     assert log_entry["pnl_usd"] == 50.0
-    assert log_entry["fee_btc"] == 0.00002
+    assert log_entry["fee_usdt"] == 0.00002
     assert log_entry["fee_usd"] == 1.0
     assert abs(log_entry["fee_ratio"] - 1.25) < 0.01  # 1.0 / 0.8 = 1.25
 

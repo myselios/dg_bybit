@@ -68,8 +68,8 @@ def check_emergency(market_data) -> EmergencyStatus:
         FLOW Section 5 완전 준수
     """
     # [1] Balance Anomaly Gate (최우선)
-    equity_btc = market_data.get_equity_btc()
-    if equity_btc <= 0.0:
+    equity_usdt = market_data.get_equity_usdt()
+    if equity_usdt <= 0.0:
         return EmergencyStatus(
             is_halt=True,
             is_cooldown=False,

@@ -1,0 +1,59 @@
+# docker-compose.override.yml
+# Phase 14b (Dockerization) Phase 2: 로컬 개발 오버라이드
+# 목적: 로컬 개발 시 편의성 향상 (bind mount, 빠른 재빌드 등)
+# 사용법: docker-compose up 시 자동으로 병합됨
+
+version: '3.8'
+
+services:
+  # ============================================================
+  # Bot Service (로컬 개발 오버라이드)
+  # ============================================================
+  bot:
+    # 로컬 코드 변경 시 즉시 반영 (bind mount)
+    # 주의: Production에서는 사용 금지 (보안, 성능)
+    volumes:
+      # 로그는 bind mount로 실시간 확인
+      - ./logs:/app/logs
+      # 소스 코드는 named volume 유지 (컨테이너 재빌드 필요)
+      # - ./src:/app/src  # 주석: 소스 변경 시 재빌드 권장
+
+    # Mainnet 실행 (Production)
+    environment:
+      - BYBIT_TESTNET=false
+
+    # 개발 편의: 자동 재시작 활성화
+    restart: unless-stopped
+
+    # Mainnet 스크립트로 실행 (--yes: 자동 확인, interactive input 건너뛰기)
+    command: ["python", "scripts/run_mainnet_dry_run.py", "--yes", "--target-trades", "10", "--max-hours", "24"]
+
+  # ============================================================
+  # Dashboard Service (로컬 개발 오버라이드)
+  # ============================================================
+  dashboard:
+    # 로그는 bind mount로 실시간 확인
+    volumes:
+      - ./logs:/app/logs:ro  # Read-only (로컬 logs 디렉토리 직접 사용)
+
+    # 개발 편의: 자동 재시작 활성화
+    restart: unless-stopped
+
+    # 포트는 docker-compose.yml에서 이미 노출됨 (8501:8501)
+    # 개발 시 브라우저 자동 열기는 .streamlit/config.toml에서 비활성화됨
+
+  # ============================================================
+  # Analysis Service (로컬 개발 오버라이드)
+  # ============================================================
+  analysis:
+    # 로그/리포트는 bind mount로 실시간 확인 (선택사항)
+    # volumes:
+    #   - ./logs:/app/logs
+    #   - ./reports:/app/reports
+
+    # 개발 편의: 자동 재시작 활성화
+    restart: unless-stopped
+
+    # 개발 시 즉시 테스트: 수동 실행 후 cron 비활성화
+    # command: ["tail", "-f", "/dev/null"]  # cron 대신 대기 모드
+    # → docker exec cbgb-analysis python scripts/analyze_trades.py

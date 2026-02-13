@@ -1,0 +1,35 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.3, pluggy-1.6.0 -- /home/selios/dg_bybit/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/selios/dg_bybit
+configfile: pyproject.toml
+plugins: cov-4.1.0
+collecting ... collected 25 items
+
+tests/dashboard/test_data_pipeline.py::test_load_jsonl_files PASSED      [  4%]
+tests/dashboard/test_data_pipeline.py::test_parse_trade_log PASSED       [  8%]
+tests/dashboard/test_data_pipeline.py::test_to_dataframe PASSED          [ 12%]
+tests/dashboard/test_data_pipeline.py::test_empty_log_handling PASSED    [ 16%]
+tests/dashboard/test_data_pipeline.py::test_invalid_json_handling PASSED [ 20%]
+tests/dashboard/test_export.py::test_apply_date_filter PASSED            [ 24%]
+tests/dashboard/test_export.py::test_apply_date_filter_all PASSED        [ 28%]
+tests/dashboard/test_export.py::test_export_to_csv PASSED                [ 32%]
+tests/dashboard/test_export.py::test_export_to_csv_empty PASSED          [ 36%]
+tests/dashboard/test_file_watcher.py::test_get_latest_modification_time PASSED [ 40%]
+tests/dashboard/test_file_watcher.py::test_get_latest_modification_time_empty_directory PASSED [ 44%]
+tests/dashboard/test_file_watcher.py::test_has_directory_changed_new_file PASSED [ 48%]
+tests/dashboard/test_file_watcher.py::test_has_directory_changed_file_modified PASSED [ 52%]
+tests/dashboard/test_file_watcher.py::test_has_directory_changed_no_change PASSED [ 56%]
+tests/dashboard/test_metrics_calculator.py::test_calculate_summary_metrics PASSED [ 60%]
+tests/dashboard/test_metrics_calculator.py::test_calculate_session_risk PASSED [ 64%]
+tests/dashboard/test_metrics_calculator.py::test_calculate_regime_breakdown PASSED [ 68%]
+tests/dashboard/test_metrics_calculator.py::test_calculate_slippage_stats PASSED [ 72%]
+tests/dashboard/test_metrics_calculator.py::test_calculate_latency_stats PASSED [ 76%]
+tests/dashboard/test_ui_components.py::test_render_metric_card PASSED    [ 80%]
+tests/dashboard/test_ui_components.py::test_render_pnl_chart PASSED      [ 84%]
+tests/dashboard/test_ui_components.py::test_render_trade_distribution PASSED [ 88%]
+tests/dashboard/test_ui_components.py::test_render_session_risk_gauge PASSED [ 92%]
+tests/dashboard/test_ui_components.py::test_sidebar_filters PASSED       [ 96%]
+tests/dashboard/test_ui_components.py::test_empty_dataframe_handling PASSED [100%]
+
+============================== 25 passed in 1.01s ==============================

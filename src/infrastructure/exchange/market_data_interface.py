@@ -29,7 +29,7 @@ class MarketDataInterface(Protocol):
 
     Phase 1 최소 요구사항:
       - get_mark_price() → float (USD 기준 BTC 가격)
-      - get_equity_btc() → float (계정 equity BTC)
+      - get_equity_usdt() → float (계정 equity USDT)
       - get_rest_latency_p95_1m() → float (REST latency p95, seconds)
       - get_ws_last_heartbeat_ts() → float (WS 마지막 heartbeat timestamp)
       - get_ws_event_drop_count() → int (WS event drop 누적 카운트)
@@ -54,21 +54,6 @@ class MarketDataInterface(Protocol):
 
         Used by:
             - price_drop_1m/5m 계산 (emergency.py)
-        """
-        ...
-
-    def get_equity_btc(self) -> float:
-        """
-        계정 Equity (BTC 단위) — DEPRECATED, Linear USDT 전환 후 제거 예정.
-
-        Returns:
-            float: Account equity in BTC (e.g., 0.0025)
-
-        Used by:
-            - balance anomaly 검증 (emergency.py)
-            - equity <= 0 → HALT
-
-        Note: Linear USDT 전환 후 get_equity_usdt() 사용 권장
         """
         ...
 

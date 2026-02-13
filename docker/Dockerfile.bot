@@ -1,0 +1,39 @@
+# docker/Dockerfile.bot
+# Phase 14b (Dockerization) Phase 2: Bot Service Dockerfile
+# Base: Dockerfile.base production stage
+# Purpose: Trading Bot (Mainnet/Testnet 24/7 실행)
+
+# Production 이미지 기반
+ARG BASE_IMAGE=cbgb:production
+FROM ${BASE_IMAGE}
+
+# 메타데이터
+LABEL maintainer="CBGB Trading Bot"
+LABEL version="0.1.0"
+LABEL description="CBGB Trading Bot - Mainnet/Testnet Dry-Run"
+
+# Bot 실행 스크립트 복사 (이미 base에서 복사되었지만 명시)
+# scripts/ 디렉토리는 이미 production stage에서 복사됨
+
+# 환경변수 (docker-compose에서 오버라이드 가능)
+ENV PYTHONUNBUFFERED=1
+ENV BYBIT_TESTNET=true
+
+# Healthcheck (Bot 프로세스 확인)
+# Bot은 HTTP 서버가 아니므로 프로세스 존재 여부만 확인
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
+    CMD pgrep -f "run_.*_dry_run.py" || exit 1
+
+# Entrypoint (docker-entrypoint.sh 사용)
+# root 권한으로 전환 (chmod 필요)
+USER root
+COPY docker/docker-entrypoint.sh /app/docker/docker-entrypoint.sh
+RUN chmod +x /app/docker/docker-entrypoint.sh
+
+# 다시 cbgb 사용자로 전환 (보안)
+USER cbgb
+
+ENTRYPOINT ["/app/docker/docker-entrypoint.sh"]
+
+# 기본 CMD (Testnet, docker-compose에서 오버라이드 가능)
+CMD ["python", "scripts/run_testnet_dry_run.py", "--target-trades", "10", "--max-hours", "24"]

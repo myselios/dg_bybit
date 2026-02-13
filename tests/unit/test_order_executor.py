@@ -41,13 +41,13 @@ def test_place_entry_order_success():
     Entry 주문 성공 (FLOW Section 4.5 Entry 계약)
 
     FLOW Section 4.5:
-        - category="inverse"
+        - category="linear"
         - positionIdx=0 (One-way 모드)
         - orderType="Limit"
         - orderLinkId="{signal_id}_{direction}"
 
     Example:
-        symbol="BTCUSD"
+        symbol="BTCUSDT"
         side="Buy" (LONG)
         qty=100
         price=50000
@@ -60,7 +60,7 @@ def test_place_entry_order_success():
         status="New"
     """
     result = place_entry_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
         qty=100,
         price=50000.0,
@@ -91,7 +91,7 @@ def test_place_entry_order_idempotency():
     """
     # 1차 호출 (성공)
     result1 = place_entry_order(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         side="Buy",
         qty=100,
         price=50000.0,
@@ -103,7 +103,7 @@ def test_place_entry_order_idempotency():
     # 2차 호출 (DuplicateOrderError 예상)
     try:
         result2 = place_entry_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             price=50000.0,
@@ -136,7 +136,7 @@ def test_place_entry_order_validates_order_link_id_length():
 
     try:
         result = place_entry_order(
-            symbol="BTCUSD",
+            symbol="BTCUSDT",
             side="Buy",
             qty=100,
             price=50000.0,
@@ -180,7 +180,7 @@ def test_place_stop_loss_conditional_order_params():
         orderLinkId="test_1_stop_Sell"
     """
     result = place_stop_loss(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         qty=100,
         stop_price=49000.0,
         direction="LONG",
@@ -217,7 +217,7 @@ def test_place_stop_loss_direction_short():
         orderLinkId="test_1_stop_Buy"
     """
     result = place_stop_loss(
-        symbol="BTCUSD",
+        symbol="BTCUSDT",
         qty=100,
         stop_price=51000.0,
         direction="SHORT",

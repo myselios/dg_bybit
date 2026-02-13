@@ -348,6 +348,44 @@ table_phase=$(grep "^| [0-9]" docs/plans/task_plan.md | grep -E "DONE|\[x\]" | t
 - Section 5.6 절차 재확인 (Phase DONE 시 4단계)
 - 절차 완료 전까지 DONE 보고 금지
 
+#### (10) Margin Mode & Leverage 정책 준수 (Gate: 리스크 설정 일관성)
+**Mainnet Dry-Run/실거래 시작 전 필수 검증 (Phase 12b+)**
+
+```bash
+# (10a) Margin Mode 정책 문서 확인 (account_builder_policy.md Section 10.0 존재)
+grep -n "### 10.0 Margin Mode" docs/specs/account_builder_policy.md
+# → 출력: Line number (Section 10.0 존재)
+
+# (10b) FLOW.md Section 4.5에 Margin Mode 언급 확인
+grep -n "Isolated Margin\|tradeMode=0" docs/constitution/FLOW.md
+# → 출력: Line number (Margin Mode 정책 존재)
+
+# (10c) bybit_rest_client.py에 set_margin_mode() 메서드 존재 확인
+grep -n "def set_margin_mode" src/infrastructure/exchange/bybit_rest_client.py
+# → 출력: Line number (메서드 존재)
+
+# (10d) Config leverage 주석 명확화 확인 (참고용 명시)
+grep -n "참고용.*leverage" config/safety_limits.yaml
+# → 출력: Line number (주석 명확화 확인)
+
+# (10e) ADR-0012 존재 확인
+ls -la docs/adr/ADR-0012-margin-mode-isolated.md
+# → 출력: 파일 존재
+
+# (10f) Bybit 계정 Margin Mode 확인 (수동, 향후 자동화)
+# Testnet/Mainnet 시작 전 Bybit 웹/앱에서 확인:
+# - Derivatives → BTCUSDT → Margin Mode → Isolated 확인
+# 현재는 수동 확인, 향후 get_position() API로 tradeMode=0 검증 자동화 예정
+echo "Manual check: Bybit account Margin Mode = Isolated (tradeMode=0)"
+# → 출력: 수동 확인 기록
+```
+
+**검증 실패 시**:
+- Margin Mode 정책 문서 없음 → **ADR-0012 작성 후 재시도**
+- set_margin_mode() 메서드 없음 → **구현 후 재시도**
+- Config leverage 주석 불명확 → **명확화 후 재시도**
+- Bybit 계정 Cross Margin 감지 → **Isolated로 변경 후 재시작**
+
 ---
 
 **검증 성공 시 DONE 절차**:

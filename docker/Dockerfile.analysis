@@ -1,0 +1,41 @@
+# docker/Dockerfile.analysis
+# Phase 14b (Dockerization) Phase 4: Analysis Service Dockerfile
+# Base: Dockerfile.base production stage
+# Purpose: Cron 기반 주기적 거래 분석
+
+# Production 이미지 기반
+ARG BASE_IMAGE=cbgb:production
+FROM ${BASE_IMAGE}
+
+# 메타데이터
+LABEL maintainer="CBGB Trading Bot"
+LABEL version="0.1.0"
+LABEL description="CBGB Analysis - Periodic Trade Analysis & Reporting"
+
+# cron 설치 (Debian/Ubuntu 기반)
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends cron procps && \
+    rm -rf /var/lib/apt/lists/*
+
+# Analysis 의존성은 이미 pyproject.toml dev에 포함되어 있음
+# (pandas, scipy 등)
+
+# Crontab 파일 복사 및 등록
+COPY scripts/crontab /etc/cron.d/cbgb-analysis
+RUN chmod 0644 /etc/cron.d/cbgb-analysis && \
+    crontab /etc/cron.d/cbgb-analysis
+
+# 디렉토리 생성 (로그, 리포트)
+RUN mkdir -p /app/logs /app/reports && \
+    chown -R cbgb:cbgb /app/logs /app/reports
+
+# cron은 root 권한 필요 (PID 파일 생성)
+# USER cbgb로 전환하지 않음
+
+# Healthcheck (cron 프로세스 확인)
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
+    CMD pgrep -x cron || exit 1
+
+# CMD: cron foreground 실행 (root로 실행)
+CMD ["cron", "-f"]

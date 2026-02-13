@@ -47,10 +47,10 @@ def calculate_liquidation_distance(
     contracts: int,
     leverage: float,
     direction: str,
-    equity_btc: float,
+    equity_usdt: float,
 ) -> float:
     """
-    Liquidation distance 계산 (Bybit Inverse, 보수적 근사)
+    Liquidation distance 계산 (Bybit Linear USDT, 보수적 근사)
 
     FLOW Section 7.5:
         Bankruptcy Price (Simplified):
@@ -62,11 +62,11 @@ def calculate_liquidation_distance(
           SHORT: (liq_price - entry) / entry
 
     Args:
-        entry_price: 진입가 (USD)
+        entry_price: 진입가 (USDT)
         contracts: 계약 수량
         leverage: 레버리지
         direction: "LONG" or "SHORT"
-        equity_btc: 계좌 잔고 (BTC)
+        equity_usdt: 계좌 잔고 (USDT)
 
     Returns:
         liq_distance_pct: 청산거리 (0.0~1.0)
@@ -113,7 +113,7 @@ def check_liquidation_gate(params, api_failure: bool = False) -> LiquidationGate
             contracts=params.contracts,
             leverage=params.leverage,
             direction=params.direction,
-            equity_btc=params.equity_btc,
+            equity_usdt=params.equity_usdt,
         )
 
     # 2. 동적 기준 계산

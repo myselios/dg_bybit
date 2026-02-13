@@ -49,7 +49,7 @@ def log_halt(
 
     Context snapshot fields (example):
         - current_price (float)
-        - equity_btc (float)
+        - equity_usdt (float)
         - equity_usd (float)
         - stage_candidate (int)
         - latency_ms (float)

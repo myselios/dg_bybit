@@ -300,7 +300,7 @@ class BybitRestClient:
         주문 발주
 
         Args:
-            symbol: 심볼 (예: BTCUSDT for Linear, BTCUSD for Inverse)
+            symbol: 심볼 (예: BTCUSDT)
             side: Buy 또는 Sell
             qty: 수량 (contracts)
             order_link_id: orderLinkId (idempotency)
@@ -354,7 +354,7 @@ class BybitRestClient:
         주문 취소
 
         Args:
-            symbol: 심볼 (예: BTCUSDT for Linear, BTCUSD for Inverse)
+            symbol: 심볼 (예: BTCUSDT)
             order_id: 주문 ID
             category: 카테고리 (기본: linear)
 
@@ -378,22 +378,22 @@ class BybitRestClient:
 
     def get_tickers(
         self,
-        category: str = "inverse",
-        symbol: str = "BTCUSD",
+        category: str = "linear",
+        symbol: str = "BTCUSDT",
     ) -> Dict[str, Any]:
         """
         시장 데이터 조회 (Mark price, Index price, Funding rate)
 
         Args:
-            category: 카테고리 (기본: inverse)
-            symbol: 심볼 (기본: BTCUSD)
+            category: 카테고리 (기본: linear)
+            symbol: 심볼 (기본: BTCUSDT)
 
         Returns:
             Dict: 응답 JSON
                 {
                     "result": {
                         "list": [{
-                            "symbol": "BTCUSD",
+                            "symbol": "BTCUSDT",
                             "markPrice": "50000.50",
                             "indexPrice": "50001.00",
                             "fundingRate": "0.0001"
@@ -458,15 +458,15 @@ class BybitRestClient:
 
     def get_wallet_balance(
         self,
-        accountType: str = "CONTRACT",
-        coin: str = "BTC",
+        accountType: str = "UNIFIED",
+        coin: str = "USDT",
     ) -> Dict[str, Any]:
         """
         계정 Equity 조회
 
         Args:
-            accountType: 계정 타입 (기본: CONTRACT)
-            coin: 코인 (기본: BTC)
+            accountType: 계정 타입 (기본: UNIFIED, Linear USDT)
+            coin: 코인 (기본: USDT)
 
         Returns:
             Dict: 응답 JSON
@@ -494,22 +494,22 @@ class BybitRestClient:
 
     def get_position(
         self,
-        category: str = "inverse",
-        symbol: str = "BTCUSD",
+        category: str = "linear",
+        symbol: str = "BTCUSDT",
     ) -> Dict[str, Any]:
         """
         현재 포지션 조회
 
         Args:
-            category: 카테고리 (기본: inverse)
-            symbol: 심볼 (기본: BTCUSD)
+            category: 카테고리 (기본: linear)
+            symbol: 심볼 (기본: BTCUSDT)
 
         Returns:
             Dict: 응답 JSON
                 {
                     "result": {
                         "list": [{
-                            "symbol": "BTCUSD",
+                            "symbol": "BTCUSDT",
                             "side": "Buy",
                             "size": "100",
                             "avgPrice": "49500.00",
@@ -529,7 +529,7 @@ class BybitRestClient:
 
     def get_execution_list(
         self,
-        category: str = "inverse",
+        category: str = "linear",
         symbol: Optional[str] = None,
         orderId: Optional[str] = None,  # Phase 12a-4c: orderId 필터 지원
         limit: int = 50,
@@ -538,7 +538,7 @@ class BybitRestClient:
         거래 내역 조회 (PnL, Loss streak 계산용)
 
         Args:
-            category: 카테고리 (기본: inverse)
+            category: 카테고리 (기본: linear)
             symbol: 심볼 (Optional, 미지정 시 전체 조회)
             orderId: 주문 ID 필터 (Phase 12a-4c: REST API polling fallback용)
             limit: 조회 개수 (기본: 50)
@@ -548,8 +548,8 @@ class BybitRestClient:
                 {
                     "result": {
                         "list": [
-                            {"closedPnl": "5.0", "symbol": "BTCUSD"},
-                            {"closedPnl": "-3.0", "symbol": "BTCUSD"}
+                            {"closedPnl": "5.0", "symbol": "BTCUSDT"},
+                            {"closedPnl": "-3.0", "symbol": "BTCUSDT"}
                         ]
                     }
                 }
@@ -569,10 +569,36 @@ class BybitRestClient:
 
         return self._make_request("GET", "/v5/execution/list", params)
 
+    def get_order_history(
+        self,
+        category: str = "linear",
+        symbol: str = "BTCUSDT",
+        orderId: Optional[str] = None,
+        limit: int = 1,
+    ) -> Dict[str, Any]:
+        """
+        주문 이력 조회 (체결/취소 상태 확인용)
+
+        /v5/order/history: Filled, Cancelled 등 완료된 주문 조회
+        /v5/order/realtime은 open orders만 반환하므로 상태 확인 불가
+
+        Returns:
+            Dict: {"result": {"list": [{"orderStatus": "Filled"|"Cancelled", ...}]}}
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "limit": limit,
+        }
+        if orderId is not None:
+            params["orderId"] = orderId
+
+        return self._make_request("GET", "/v5/order/history", params)
+
     def get_kline(
         self,
-        category: str = "inverse",
-        symbol: str = "BTCUSD",
+        category: str = "linear",
+        symbol: str = "BTCUSDT",
         interval: str = "60",
         limit: int = 200,
     ) -> Dict[str, Any]:
@@ -580,8 +606,8 @@ class BybitRestClient:
         Kline/캔들스틱 데이터 조회 (ATR/Regime 계산용)
 
         Args:
-            category: 카테고리 (기본: inverse)
-            symbol: 심볼 (기본: BTCUSD)
+            category: 카테고리 (기본: linear)
+            symbol: 심볼 (기본: BTCUSDT)
             interval: 간격 (1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M)
             limit: 조회 개수 (기본: 200, 최대: 1000)
 
@@ -614,3 +640,48 @@ class BybitRestClient:
         }
 
         return self._make_request("GET", "/v5/market/kline", params)
+
+    def set_margin_mode(
+        self,
+        symbol: str,
+        buy_leverage: str,
+        sell_leverage: str,
+        category: str = "linear",
+        trade_mode: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        마진 모드 및 레버리지 설정 (Isolated/Cross 전환)
+
+        Args:
+            symbol: 심볼 (예: BTCUSDT)
+            buy_leverage: Buy leverage (문자열, 예: "3")
+            sell_leverage: Sell leverage (문자열, 예: "3")
+            category: 카테고리 (기본: linear)
+            trade_mode: 0=Isolated Margin, 1=Cross Margin (기본: 0)
+
+        Returns:
+            Dict: 응답 JSON
+
+        Raises:
+            ValueError: trade_mode가 0 또는 1이 아닌 경우
+
+        SSOT: ADR-0012 (Margin Mode Isolated Enforcement)
+        Policy: account_builder_policy.md Section 10.0
+
+        참고:
+        - Isolated Margin (trade_mode=0): 포지션마다 독립 증거금
+        - Cross Margin (trade_mode=1): 전체 계좌 증거금 공유
+        - Account Builder 정책: Isolated Margin 고정 (Cross Margin 금지)
+        """
+        if trade_mode not in [0, 1]:
+            raise ValueError(f"trade_mode must be 0 (Isolated) or 1 (Cross), got {trade_mode}")
+
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "buyLeverage": buy_leverage,
+            "sellLeverage": sell_leverage,
+            "tradeMode": trade_mode,
+        }
+
+        return self._make_request("POST", "/v5/position/set-leverage", params)

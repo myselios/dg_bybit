@@ -70,7 +70,6 @@ class BybitAdapter:
 
         # 상태 캐싱
         self._mark_price: float = 0.0
-        self._equity_btc: float = 0.0  # DEPRECATED (Linear USDT 전환 후 제거 예정)
         self._equity_usdt: float = 0.0  # Linear USDT-Margined equity
         self._last_update_ts: float = 0.0
 
@@ -111,14 +110,9 @@ class BybitAdapter:
         """현재 BTC Mark Price (USD 기준)"""
         return self._mark_price
 
-    def get_equity_btc(self) -> float:
-        """계정 Equity (BTC 단위) — DEPRECATED"""
-        return self._equity_btc
-
     def get_equity_usdt(self) -> float:
         """계정 Equity (USDT 단위) — Linear USDT-Margined"""
-        # Linear USDT: Wallet balance API에서 totalEquity (USDT) 직접 파싱
-        return getattr(self, '_equity_usdt', 0.0)
+        return self._equity_usdt
 
     def get_rest_latency_p95_1m(self) -> float:
         """REST API latency p95 (1분 윈도우, seconds)"""
@@ -263,21 +257,13 @@ class BybitAdapter:
                 self._funding_rate = float(ticker.get("fundingRate", 0.0001))
 
             # 2. Equity 조회 (Linear USDT: UNIFIED 계정)
-            wallet_response = self.rest_client.get_wallet_balance(accountType="UNIFIED", coin="BTC")
+            wallet_response = self.rest_client.get_wallet_balance(accountType="UNIFIED")
             result = wallet_response.get("result", {})
             wallet_list = result.get("list", [])
             if wallet_list:
                 wallet_data = wallet_list[0]
                 # Linear USDT: totalEquity (USDT 단위)
                 self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
-
-                # BTC equity (DEPRECATED, 호환성 유지)
-                coin_list = wallet_data.get("coin", [])
-                for coin_data in coin_list:
-                    if coin_data.get("coin") == "BTC":
-                        equity_str = coin_data.get("equity", "0")
-                        self._equity_btc = float(equity_str) if equity_str else 0.0
-                        break
 
             # 3. Position 조회
             position_response = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
@@ -409,17 +395,11 @@ class BybitAdapter:
                     continue
 
                 # ExecutionEvent 생성 (파라미터 이름 정확히 매칭)
-                # Phase 12a-5e: Linear (BTCUSDT)는 BTC 단위 → contracts 변환 필요
-                # Inverse (BTCUSD)는 이미 contracts 단위 → 그대로 사용
-                symbol = raw_event.get("symbol", "")
-                if "USDT" in symbol:
-                    # Linear: BTC to contracts (0.001 BTC per contract)
-                    filled_qty_contracts = int(exec_qty * 1000)
-                    order_qty_contracts = int(order_qty * 1000)
-                else:
-                    # Inverse: Already in contracts
-                    filled_qty_contracts = int(exec_qty)
-                    order_qty_contracts = int(order_qty)
+                # Linear USDT: execQty는 BTC 수량 (float) → contracts (int) 변환
+                # Bybit BTCUSDT: 1 contract = 0.001 BTC (contract_size)
+                contract_size = 0.001
+                filled_qty_contracts = int(round(exec_qty / contract_size))
+                order_qty_contracts = int(round(order_qty / contract_size))
 
                 execution_event = ExecutionEvent(
                     type=event_type,  # ✅ event_type → type

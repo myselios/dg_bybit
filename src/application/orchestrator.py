@@ -18,6 +18,7 @@ Exports:
 """
 
 import logging
+import time
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
 from domain.state import State, Position, Direction, StopStatus
@@ -89,6 +90,8 @@ class Orchestrator:
         rest_client=None,  # Phase 11b: Order placement용 (Optional, type: BybitRestClient)
         log_storage: Optional[LogStorage] = None,  # Phase 11b: Trade Log 저장용 (Optional)
         killswitch: Optional[KillSwitch] = None,  # Codex Review Fix #2: Manual halt mechanism
+        config_hash: str = "unknown",  # P0 fix: 실제 config hash (safety_limits.yaml 기반)
+        git_commit: str = "unknown",  # P0 fix: 실제 git commit hash
     ):
         """
         Orchestrator 초기화
@@ -98,20 +101,22 @@ class Orchestrator:
             rest_client: Bybit REST client (Order placement용, Phase 11b)
             log_storage: LogStorage (Trade Log 저장용, Phase 11b)
             killswitch: KillSwitch (Manual halt mechanism, Codex Review Fix #2)
+            config_hash: Config 해시 (safety_limits.yaml 기반, 재현성)
+            git_commit: Git commit 해시 (코드 버전 추적)
         """
         self.market_data = market_data
         self.rest_client = rest_client
         self.log_storage = log_storage
         self.killswitch = killswitch if killswitch is not None else KillSwitch()
+        self.config_hash = config_hash
+        self.git_commit = git_commit
         self.tick_counter = 0  # Tick counter (general purpose)
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
-        # Phase 12b: Re-enabled with proper error handling (10s timeout)
-        # ⚠️ TEMPORARY DISABLED: 이전 테스트 포지션 무시 (깨끗한 시작)
         self.state = State.FLAT
         self.position = None
 
-        if False and rest_client is not None:  # DISABLED: Position Recovery
+        if rest_client is not None:
             try:
                 pos_response = rest_client.get_position(symbol="BTCUSDT", category="linear")
 
@@ -263,48 +268,54 @@ class Orchestrator:
         Args:
             event: Exit FILL event
             position: 청산된 Position (Exit FILL 직전 상태)
-
-        Phase 11b DoD: "Trade log 정상 기록 (Phase 10 로깅 인프라 사용)"
         """
         if position is None:
-            return  # Position이 없으면 로깅 불가
+            return
 
-        # Trade Log v1.0 생성
-        # 1. 실행 품질 필드
-        # Support both ExecutionEvent (dataclass) and dict (for backward compatibility)
+        # Exit fill 데이터 추출
         if hasattr(event, 'order_id'):
             # ExecutionEvent dataclass
             order_id = event.order_id or "unknown"
-            exec_price = event.exec_price
-            exec_qty = event.filled_qty
+            exec_price = float(event.exec_price)
+            exec_qty_btc = float(event.filled_qty) * 0.001
+            fee_usd = abs(float(event.fee_paid)) if event.fee_paid is not None else 0.0
+            event_timestamp = event.timestamp  # Bybit execTime (ms)
         else:
-            # dict (backward compatibility)
+            # dict (REST API fallback)
             order_id = event.get("orderId", "unknown")
             exec_price = float(event.get("execPrice", 0.0))
-            # Phase 12a-5: execQty는 BTC 단위 float (Bybit API 구조)
             exec_qty_btc = float(event.get("execQty", 0.0))
-            exec_qty = int(exec_qty_btc * 1000)  # BTC to contracts (0.001 BTC per contract)
+            fee_usd = abs(float(event.get("execFee", 0.0)))
+            event_timestamp = float(event.get("execTime", 0))
+
+        # 거래 결과 계산
+        entry_price = position.entry_price
+        exit_price = exec_price
+        qty_btc = exec_qty_btc
+        direction = position.direction.value  # "LONG" or "SHORT"
+        exit_side = "Sell" if position.direction == Direction.LONG else "Buy"
+
+        # PnL 계산 (Linear USDT)
+        if position.direction == Direction.LONG:
+            realized_pnl_usd = (exit_price - entry_price) * qty_btc
+        else:
+            realized_pnl_usd = (entry_price - exit_price) * qty_btc
 
         fills = [
             {
-                "price": float(exec_price),
-                "qty": int(exec_qty),
-                "fee": 0.0,  # Fee는 실제 구현에서 계산 필요
+                "price": exit_price,
+                "qty": int(qty_btc * 1000),
+                "fee": fee_usd,
                 "timestamp": self.market_data.get_timestamp(),
             }
         ]
-        slippage_usd = 0.0  # 실제 구현에서는 expected vs exec 계산
-        latency_rest_ms = 0.0  # 실제 구현에서는 타이밍 측정
-        latency_ws_ms = 0.0
-        latency_total_ms = 0.0
 
-        # 2. Market data
+        # Market data
         funding_rate = self.market_data.get_funding_rate()
         mark_price = self.market_data.get_mark_price()
         index_price = self.market_data.get_index_price()
-        orderbook_snapshot = {}  # 실제 구현에서는 MarketData에서 가져오기
 
-        # 3. Market regime (deterministic)
+        # Market regime
         ma_slope_pct = self.market_data.get_ma_slope_pct()
         atr_percentile = self.market_data.get_atr_percentile()
         market_regime = calculate_market_regime(
@@ -312,13 +323,24 @@ class Orchestrator:
             atr_percentile=atr_percentile,
         )
 
-        # 4. 무결성 필드
-        schema_version = "1.0"
-        config_hash = "test_config_hash"  # 실제 구현에서는 설정 해시 계산
-        git_commit = "test_git_commit"  # 실제 구현에서는 Git 커밋 해시 가져오기
         exchange_server_time_offset_ms = self.market_data.get_exchange_server_time_offset_ms()
 
-        # TradeLogV1 생성
+        # Slippage 계산: 주문 가격(expected) vs 실제 체결 가격
+        expected_price = self.pending_order.get("price", 0.0) if self.pending_order else 0.0
+        slippage_usd = abs(exec_price - expected_price) * qty_btc if expected_price > 0 else 0.0
+
+        # Latency 계산: 주문 발주 시각 → Bybit 체결 시각 → 우리 수신 시각
+        now = time.time()
+        if self.pending_order_timestamp and event_timestamp > 0:
+            exec_time_sec = event_timestamp / 1000.0 if event_timestamp > 1e12 else event_timestamp
+            latency_rest_ms = max(0.0, (exec_time_sec - self.pending_order_timestamp) * 1000.0)
+            latency_ws_ms = max(0.0, (now - exec_time_sec) * 1000.0)
+            latency_total_ms = (now - self.pending_order_timestamp) * 1000.0
+        else:
+            latency_rest_ms = 0.0
+            latency_ws_ms = 0.0
+            latency_total_ms = 0.0
+
         trade_log = TradeLogV1(
             order_id=order_id,
             fills=fills,
@@ -329,20 +351,26 @@ class Orchestrator:
             funding_rate=funding_rate,
             mark_price=mark_price,
             index_price=index_price,
-            orderbook_snapshot=orderbook_snapshot,
+            orderbook_snapshot={},
             market_regime=market_regime,
-            schema_version=schema_version,
-            config_hash=config_hash,
-            git_commit=git_commit,
+            side=exit_side,
+            direction=direction,
+            qty_btc=qty_btc,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            realized_pnl_usd=realized_pnl_usd,
+            fee_usd=fee_usd,
+            schema_version="1.0",
+            config_hash=self.config_hash,
+            git_commit=self.git_commit,
             exchange_server_time_offset_ms=exchange_server_time_offset_ms,
         )
 
-        # Validation
         validate_trade_log_v1(trade_log)
 
-        # LogStorage에 저장 (JSONL)
         log_dict = asdict(trade_log)
         self.log_storage.append_trade_log_v1(log_entry=log_dict, is_critical=False)
+        logger.info(f"📝 Trade logged: {direction} {exit_side} {qty_btc:.4f} BTC, entry=${entry_price:,.2f} → exit=${exit_price:,.2f}, PnL=${realized_pnl_usd:,.4f}, fee=${fee_usd:,.4f}")
 
     def get_state(self) -> State:
         """현재 상태 반환"""
@@ -385,12 +413,12 @@ class Orchestrator:
         - Exception handling (롤백)
         """
         import logging
-        import time
         logger = logging.getLogger(__name__)
 
         # Phase 12a-4c: REST API polling fallback (WebSocket timeout 시)
-        # EXIT_PENDING 또는 ENTRY_PENDING 상태에서 5초 경과 시 REST API로 주문 조회
-        WEBSOCKET_TIMEOUT = 5.0  # seconds
+        # EXIT_PENDING 또는 ENTRY_PENDING 상태에서 10초 경과 시 REST API로 주문 조회
+        # (5초 → 10초: WS FILL 이벤트 도착 시간 확보, race condition 방지)
+        WEBSOCKET_TIMEOUT = 10.0  # seconds
         if (self.state in [State.ENTRY_PENDING, State.EXIT_PENDING] and
             self.pending_order is not None and
             self.pending_order_timestamp is not None):
@@ -405,9 +433,34 @@ class Orchestrator:
                         order_id = self.pending_order.get("order_id")
                         order_link_id = self.pending_order.get("order_link_id")
 
-                        # Phase 12b Fix: Skip fallback if order_id is None (invalid pending_order)
+                        # Phase 12b Fix: order_id가 None이면 position 확인으로 실제 상태 결정
                         if not order_id:
-                            logger.error(f"❌ Invalid pending_order: order_id is None, clearing state")
+                            logger.error(f"❌ Invalid pending_order: order_id is None")
+                            # Position API로 실제 상태 확인
+                            try:
+                                pos_response = self.rest_client.get_position(
+                                    category="linear",
+                                    symbol="BTCUSDT",
+                                )
+                                positions = pos_response.get("result", {}).get("list", [])
+                                has_position = positions and float(positions[0].get("size", "0")) > 0
+                            except Exception:
+                                has_position = False
+
+                            if self.state == State.EXIT_PENDING and not has_position:
+                                # Exit 완료 (포지션 없음)
+                                logger.info("✅ No position found, EXIT completed → FLAT")
+                                self.state = State.FLAT
+                                self.position = None
+                            elif self.state == State.ENTRY_PENDING and has_position:
+                                # Entry 완료 (포지션 있음)
+                                logger.info("✅ Position found, ENTRY completed → IN_POSITION")
+                                self.state = State.IN_POSITION
+                            else:
+                                # 불확실 → FLAT으로 복귀 (안전)
+                                logger.warning(f"⚠️ Ambiguous state, resetting to FLAT (had_position={has_position})")
+                                self.state = State.FLAT
+                                self.position = None
                             self.pending_order = None
                             self.pending_order_timestamp = None
                             return  # Skip fallback
@@ -423,8 +476,8 @@ class Orchestrator:
                         orders = order_response.get("result", {}).get("list", [])
 
                         if not orders:
-                            # 주문이 open orders에 없으면 이미 체결됨 (Filled)
-                            logger.info(f"✅ Order {order_id} is Filled (not in open orders)")
+                            # 주문이 open orders에 없음 → 체결(Filled) 또는 취소(Cancelled)
+                            logger.info(f"ℹ️ Order {order_id} not in open orders (filled or cancelled)")
 
                             # Execution list에서 FILL 이벤트 조회
                             exec_response = self.rest_client.get_execution_list(
@@ -460,6 +513,177 @@ class Orchestrator:
                                         self.pending_order = None
                                         self.pending_order_timestamp = None
                                         logger.info("✅ REST API fallback: EXIT_PENDING → FLAT")
+                            else:
+                                # Execution 없음 → order history로 실제 상태 확인
+                                # (Race condition: 체결 직후 execution list 미전파 가능)
+                                try:
+                                    history_response = self.rest_client.get_order_history(
+                                        category="linear",
+                                        symbol="BTCUSDT",
+                                        orderId=order_id,
+                                    )
+                                    history_orders = history_response.get("result", {}).get("list", [])
+                                    if history_orders:
+                                        order_status = history_orders[0].get("orderStatus", "Unknown")
+                                        logger.info(f"ℹ️ Order history status: {order_status}")
+
+                                        if order_status == "Filled":
+                                            # 체결됐지만 execution list 미전파 → 2초 후 재시도
+                                            logger.info("⏳ Order Filled but no executions yet, retrying in 2s...")
+                                            time.sleep(2)
+                                            retry_response = self.rest_client.get_execution_list(
+                                                category="linear",
+                                                symbol="BTCUSDT",
+                                                orderId=order_id,
+                                                limit=50,
+                                            )
+                                            retry_execs = retry_response.get("result", {}).get("list", [])
+                                            if retry_execs:
+                                                fill_event = retry_execs[0]
+                                                logger.info(f"✅ Got FILL event from REST API (retry): {fill_event}")
+                                                matched = match_pending_order(event=fill_event, pending_order=self.pending_order)
+                                                if matched:
+                                                    position = create_position_from_fill(event=fill_event, pending_order=self.pending_order)
+                                                    if self.state == State.ENTRY_PENDING:
+                                                        self.position = position
+                                                        self.state = State.IN_POSITION
+                                                        self.pending_order = None
+                                                        self.pending_order_timestamp = None
+                                                        logger.info("✅ REST API fallback (retry): ENTRY_PENDING → IN_POSITION")
+                                                    elif self.state == State.EXIT_PENDING:
+                                                        if self.log_storage is not None:
+                                                            self._log_completed_trade(event=fill_event, position=self.position)
+                                                        self.position = None
+                                                        self.state = State.FLAT
+                                                        self.pending_order = None
+                                                        self.pending_order_timestamp = None
+                                                        logger.info("✅ REST API fallback (retry): EXIT_PENDING → FLAT")
+                                            else:
+                                                # 재시도에도 execution 없음 → position 직접 확인
+                                                logger.warning(f"⚠️ Order Filled but no executions after retry, checking position...")
+                                                # Position API로 직접 포지션 확인
+                                                pos_response = self.rest_client.get_position(
+                                                    category="linear",
+                                                    symbol="BTCUSDT",
+                                                )
+                                                positions = pos_response.get("result", {}).get("list", [])
+                                                if positions and float(positions[0].get("size", "0")) > 0:
+                                                    if self.state == State.ENTRY_PENDING:
+                                                        # Entry Filled + position 존재 → Position API에서 직접 복구
+                                                        existing_pos = positions[0]
+                                                        size_btc = float(existing_pos.get("size", "0"))
+                                                        qty = int(size_btc * 1000)  # BTC → contracts
+                                                        entry_price = float(existing_pos.get("avgPrice", "0"))
+                                                        side = existing_pos.get("side", "")
+                                                        direction = Direction.LONG if side == "Buy" else Direction.SHORT
+                                                        signal_id = self.pending_order.get("signal_id", "recovered") if self.pending_order else "recovered"
+
+                                                        self.position = Position(
+                                                            qty=qty,
+                                                            entry_price=entry_price,
+                                                            direction=direction,
+                                                            signal_id=signal_id,
+                                                            stop_status=StopStatus.MISSING,
+                                                            stop_price=entry_price,
+                                                        )
+                                                        self.state = State.IN_POSITION
+                                                        self.pending_order = None
+                                                        self.pending_order_timestamp = None
+                                                        logger.info(f"✅ Position recovered from API: {side} {qty} @ ${entry_price:.2f}, ENTRY_PENDING → IN_POSITION")
+                                                    elif self.state == State.EXIT_PENDING:
+                                                        # Exit Filled인데 position 아직 존재 → pending 초기화, 다음 tick에서 재시도
+                                                        logger.warning(f"⚠️ Exit order Filled but position still exists, clearing pending for retry")
+                                                        self.pending_order = None
+                                                        self.pending_order_timestamp = None
+                                                else:
+                                                    logger.warning(f"⚠️ No position found, resetting to FLAT")
+                                                    prev_state = self.state
+                                                    self.state = State.FLAT
+                                                    self.pending_order = None
+                                                    self.pending_order_timestamp = None
+                                                    logger.info(f"✅ State recovered: {prev_state} → State.FLAT")
+                                        elif order_status == "Cancelled":
+                                            logger.warning(f"⚠️ Order {order_id} confirmed Cancelled, resetting to FLAT")
+                                            prev_state = self.state
+                                            self.state = State.FLAT
+                                            self.pending_order = None
+                                            self.pending_order_timestamp = None
+                                            logger.info(f"✅ State recovered: {prev_state} → State.FLAT")
+                                        else:
+                                            # 예상 외 상태 (PartiallyFilled 등) → position API로 직접 판단
+                                            logger.warning(f"⚠️ Order {order_id} status={order_status}, checking position API...")
+                                            try:
+                                                pos_resp = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
+                                                pos_list = pos_resp.get("result", {}).get("list", [])
+                                                has_pos = pos_list and float(pos_list[0].get("size", "0")) > 0
+                                            except Exception:
+                                                has_pos = False
+                                            if self.state == State.ENTRY_PENDING and has_pos:
+                                                existing = pos_list[0]
+                                                size_btc = float(existing.get("size", "0"))
+                                                qty = int(size_btc * 1000)
+                                                entry_price = float(existing.get("avgPrice", "0"))
+                                                side = existing.get("side", "")
+                                                direction = Direction.LONG if side == "Buy" else Direction.SHORT
+                                                sig_id = self.pending_order.get("signal_id", "recovered") if self.pending_order else "recovered"
+                                                self.position = Position(qty=qty, entry_price=entry_price, direction=direction, signal_id=sig_id, stop_status=StopStatus.MISSING, stop_price=entry_price)
+                                                self.state = State.IN_POSITION
+                                                self.pending_order = None
+                                                self.pending_order_timestamp = None
+                                                logger.info(f"✅ Position recovered: {side} {qty} @ ${entry_price:.2f}, {order_status} → IN_POSITION")
+                                            elif self.state == State.EXIT_PENDING and not has_pos:
+                                                self.state = State.FLAT
+                                                self.position = None
+                                                self.pending_order = None
+                                                self.pending_order_timestamp = None
+                                                logger.info(f"✅ No position, {order_status} → FLAT")
+                                            else:
+                                                # 판단 불가 → pending 초기화 (다음 tick에서 재평가)
+                                                self.pending_order = None
+                                                self.pending_order_timestamp = None
+                                                logger.warning(f"⚠️ Ambiguous: state={self.state}, has_pos={has_pos}, clearing pending")
+                                    else:
+                                        # Order history에도 없음 → position API로 직접 판단
+                                        logger.warning(f"⚠️ Order {order_id} not found in history, checking position API...")
+                                        try:
+                                            pos_resp = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
+                                            pos_list = pos_resp.get("result", {}).get("list", [])
+                                            has_pos = pos_list and float(pos_list[0].get("size", "0")) > 0
+                                        except Exception:
+                                            has_pos = False
+                                        if self.state == State.ENTRY_PENDING and has_pos:
+                                            existing = pos_list[0]
+                                            size_btc = float(existing.get("size", "0"))
+                                            qty = int(size_btc * 1000)
+                                            entry_price = float(existing.get("avgPrice", "0"))
+                                            side = existing.get("side", "")
+                                            direction = Direction.LONG if side == "Buy" else Direction.SHORT
+                                            sig_id = self.pending_order.get("signal_id", "recovered") if self.pending_order else "recovered"
+                                            self.position = Position(qty=qty, entry_price=entry_price, direction=direction, signal_id=sig_id, stop_status=StopStatus.MISSING, stop_price=entry_price)
+                                            self.state = State.IN_POSITION
+                                            self.pending_order = None
+                                            self.pending_order_timestamp = None
+                                            logger.info(f"✅ Position recovered: {side} {qty} @ ${entry_price:.2f}, ENTRY_PENDING → IN_POSITION")
+                                        elif self.state == State.EXIT_PENDING and not has_pos:
+                                            self.state = State.FLAT
+                                            self.position = None
+                                            self.pending_order = None
+                                            self.pending_order_timestamp = None
+                                            logger.info(f"✅ No position found, EXIT_PENDING → FLAT")
+                                        else:
+                                            # 판단 불가 → pending 초기화
+                                            self.pending_order = None
+                                            self.pending_order_timestamp = None
+                                            logger.warning(f"⚠️ Order not in history, state={self.state}, has_pos={has_pos}, clearing pending")
+                                except Exception as hist_err:
+                                    logger.error(f"❌ Order history check failed: {hist_err}")
+                                    # Fallback: 기존 동작 (FLAT 복귀)
+                                    logger.warning(f"⚠️ Order {order_id} status unknown, resetting to FLAT")
+                                    prev_state = self.state
+                                    self.state = State.FLAT
+                                    self.pending_order = None
+                                    self.pending_order_timestamp = None
+                                    logger.info(f"✅ State recovered: {prev_state} → State.FLAT")
                         else:
                             # 주문이 여전히 open 상태 (미체결 또는 부분 체결)
                             order_status = orders[0].get("orderStatus")
@@ -542,18 +766,34 @@ class Orchestrator:
         if self.state != State.IN_POSITION or self.position is None:
             return None
 
-        # Phase 11b: Stop hit 체크
+        # Phase 11b: Stop hit + Grid take-profit 체크
         current_price = self.market_data.get_current_price()
 
         should_exit = False
         exit_reason = "stop_loss_hit"
 
+        # 1) Stop loss hit 체크
         if check_stop_hit(current_price=current_price, position=self.position):
-            # Stop loss hit
             should_exit = True
             exit_reason = "stop_loss_hit"
-        else:
-            should_exit = False
+
+        # 2) Grid take-profit 체크 (ATR * 2.0 기반)
+        if not should_exit:
+            atr = self.market_data.get_atr()
+            if atr is not None and atr > 0:
+                tp_spacing = atr * 1.5  # Take-profit spacing (ATR * 1.5, R:R >= 2:1)
+                if self.position.direction == Direction.LONG:
+                    take_profit_price = self.position.entry_price + tp_spacing
+                    if current_price >= take_profit_price:
+                        should_exit = True
+                        exit_reason = "take_profit"
+                        logger.info(f"🎯 Take profit: ${current_price:,.2f} >= ${take_profit_price:,.2f} (entry + ATR*1.5)")
+                elif self.position.direction == Direction.SHORT:
+                    take_profit_price = self.position.entry_price - tp_spacing
+                    if current_price <= take_profit_price:
+                        should_exit = True
+                        exit_reason = "take_profit"
+                        logger.info(f"🎯 Take profit: ${current_price:,.2f} <= ${take_profit_price:,.2f} (entry - ATR*1.5)")
 
         if should_exit:
             # Exit intent 생성
@@ -572,7 +812,7 @@ class Orchestrator:
                         symbol="BTCUSDT",  # Linear USDT Futures
                         side=exit_side,
                         qty=str(qty_btc),  # BTC quantity
-                        order_link_id=f"exit_{self.position.signal_id}",
+                        order_link_id=f"exit_{self.position.signal_id}_{int(time.time())}",
                         order_type="Market",  # Market order (즉시 체결)
                         time_in_force="GTC",
                         price=None,  # Market order: no price
@@ -580,9 +820,17 @@ class Orchestrator:
                     )
 
                     # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
+                    ret_code = exit_order.get("retCode", -1)
                     result = exit_order.get("result", {})
                     order_id = result.get("orderId")
                     order_link_id = result.get("orderLinkId")
+
+                    if ret_code != 0 or not order_id:
+                        logger.error(f"❌ Exit order failed: retCode={ret_code}, response={exit_order}")
+                        # 주문 실패 시 IN_POSITION 유지 (다음 tick에서 재시도)
+                        return intents.exit_intent
+
+                    logger.info(f"✅ Exit order placed: orderId={order_id}, side={exit_side}")
 
                     # State 전이: IN_POSITION → EXIT_PENDING
                     self.state = State.EXIT_PENDING
@@ -595,13 +843,11 @@ class Orchestrator:
                         "signal_id": self.position.signal_id,
                     }
                     # Phase 12a-4c: Pending order 발주 시각 기록
-                    import time
                     self.pending_order_timestamp = time.time()
                 except Exception as e:
-                    # Exit order 실패 → HALT (치명적 오류)
-                    self.state = State.HALT
-                    # halt_reason은 run_tick()에서 설정 필요 (여기서는 로깅만)
-                    pass
+                    # Exit order 실패 → IN_POSITION 유지 (다음 tick에서 재시도)
+                    logger.error(f"❌ Exit order exception: {type(e).__name__}: {e}")
+                    # HALT 대신 IN_POSITION 유지 → 다음 tick에서 재시도
 
             return intents.exit_intent
 
@@ -626,18 +872,26 @@ class Orchestrator:
             # Step 3: Stop 갱신 실행 (rest_client 필요)
             if self.rest_client is not None:
                 try:
-                    # 새 stop price 계산 (Direction에 따라)
-                    # LONG: entry - (entry * 0.03), SHORT: entry + (entry * 0.03)
-                    stop_price_offset_pct = 0.03  # 3% (정책에서 가져와야 하지만 일단 고정)
-                    if self.position.direction == Direction.LONG:
-                        new_stop_price = self.position.entry_price * (1 - stop_price_offset_pct)
+                    # 새 stop price 계산 (ATR 기반 동적 SL, R:R >= 2:1)
+                    atr_for_stop = self.market_data.get_atr()
+                    SL_MULTIPLIER = 0.7
+                    if atr_for_stop and atr_for_stop > 0:
+                        stop_distance_usd = atr_for_stop * SL_MULTIPLIER
+                        # Clamp: 최소 0.5%, 최대 2.0% of entry price
+                        min_stop = self.position.entry_price * 0.005
+                        max_stop = self.position.entry_price * 0.02
+                        stop_distance_usd = max(min_stop, min(stop_distance_usd, max_stop))
                     else:
-                        new_stop_price = self.position.entry_price * (1 + stop_price_offset_pct)
+                        stop_distance_usd = self.position.entry_price * 0.01  # Fallback 1%
+                    if self.position.direction == Direction.LONG:
+                        new_stop_price = self.position.entry_price - stop_distance_usd
+                    else:
+                        new_stop_price = self.position.entry_price + stop_distance_usd
 
                     if action == "AMEND" and self.position.stop_order_id:
                         # Amend 시도
                         self.rest_client.amend_order(
-                            symbol="BTCUSD",
+                            symbol="BTCUSDT",
                             order_id=self.position.stop_order_id,
                             qty=self.position.qty,
                             trigger_price=new_stop_price,
@@ -651,13 +905,13 @@ class Orchestrator:
                     elif action == "CANCEL_AND_PLACE" and self.position.stop_order_id:
                         # Cancel 후 Place
                         self.rest_client.cancel_order(
-                            symbol="BTCUSD",
+                            symbol="BTCUSDT",
                             order_id=self.position.stop_order_id,
                         )
                         # 새 Stop 주문 발주
                         stop_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
                         stop_order = self.rest_client.place_order(
-                            symbol="BTCUSD",
+                            symbol="BTCUSDT",
                             side=stop_side,
                             qty=self.position.qty,
                             order_type="Market",
@@ -676,7 +930,7 @@ class Orchestrator:
                         # Stop 없음 → 새로 설치 (복구)
                         stop_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
                         stop_order = self.rest_client.place_order(
-                            symbol="BTCUSD",
+                            symbol="BTCUSDT",
                             side=stop_side,
                             qty=self.position.qty,
                             order_type="Market",
@@ -742,8 +996,8 @@ class Orchestrator:
         if atr is None:
             return {"blocked": True, "reason": "atr_unavailable"}
 
-        # Grid spacing 계산 (ATR * 2.0)
-        self.grid_spacing = calculate_grid_spacing(atr=atr, multiplier=2.0)
+        # Grid spacing 계산 (ATR * 0.3 → 재진입 빈도 증가, 더 좁은 그리드)
+        self.grid_spacing = calculate_grid_spacing(atr=atr, multiplier=0.3)
 
         # 현재 가격
         current_price = self.market_data.get_current_price()
@@ -775,8 +1029,12 @@ class Orchestrator:
         atr_pct_24h = self.market_data.get_atr_pct_24h()
 
         # Sizing 먼저 계산 (EV gate용 qty 필요)
-        sizing_params = build_sizing_params(signal=signal, market_data=self.market_data)
+        sizing_params = build_sizing_params(signal=signal, market_data=self.market_data, atr=atr)
         sizing_result: SizingResult = calculate_contracts(params=sizing_params)
+
+        logger.info(f"📐 Sizing: equity=${sizing_params.equity_usdt:.2f}, price=${sizing_params.entry_price_usd:,.2f}, "
+                     f"max_loss=${sizing_params.max_loss_usdt:.2f}, lev={sizing_params.leverage}x → "
+                     f"contracts={sizing_result.contracts} (reject={sizing_result.reject_reason})")
 
         if sizing_result.contracts == 0:
             return {"blocked": True, "reason": sizing_result.reject_reason}
@@ -826,26 +1084,30 @@ class Orchestrator:
             contract_size = 0.001  # Bybit Linear BTCUSDT: 0.001 BTC per contract
             qty_btc = contracts * contract_size
 
-            # Limit PostOnly (maker-only) 주문
+            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({qty_btc} BTC) @ ${signal.price:,.2f}")
+
+            # Limit GTC 주문 (현재가 → 즉시 체결 가능, Grid 가격 → 대기 주문)
+            # Note: PostOnly는 현재가에서 taker로 취소되므로 GTC 사용
             order_result = self.rest_client.place_order(
                 symbol="BTCUSDT",
                 side=signal.side,
                 order_type="Limit",
                 qty=str(qty_btc),
                 price=str(signal.price),
-                time_in_force="PostOnly",  # Maker-only
+                time_in_force="GTC",
                 order_link_id=f"entry_{self.current_signal_id}",
                 category="linear",
             )
 
             # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
+            ret_code = order_result.get("retCode", -1)
             result = order_result.get("result", {})
             order_id = result.get("orderId")
             order_link_id = result.get("orderLinkId")
 
-            # Phase 12b Fix: Validate order_id (prevent None from causing infinite loop)
-            if not order_id:
-                raise ValueError(f"API response missing orderId: {order_result}")
+            # Phase 12b Fix: Validate retCode and order_id
+            if ret_code != 0 or not order_id:
+                raise ValueError(f"Entry order failed: retCode={ret_code}, response={order_result}")
 
         except Exception as e:
             # Order placement 실패 → 차단
@@ -865,7 +1127,6 @@ class Orchestrator:
         }
 
         # Phase 12a-4c: Pending order 발주 시각 기록
-        import time
         self.pending_order_timestamp = time.time()
 
         return {"blocked": False, "reason": None}

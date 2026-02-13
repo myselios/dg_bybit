@@ -52,7 +52,7 @@ def test_log_halt_includes_required_fields():
         state="FLAT",
         context={
             "current_price": 50000.0,
-            "equity_btc": 0.001,
+            "equity_usdt": 0.001,
             "equity_usd": 50.0,
         },
     )
@@ -73,8 +73,7 @@ def test_log_halt_includes_context_snapshot():
 
     Context snapshot fields:
         - current_price (float)
-        - equity_btc (float)
-        - equity_usd (float)
+        - equity_usdt (float)
         - stage_candidate (int)
         - latency_ms (float)
         - position_qty (int, if IN_POSITION)
@@ -84,7 +83,7 @@ def test_log_halt_includes_context_snapshot():
     Example:
         context = {
             "current_price": 50000.0,
-            "equity_btc": 0.002,
+            "equity_usdt": 0.002,
             "equity_usd": 100.0,
             "stage_candidate": 1,
             "latency_ms": 150.0,
@@ -102,7 +101,7 @@ def test_log_halt_includes_context_snapshot():
         state="IN_POSITION",
         context={
             "current_price": 50000.0,
-            "equity_btc": 0.002,
+            "equity_usdt": 0.002,
             "equity_usd": 100.0,
             "stage_candidate": 1,
             "latency_ms": 6000.0,  # 6초 (> 5초 threshold)
@@ -115,7 +114,7 @@ def test_log_halt_includes_context_snapshot():
     # Context snapshot 필드 검증
     context = log_entry["context"]
     assert context["current_price"] == 50000.0
-    assert context["equity_btc"] == 0.002
+    assert context["equity_usdt"] == 0.002
     assert context["equity_usd"] == 100.0
     assert context["stage_candidate"] == 1
     assert context["latency_ms"] == 6000.0
@@ -209,7 +208,7 @@ def test_log_halt_includes_emergency_trigger_type():
         state="FLAT",
         context={
             "current_price": 45000.0,
-            "equity_btc": 0.002,
+            "equity_usdt": 0.002,
             "equity_usd": 90.0,
             "emergency_trigger": "price_drop_1m",
             "trigger_threshold": -0.10,

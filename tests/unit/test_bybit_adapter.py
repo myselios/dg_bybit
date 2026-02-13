@@ -37,7 +37,7 @@ class TestBybitAdapterRestIntegration:
         rest_client.get_tickers.return_value = {
             "result": {
                 "list": [{
-                    "symbol": "BTCUSD",
+                    "symbol": "BTCUSDT",
                     "markPrice": "50000.50",
                     "indexPrice": "50001.00",
                     "fundingRate": "0.0001"
@@ -84,7 +84,7 @@ class TestBybitAdapterRestIntegration:
 
         # Assert
         assert equity_usdt == 1000.50
-        rest_client.get_wallet_balance.assert_called_once_with(accountType="UNIFIED", coin="BTC")
+        rest_client.get_wallet_balance.assert_called_once_with(accountType="UNIFIED")
 
     def test_get_index_price_and_funding_rate(self):
         """GET /v5/market/tickers → get_index_price(), get_funding_rate()"""
@@ -95,7 +95,7 @@ class TestBybitAdapterRestIntegration:
         rest_client.get_tickers.return_value = {
             "result": {
                 "list": [{
-                    "symbol": "BTCUSD",
+                    "symbol": "BTCUSDT",
                     "markPrice": "50000.00",
                     "indexPrice": "50001.50",
                     "fundingRate": "0.00015"
@@ -121,7 +121,7 @@ class TestBybitAdapterRestIntegration:
         rest_client.get_position.return_value = {
             "result": {
                 "list": [{
-                    "symbol": "BTCUSD",
+                    "symbol": "BTCUSDT",
                     "side": "Buy",
                     "size": "100",
                     "avgPrice": "49500.00",
@@ -153,17 +153,18 @@ class TestBybitAdapterWebSocketIntegration:
         ws_client = MagicMock()
 
         # WebSocket FILL event (Bybit execution.linear 구조)
+        # Linear USDT: execQty는 BTC 수량 (0.1 BTC = 100 contracts)
         ws_fill_event = {
             "topic": "execution.linear",
             "data": [{
-                "symbol": "BTCUSD",
+                "symbol": "BTCUSDT",
                 "orderId": "abc123",
                 "orderLinkId": "grid_xyz_l",
                 "side": "Buy",
                 "execType": "Trade",
-                "execQty": "100",
+                "execQty": "0.1",
                 "execPrice": "49800.00",
-                "orderQty": "100",
+                "orderQty": "0.1",
                 "leavesQty": "0",  # 완전 체결 (FILL)
                 "execFee": "0.00001",
                 "execTime": "1706000000000"
@@ -193,16 +194,17 @@ class TestBybitAdapterWebSocketIntegration:
         rest_client = MagicMock()
         ws_client = MagicMock()
 
+        # Linear USDT: execQty는 BTC 수량 (0.03 BTC = 30 contracts)
         ws_partial_event = {
-            "symbol": "BTCUSD",
+            "symbol": "BTCUSDT",
             "orderId": "def456",
             "orderLinkId": "grid_abc_s",
             "side": "Sell",
             "execType": "Trade",
-            "execQty": "30",
+            "execQty": "0.03",
             "execPrice": "50200.00",
-            "orderQty": "100",  # Partial: 30/100
-            "leavesQty": "70",  # 남은 수량: 70 (Partial fill)
+            "orderQty": "0.1",  # Partial: 0.03/0.1 BTC
+            "leavesQty": "0.07",  # 남은 수량: 0.07 BTC (Partial fill)
             "execFee": "0.000003",
             "execTime": "1706000010000"
         }
@@ -232,7 +234,7 @@ class TestBybitAdapterStateCaching:
         ws_client = MagicMock()
 
         rest_client.get_tickers.return_value = {
-            "result": {"list": [{"symbol": "BTCUSD", "markPrice": "50000.00"}]}
+            "result": {"list": [{"symbol": "BTCUSDT", "markPrice": "50000.00"}]}
         }
 
         adapter = BybitAdapter(rest_client, ws_client, testnet=True)
@@ -373,8 +375,8 @@ class TestBybitAdapterSessionRiskTracking:
         rest_client.get_execution_list.return_value = {
             "result": {
                 "list": [
-                    {"closedPnl": "5.0", "symbol": "BTCUSD", "execTime": str(int(current_time_ms - 1000))},
-                    {"closedPnl": "-3.0", "symbol": "BTCUSD", "execTime": str(int(current_time_ms - 500))}
+                    {"closedPnl": "5.0", "symbol": "BTCUSDT", "execTime": str(int(current_time_ms - 1000))},
+                    {"closedPnl": "-3.0", "symbol": "BTCUSDT", "execTime": str(int(current_time_ms - 500))}
                 ]
             }
         }

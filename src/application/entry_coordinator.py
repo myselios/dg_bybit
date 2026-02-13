@@ -80,7 +80,7 @@ def build_signal_context(signal: Signal, grid_spacing: float) -> SignalContext:
     )
 
 
-def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> SizingParams:
+def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: float = 0.0) -> SizingParams:
     """
     Sizing 파라미터 생성 (Linear USDT)
 
@@ -101,7 +101,7 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> Siz
     - Contract size: 0.001 BTC per contract
 
     Codex Review Fix #3:
-    - Stage 1 (< $300): max_loss_usd_cap=$3, loss_pct_cap=3%
+    - Stage 1 (< $300): max_loss_usd_cap=$10, loss_pct_cap=10%
     - Stage 2 ($300~$700): max_loss_usd_cap=$20, loss_pct_cap=8%
     - Stage 3 (>= $700): max_loss_usd_cap=$30, loss_pct_cap=6%
     """
@@ -111,8 +111,8 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> Siz
     # Stage 판별 (Policy Section 4)
     if equity_usdt < 300:
         # Stage 1: Expansion ($100 → $300)
-        max_loss_usd_cap = 3.0
-        loss_pct_cap = 0.03  # 3%
+        max_loss_usd_cap = 10.0
+        loss_pct_cap = 0.10  # 10%
         leverage = 3.0
     elif equity_usdt < 700:
         # Stage 2: Acceleration ($300 → $700)
@@ -132,8 +132,15 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface) -> Siz
     # Direction (Buy → LONG, Sell → SHORT)
     direction = "LONG" if signal.side == "Buy" else "SHORT"
 
-    # Stop distance pct (3%)
-    stop_distance_pct = 0.03
+    # Stop distance (ATR 기반 동적 계산, R:R >= 2:1 목표)
+    # ATR이 전달되면 ATR * SL_MULTIPLIER → pct 변환, clamp(0.5%, 2.0%)
+    SL_MULTIPLIER = 0.7
+    SL_MIN_PCT = 0.005  # 0.5%
+    SL_MAX_PCT = 0.02   # 2.0%
+    if atr > 0 and signal.price > 0:
+        stop_distance_pct = max(SL_MIN_PCT, min(atr * SL_MULTIPLIER / signal.price, SL_MAX_PCT))
+    else:
+        stop_distance_pct = 0.01  # Fallback 1%
 
     # Leverage는 위에서 Stage별로 설정됨 (Stage 1/2: 3x, Stage 3: 2x)
 

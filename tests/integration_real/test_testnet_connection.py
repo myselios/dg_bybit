@@ -7,7 +7,7 @@ SSOT: docs/plans/task_plan.md Phase 8 - Testnet Validation Scenario 1
 요구사항:
 - wss://stream-testnet.bybit.com/v5/private 연결
 - auth 성공
-- execution.inverse topic 구독 성공
+- execution.linear topic 구독 성공
 - heartbeat 10초 이내 수신
 
 환경 변수:
@@ -31,7 +31,7 @@ def test_ws_connection_auth_subscribe_success(api_credentials):
     검증:
     1. WebSocket 연결 성공
     2. Auth 성공
-    3. execution.inverse topic 구독 성공
+    3. execution.linear topic 구독 성공
     4. is_connected() == True
     """
     # Given: BybitWsClient 생성
