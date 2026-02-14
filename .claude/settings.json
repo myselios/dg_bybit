@@ -6,7 +6,29 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat TASKS.md 2>/dev/null | head -60 || echo 'TASKS.md not found'"
+            "command": "echo '=== TASKS.md ===' && cat TASKS.md 2>/dev/null | head -60 || echo 'TASKS.md not found'; echo '=== Bot Status ===' && docker ps --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null | grep cbgb || echo 'No containers running'; echo '=== Recent Log ===' && docker logs cbgb-bot --tail 3 2>/dev/null || echo 'Bot not running'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); FILE=$(echo \"$INPUT\" | grep -oP '\"file_path\"\\s*:\\s*\"\\K[^\"]+' 2>/dev/null || true); if echo \"$FILE\" | grep -qE \"FLOW\\.md|account_builder_policy\\.md\"; then echo \"WARNING: SSOT 파일 수정 감지 ($FILE) — ADR 필수. CLAUDE.md Section 4 확인.\"; fi'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FOUND=$(grep -rn \"assert True\\|pass # TODO\\|raise NotImplementedError\" tests/ 2>/dev/null | head -5); if [ -n \"$FOUND\" ]; then echo \"BLOCKED: placeholder test 발견 — 수정 필수\"; echo \"$FOUND\"; exit 2; fi'"
           }
         ]
       }
