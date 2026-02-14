@@ -273,3 +273,28 @@ def test_log_storage_pre_rotate_flush_and_fsync(temp_log_dir):
     with open(day1_file, "r") as f:
         lines = f.readlines()
         assert len(lines) == 5
+
+
+# ========== P1-7: rotate_if_needed NoneType 방어 ==========
+
+
+def test_rotate_if_needed_handles_none_path():
+    """
+    P1-7: current_file_path가 None일 때 rotate_if_needed()가 AttributeError 없이 동작
+    lazy open 전에 rotate가 호출되는 경우 방어
+    """
+    import tempfile
+    from infrastructure.storage.log_storage import LogStorage
+    with tempfile.TemporaryDirectory() as tmpdir:
+        storage = LogStorage(log_dir=Path(tmpdir))
+
+        # 초기 상태: current_file_path=None, current_file_fd=None
+        assert storage.current_file_path is None
+        assert storage.current_file_fd is None
+
+        # rotate_if_needed()가 에러 없이 실행되어야 함 (lazy open 수행)
+        storage.rotate_if_needed()
+
+        # lazy open이 수행되어 파일이 열려야 함
+        assert storage.current_file_path is not None
+        assert storage.current_file_fd is not None

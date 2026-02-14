@@ -81,7 +81,7 @@ def place_manual_order(side: str, qty: int):
         response = rest_client.place_order(
             symbol="BTCUSDT",
             side=side,
-            qty=qty,
+            qty=str(qty * 0.001),
             order_link_id=order_link_id,
             order_type="Market",
             time_in_force="GoodTillCancel",

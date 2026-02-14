@@ -37,6 +37,14 @@ class MockRestClient:
         self.orders = []
         self.order_counter = 0
 
+    def get_position(self, symbol: str, category: str = "linear"):
+        """Mock get_position — returns empty (no position)"""
+        return {"retCode": 0, "result": {"list": []}}
+
+    def set_trading_stop(self, symbol: str, stop_loss: str, category: str = "linear", position_idx: int = 0, sl_trigger_by: str = "MarkPrice"):
+        """Mock set_trading_stop — always succeeds"""
+        return {"retCode": 0, "retMsg": "OK"}
+
     def place_order(
         self,
         symbol: str,
@@ -47,6 +55,7 @@ class MockRestClient:
         time_in_force: str = "GoodTillCancel",
         price: str = None,
         category: str = "linear",
+        reduce_only: bool = False,
     ):
         """Mock place_order method (matches bybit_rest_client.py signature)"""
         if self.should_fail:

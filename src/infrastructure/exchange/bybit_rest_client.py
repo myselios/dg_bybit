@@ -149,7 +149,7 @@ class BybitRestClient:
         - GET: timestamp + apiKey + recvWindow + queryString
         - POST: timestamp + apiKey + recvWindow + JSON_BODY
         """
-        recv_window = 20000  # Extended to 10000ms (시간 동기화 문제 대응)
+        recv_window = 20000  # Extended to 20000ms (시간 동기화 문제 대응)
 
         if method == "POST":
             # POST: JSON body 사용
@@ -230,7 +230,7 @@ class BybitRestClient:
             "X-BAPI-API-KEY": self.api_key,
             "X-BAPI-SIGN": signature,
             "X-BAPI-TIMESTAMP": str(timestamp),
-            "X-BAPI-RECV-WINDOW": "20000",  # Extended to 10000ms (시간 동기화 문제 대응)
+            "X-BAPI-RECV-WINDOW": "20000",  # Extended to 20000ms (시간 동기화 문제 대응)
             "Content-Type": "application/json",
         }
 
@@ -289,12 +289,13 @@ class BybitRestClient:
         self,
         symbol: str,
         side: str,
-        qty: int,
+        qty: str,
         order_link_id: str,
         order_type: str = "Market",
         time_in_force: str = "GoodTillCancel",
         price: Optional[str] = None,
         category: str = "linear",
+        reduce_only: bool = False,
     ) -> Dict[str, Any]:
         """
         주문 발주
@@ -302,7 +303,7 @@ class BybitRestClient:
         Args:
             symbol: 심볼 (예: BTCUSDT)
             side: Buy 또는 Sell
-            qty: 수량 (contracts)
+            qty: BTC 수량 문자열 (예: '0.003')
             order_link_id: orderLinkId (idempotency)
             order_type: 주문 타입 (기본: Market)
             time_in_force: 유효 기간 (기본: GoodTillCancel)
@@ -342,6 +343,10 @@ class BybitRestClient:
         if price is not None:
             params["price"] = price
 
+        # reduceOnly (Exit 주문에서 반대 포지션 오픈 방지)
+        if reduce_only:
+            params["reduceOnly"] = True
+
         return self._make_request("POST", "/v5/order/create", params)
 
     def cancel_order(
@@ -371,6 +376,37 @@ class BybitRestClient:
         }
 
         return self._make_request("POST", "/v5/order/cancel", params)
+
+    def set_trading_stop(
+        self,
+        symbol: str,
+        stop_loss: str,
+        category: str = "linear",
+        position_idx: int = 0,
+        sl_trigger_by: str = "MarkPrice",
+    ) -> Dict[str, Any]:
+        """
+        포지션에 Stop Loss 설정 (Bybit V5 set-trading-stop)
+
+        Args:
+            symbol: 심볼 (예: BTCUSDT)
+            stop_loss: Stop Loss 가격 (문자열)
+            category: 카테고리 (기본: linear)
+            position_idx: 포지션 인덱스 (0=one-way, 1=buy-side, 2=sell-side)
+            sl_trigger_by: SL 트리거 기준 (MarkPrice, LastPrice, IndexPrice)
+
+        Returns:
+            Dict: 응답 JSON
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "stopLoss": stop_loss,
+            "slTriggerBy": sl_trigger_by,
+            "positionIdx": position_idx,
+        }
+
+        return self._make_request("POST", "/v5/position/trading-stop", params)
 
     # ========================================================================
     # Phase 12a-1: Market Data Query Methods

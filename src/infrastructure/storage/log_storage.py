@@ -179,6 +179,11 @@ class LogStorage:
         2. 현재 파일 close
         3. 새 파일 open
         """
+        # 파일이 아직 열리지 않았으면 lazy open
+        if self.current_file_path is None or self.current_file_fd is None:
+            self._open_current_file()
+            return
+
         new_filename = self._get_log_filename()
         current_filename = self.current_file_path.name
 

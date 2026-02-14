@@ -99,50 +99,40 @@ def load_trade_data(log_dir: str) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=10)  # 10초 캐시 (실시간성 유지)
+@st.cache_resource
+def _get_bybit_client():
+    """공유 BybitRestClient 인스턴스 (Mainnet)"""
+    from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
+
+    api_key = os.getenv("BYBIT_MAINNET_API_KEY")
+    api_secret = os.getenv("BYBIT_MAINNET_API_SECRET")
+
+    if not api_key or not api_secret:
+        return None
+
+    return BybitRestClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        base_url="https://api.bybit.com"
+    )
+
+
+@st.cache_data(ttl=10)
 def fetch_position_data() -> Optional[Dict[str, Any]]:
-    """
-    Bybit API로 실시간 포지션 조회 (Option B)
-
-    Returns:
-        Dict or None: 포지션 데이터
-            - size: 포지션 크기 (예: "0.001")
-            - side: 방향 ("Buy", "Sell", "None")
-            - avgPrice: 평균 진입 가격
-            - unrealisedPnl: 미실현 손익 (USDT)
-            - stopLoss: 손절 가격
-    """
+    """Bybit API로 실시간 포지션 조회"""
     try:
-        from src.infrastructure.exchange.bybit_rest_client import BybitRestClient
+        client = _get_bybit_client()
+        if client is None:
+            return None
 
-        # Mainnet API credentials from environment
-        api_key = os.getenv("BYBIT_MAINNET_API_KEY")
-        api_secret = os.getenv("BYBIT_MAINNET_API_SECRET")
-
-        if not api_key or not api_secret:
-            return None  # Credentials 없으면 None 반환 (placeholder 표시)
-
-        # BybitRestClient 생성 (mainnet)
-        client = BybitRestClient(
-            api_key=api_key,
-            api_secret=api_secret,
-            base_url="https://api.bybit.com"  # Mainnet
-        )
-
-        # Position 조회 (BTCUSDT Linear Futures)
         response = client.get_position(category="linear", symbol="BTCUSDT")
 
-        # 응답 파싱
         if response.get("retCode") == 0:
-            result = response.get("result", {})
-            positions = result.get("list", [])
-
-            if positions and len(positions) > 0:
+            positions = response.get("result", {}).get("list", [])
+            if positions:
                 pos = positions[0]
                 size = float(pos.get("size", "0"))
-
                 if size > 0:
-                    # Position 있음
                     return {
                         "size": pos.get("size", "0"),
                         "side": pos.get("side", "None"),
@@ -150,20 +140,35 @@ def fetch_position_data() -> Optional[Dict[str, Any]]:
                         "unrealisedPnl": pos.get("unrealisedPnl", "0"),
                         "stopLoss": pos.get("stopLoss", "0"),
                     }
-                else:
-                    # Position 없음 (size = 0)
-                    return {"size": "0", "side": "None", "avgPrice": "0", "unrealisedPnl": "0", "stopLoss": "0"}
-            else:
-                # No position in response
-                return {"size": "0", "side": "None", "avgPrice": "0", "unrealisedPnl": "0", "stopLoss": "0"}
-        else:
-            # API error (retCode != 0)
-            return None
+            return {"size": "0", "side": "None", "avgPrice": "0", "unrealisedPnl": "0", "stopLoss": "0"}
+        return None
 
     except Exception as e:
-        # Debug: Print exception for troubleshooting
         import traceback
         print(f"❌ Position API Error: {e}")
+        print(traceback.format_exc())
+        return None
+
+
+@st.cache_data(ttl=10)
+def fetch_equity_data() -> Optional[float]:
+    """Bybit API로 현재 자산(Equity) 조회"""
+    try:
+        client = _get_bybit_client()
+        if client is None:
+            return None
+
+        response = client.get_wallet_balance(accountType="UNIFIED")
+
+        if response.get("retCode") == 0:
+            wallet_list = response.get("result", {}).get("list", [])
+            if wallet_list:
+                return float(wallet_list[0].get("totalEquity", 0.0))
+        return None
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Equity API Error: {e}")
         print(traceback.format_exc())
         return None
 
@@ -421,12 +426,22 @@ def main():
         )
 
     with kpi_col7:
-        st.metric(
-            label="Avg PnL",
-            value=f"${summary['total_pnl'] / summary['trade_count'] if summary['trade_count'] > 0 else 0:.2f}",
-            delta=None,
-            help="평균 손익 (trade당)"
-        )
+        equity = fetch_equity_data()
+        if equity is not None:
+            equity_delta = f"{((equity - 100) / 100) * 100:+.1f}%"  # vs 초기 $100
+            st.metric(
+                label="현재 자산",
+                value=f"${equity:.2f}",
+                delta=equity_delta,
+                help="현재 계좌 Equity (USDT, Bybit API 실시간)"
+            )
+        else:
+            st.metric(
+                label="현재 자산",
+                value="N/A",
+                delta="API 오류",
+                help="Bybit API 연결 실패 — 환경변수 확인"
+            )
 
     st.markdown("---")
 
@@ -579,8 +594,8 @@ def main():
             with col_risk1:
                 st.metric(
                     label="Per-Trade Loss Cap",
-                    value="$3 (3%)",
-                    help="Stage 1: $3 또는 Equity 3% 중 작은 값"
+                    value="$10 (10%)",
+                    help="Stage 1: $10 또는 Equity 10% 중 작은 값 (ADR-0014)"
                 )
 
             with col_risk2:

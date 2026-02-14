@@ -29,6 +29,14 @@ class MockRestClient:
         self.should_fail = should_fail
         self.orders = []
 
+    def get_position(self, symbol: str, category: str = "linear"):
+        """Mock get_position — returns empty (no position)"""
+        return {"retCode": 0, "result": {"list": []}}
+
+    def set_trading_stop(self, symbol: str, stop_loss: str, category: str = "linear", position_idx: int = 0, sl_trigger_by: str = "MarkPrice"):
+        """Mock set_trading_stop — always succeeds"""
+        return {"retCode": 0, "retMsg": "OK"}
+
     def place_order(
         self,
         symbol: str,
@@ -39,6 +47,7 @@ class MockRestClient:
         time_in_force: str,
         order_link_id: str,
         category: str = "linear",
+        reduce_only: bool = False,
     ):
         """Mock place_order method"""
         if self.should_fail:
@@ -355,3 +364,32 @@ def test_entry_blocked_rest_client_unavailable():
     # Then
     assert result.entry_blocked is True
     assert result.entry_block_reason == "rest_client_unavailable"
+
+
+# ========== Test: P1-6 stop_distance_pct 전달 ==========
+
+
+def test_entry_pending_order_has_stop_distance_pct():
+    """
+    P1-6: Entry 시 pending_order에 ATR 기반 stop_distance_pct가 포함되는지 검증
+    ATR=100, price=50000 → stop_dist = 100*0.7=70 → pct = 70/50000 = 0.0014
+    Clamp: min=0.5%=250, max=2%=1000 → 250 > 70 → clamped to 250 → pct = 250/50000 = 0.005
+    """
+    fake_data = FakeMarketData(current_price=50000.0, equity_usdt=1000.0)
+    fake_data.inject_atr(100.0)
+    fake_data.inject_last_fill_price(49800.0)
+    fake_data.inject_trades_today(0)
+    fake_data.inject_atr_pct_24h(0.03)
+    fake_data.inject_winrate(0.6)
+    fake_data.inject_position_mode("MergedSingle")
+
+    mock_rest_client = MockRestClient()
+    orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_rest_client)
+
+    result = orchestrator.run_tick()
+
+    assert result.entry_blocked is False
+    assert orchestrator.pending_order is not None
+    assert "stop_distance_pct" in orchestrator.pending_order, "pending_order must include stop_distance_pct"
+    pct = orchestrator.pending_order["stop_distance_pct"]
+    assert 0.001 < pct < 0.03, f"stop_distance_pct should be between 0.1% and 3%, got {pct}"

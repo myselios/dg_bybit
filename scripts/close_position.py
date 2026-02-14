@@ -89,7 +89,7 @@ def close_position():
         response = rest_client.place_order(
             symbol="BTCUSDT",
             side=close_side,
-            qty=size,  # 정확한 position size
+            qty=str(size),  # 정확한 position size (BTC)
             order_link_id=order_link_id,
             order_type="Market",
             time_in_force="GoodTillCancel",

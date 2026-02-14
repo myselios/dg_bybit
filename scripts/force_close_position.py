@@ -10,6 +10,7 @@ scripts/force_close_position.py
 
 import argparse
 import os
+import time
 from dotenv import load_dotenv
 from infrastructure.exchange.bybit_rest_client import BybitRestClient
 
@@ -91,6 +92,7 @@ def close_all_positions(testnet=True):
             side=close_side,
             order_type="Market",
             qty=str(size_btc),
+            order_link_id=f"force_close_{int(time.time())}",
             reduce_only=True,
         )
 
