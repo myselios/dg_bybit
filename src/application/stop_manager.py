@@ -18,8 +18,12 @@ Exports:
 - recover_missing_stop(): stop_status=MISSING 복구
 """
 
-from typing import Tuple
-from domain.state import StopStatus
+import logging
+from dataclasses import dataclass
+from typing import Optional, Tuple
+from domain.state import StopStatus, Direction
+
+logger = logging.getLogger(__name__)
 
 
 def should_update_stop(
@@ -141,3 +145,101 @@ def recover_missing_stop(
         return True, "PLACE"
 
     return False, "NONE"
+
+
+SL_MULTIPLIER = 0.7
+
+
+@dataclass
+class StopUpdateResult:
+    """execute_stop_update의 결과"""
+
+    success: bool = False
+    new_stop_price: Optional[float] = None
+    stop_already_breached: bool = False
+    error: Optional[str] = None
+
+
+def calculate_stop_price(
+    entry_price: float,
+    direction: Direction,
+    atr: Optional[float],
+) -> float:
+    """ATR 기반 stop price 계산 (R:R >= 2:1)"""
+    if atr and atr > 0:
+        stop_distance_usd = atr * SL_MULTIPLIER
+        min_stop = entry_price * 0.005
+        max_stop = entry_price * 0.02
+        stop_distance_usd = max(min_stop, min(stop_distance_usd, max_stop))
+    else:
+        stop_distance_usd = entry_price * 0.01  # Fallback 1%
+
+    if direction == Direction.LONG:
+        return entry_price - stop_distance_usd
+    else:
+        return entry_price + stop_distance_usd
+
+
+def is_stop_breached(
+    current_price: float,
+    stop_price: float,
+    direction: Direction,
+) -> bool:
+    """SL이 이미 관통되었는지 확인"""
+    if not current_price or current_price <= 0:
+        return False
+    if direction == Direction.LONG and current_price <= stop_price:
+        return True
+    if direction == Direction.SHORT and current_price >= stop_price:
+        return True
+    return False
+
+
+def execute_stop_update(
+    rest_client,
+    entry_price: float,
+    direction: Direction,
+    current_price: float,
+    atr: Optional[float],
+) -> StopUpdateResult:
+    """
+    Stop Loss를 계산하고 거래소에 설정한다.
+
+    Args:
+        rest_client: Bybit REST client
+        entry_price: 진입 가격
+        direction: 포지션 방향
+        current_price: 현재 mark price
+        atr: ATR 값
+
+    Returns:
+        StopUpdateResult
+    """
+    new_stop_price = calculate_stop_price(entry_price, direction, atr)
+
+    # SL 이미 관통 체크
+    if is_stop_breached(current_price, new_stop_price, direction):
+        logger.warning(
+            f"Stop already breached: SL=${new_stop_price:,.2f}, mark=${current_price:,.2f}"
+        )
+        return StopUpdateResult(
+            success=True,
+            new_stop_price=new_stop_price,
+            stop_already_breached=True,
+        )
+
+    # Bybit V5 trading-stop API 호출
+    result = rest_client.set_trading_stop(
+        symbol="BTCUSDT",
+        stop_loss=str(round(new_stop_price, 2)),
+    )
+
+    ret_code = result.get("retCode", -1)
+    # 34040 = "not modified" → SL already set to same price → treat as success
+    if ret_code not in (0, 34040):
+        raise ValueError(
+            f"set_trading_stop failed: retCode={ret_code}, msg={result.get('retMsg')}"
+        )
+
+    logger.info(f"Stop Loss set: ${new_stop_price:,.2f}")
+    return StopUpdateResult(success=True, new_stop_price=new_stop_price)
