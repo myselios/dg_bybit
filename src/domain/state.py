@@ -93,6 +93,12 @@ class Position:
     # 복구 카운터
     stop_recovery_fail_count: int = 0
 
+    # DCA / TP 상태
+    base_qty: int = 0
+    dca_count: int = 0
+    dca_pending: bool = False
+    tp1_done: bool = False
+
 
 @dataclass
 class PendingOrder:

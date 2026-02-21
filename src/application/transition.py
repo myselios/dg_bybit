@@ -120,7 +120,8 @@ def _handle_entry_pending(
             direction=_determine_direction(pending_order.side),
             signal_id=pending_order.signal_id,
             stop_status=StopStatus.PENDING,
-            entry_working=False
+            entry_working=False,
+            base_qty=event.filled_qty
         )
 
         # Stop PLACE intent
@@ -141,7 +142,8 @@ def _handle_entry_pending(
             signal_id=pending_order.signal_id,
             stop_status=StopStatus.PENDING,
             entry_working=True,  # 잔량 주문 활성
-            entry_order_id=event.order_id
+            entry_order_id=event.order_id,
+            base_qty=event.filled_qty
         )
 
         # Stop PLACE intent (즉시)
@@ -163,7 +165,8 @@ def _handle_entry_pending(
                 direction=_determine_direction(pending_order.side),
                 signal_id=pending_order.signal_id,
                 stop_status=StopStatus.PENDING,
-                entry_working=False  # 잔량 취소됨
+                entry_working=False,  # 잔량 취소됨
+                base_qty=event.filled_qty
             )
 
             # Stop PLACE intent
@@ -344,7 +347,8 @@ def _handle_in_position(
         # 추가 부분 체결 → qty 증가
         if current_position.entry_working and event.order_id == current_position.entry_order_id:
             # Entry order의 추가 체결
-            new_qty = current_position.qty + event.filled_qty
+            old_qty = current_position.qty
+            new_qty = old_qty + event.filled_qty
 
             # (D) 계산 결과 qty < 0 방어
             if new_qty < 0:
@@ -354,7 +358,18 @@ def _handle_in_position(
                 intents.entry_blocked = True
                 return State.HALT, None, intents
 
-            new_position = replace(current_position, qty=new_qty)
+            # 평단 재계산 (추가 진입 체결가 반영)
+            exec_price = event.exec_price if event.exec_price and event.exec_price > 0 else current_position.entry_price
+            new_entry = ((current_position.entry_price * old_qty) + (exec_price * event.filled_qty)) / max(new_qty, 1)
+
+            new_dca_count = current_position.dca_count + (1 if current_position.dca_pending else 0)
+            new_position = replace(
+                current_position,
+                qty=new_qty,
+                entry_price=new_entry,
+                dca_count=new_dca_count,
+                dca_pending=False,
+            )
 
             # Stop AMEND intent (qty 변경)
             intents.stop_intent = StopIntent(
@@ -368,7 +383,8 @@ def _handle_in_position(
     elif event.type == EventType.FILL:
         # Entry order 완전 체결 → qty 증가 + entry_working=False
         if current_position.entry_working and event.order_id == current_position.entry_order_id:
-            new_qty = current_position.qty + event.filled_qty
+            old_qty = current_position.qty
+            new_qty = old_qty + event.filled_qty
 
             # (D) 계산 결과 qty < 0 방어
             if new_qty < 0:
@@ -378,11 +394,18 @@ def _handle_in_position(
                 intents.entry_blocked = True
                 return State.HALT, None, intents
 
+            exec_price = event.exec_price if event.exec_price and event.exec_price > 0 else current_position.entry_price
+            new_entry = ((current_position.entry_price * old_qty) + (exec_price * event.filled_qty)) / max(new_qty, 1)
+            new_dca_count = current_position.dca_count + (1 if current_position.dca_pending else 0)
+
             new_position = replace(
                 current_position,
                 qty=new_qty,
+                entry_price=new_entry,
                 entry_working=False,
-                entry_order_id=None
+                entry_order_id=None,
+                dca_count=new_dca_count,
+                dca_pending=False,
             )
 
             # Stop AMEND intent (최종 qty)

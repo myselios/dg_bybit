@@ -141,6 +141,7 @@ class Orchestrator:
                                 signal_id="recovered",  # Position recovery
                                 stop_status=StopStatus.MISSING,  # Force stop recovery
                                 stop_price=None,  # P0-4: None → check_stop_hit returns False → stop recovery 우선
+                                base_qty=qty,
                             )
                             self.state = State.IN_POSITION
 
@@ -463,21 +464,60 @@ class Orchestrator:
             should_exit = True
             exit_reason = "stop_loss_hit"
 
-        # 2) Take-profit 체크 (평단 대비 3.0%)
+        # 2) DCA 체크 (-2/-4/-6%)
+        if not should_exit and self.rest_client is not None and not self.position.entry_working:
+            adverse_pct = 0.0
+            if self.position.direction == Direction.LONG:
+                adverse_pct = max(0.0, (self.position.entry_price - current_price) / self.position.entry_price * 100.0)
+            else:
+                adverse_pct = max(0.0, (current_price - self.position.entry_price) / self.position.entry_price * 100.0)
+
+            dca_triggers = [2.0, 4.0, 6.0]
+            dca_mults = [0.5, 0.75, 1.0]
+            dca_idx = self.position.dca_count
+            if dca_idx < len(dca_triggers) and adverse_pct >= dca_triggers[dca_idx]:
+                base_qty = self.position.base_qty if self.position.base_qty > 0 else self.position.qty
+                add_qty_contracts = max(1, int(round(base_qty * dca_mults[dca_idx])))
+                add_qty_btc = add_qty_contracts * 0.001
+                dca_side = "Buy" if self.position.direction == Direction.LONG else "Sell"
+                try:
+                    logger.info(f"📥 DCA #{dca_idx+1} trigger: adverse={adverse_pct:.2f}% >= {dca_triggers[dca_idx]:.2f}% -> {add_qty_contracts} contracts")
+                    dca_order = self.rest_client.place_order(
+                        symbol="BTCUSDT",
+                        side=dca_side,
+                        order_type="Market",
+                        qty=str(add_qty_btc),
+                        order_link_id=f"dca_{self.position.signal_id}_{dca_idx+1}_{int(time.time())}",
+                        time_in_force="GTC",
+                        category="linear",
+                    )
+                    ret_code = dca_order.get("retCode", -1)
+                    result = dca_order.get("result", {})
+                    order_id = result.get("orderId")
+                    if ret_code == 0 and order_id:
+                        self.position.entry_working = True
+                        self.position.entry_order_id = order_id
+                        self.position.dca_pending = True
+                    else:
+                        logger.warning(f"DCA order failed: retCode={ret_code}, response={dca_order}")
+                except Exception as e:
+                    logger.warning(f"DCA order exception: {e}")
+
+        # 3) Take-profit 체크 (기본 3.0%, DCA 이후 1.5%)
         if not should_exit:
-            tp_pct = 0.03
+            tp_pct = 0.015 if self.position.dca_count > 0 else 0.03
             if self.position.direction == Direction.LONG:
                 take_profit_price = self.position.entry_price * (1 + tp_pct)
                 if current_price >= take_profit_price:
                     should_exit = True
                     exit_reason = "take_profit"
-                    logger.info(f"🎯 Take profit: ${current_price:,.2f} >= ${take_profit_price:,.2f} (entry +3.0%)")
+                    logger.info(f"🎯 Take profit: ${current_price:,.2f} >= ${take_profit_price:,.2f} (entry +{tp_pct*100:.1f}%)")
             elif self.position.direction == Direction.SHORT:
                 take_profit_price = self.position.entry_price * (1 - tp_pct)
                 if current_price <= take_profit_price:
                     should_exit = True
                     exit_reason = "take_profit"
-                    logger.info(f"🎯 Take profit: ${current_price:,.2f} <= ${take_profit_price:,.2f} (entry -3.0%)")
+                    logger.info(f"🎯 Take profit: ${current_price:,.2f} <= ${take_profit_price:,.2f} (entry -{tp_pct*100:.1f}%)")
 
         if should_exit:
             # Exit intent 생성
