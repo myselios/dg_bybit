@@ -429,6 +429,22 @@ class Orchestrator:
         if self.state != State.IN_POSITION or self.position is None:
             return None
 
+        # 거래소 실포지션과 내부 상태 동기화 (레이스컨디션 방어)
+        if self.rest_client is not None:
+            try:
+                pos_resp = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
+                plist = pos_resp.get("result", {}).get("list", [])
+                ex_size = float(plist[0].get("size", "0") or 0) if plist else 0.0
+                if ex_size == 0.0:
+                    logger.warning("IN_POSITION but exchange size=0 -> sync to FLAT")
+                    self.state = State.FLAT
+                    self.position = None
+                    self.pending_order = None
+                    self.pending_order_timestamp = None
+                    return None
+            except Exception as e:
+                logger.warning(f"Position sync check failed (continue): {e}")
+
         # P0-1: Stop 복구 실패(ERROR) → 즉시 HALT (Stop 없는 포지션 운영 금지)
         if self.position.stop_status == StopStatus.ERROR:
             logger.error("🚨 Stop recovery failed (ERROR), HALT — 포지션에 Stop 없음")
@@ -613,6 +629,17 @@ class Orchestrator:
         # Step 1: FLAT 상태 확인
         if self.state != State.FLAT:
             return {"blocked": True, "reason": "state_not_flat"}
+
+        # 거래소 실포지션 재확인 (고스트 진입 방지)
+        if self.rest_client is not None:
+            try:
+                pos_resp = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
+                plist = pos_resp.get("result", {}).get("list", [])
+                ex_size = float(plist[0].get("size", "0") or 0) if plist else 0.0
+                if ex_size > 0.0:
+                    return {"blocked": True, "reason": "exchange_position_not_flat"}
+            except Exception as e:
+                logger.warning(f"Entry precheck position query failed: {e}")
 
         # Step 2: degraded_mode 체크
         ws_degraded = self.market_data.is_ws_degraded()
