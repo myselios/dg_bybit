@@ -503,25 +503,49 @@ class Orchestrator:
                 except Exception as e:
                     logger.warning(f"DCA order exception: {e}")
 
-        # 3) Take-profit 체크 (기본 3.0%, DCA 이후 1.5%)
+        # 3) Take-profit 체크
+        # - 기본: +3.0% 전량
+        # - DCA 이후: TP1 +1.5% (50%), TP2 +3.0% (잔량)
+        exit_qty_contracts = self.position.qty
         if not should_exit:
-            tp_pct = 0.015 if self.position.dca_count > 0 else 0.03
-            if self.position.direction == Direction.LONG:
-                take_profit_price = self.position.entry_price * (1 + tp_pct)
-                if current_price >= take_profit_price:
-                    should_exit = True
-                    exit_reason = "take_profit"
-                    logger.info(f"🎯 Take profit: ${current_price:,.2f} >= ${take_profit_price:,.2f} (entry +{tp_pct*100:.1f}%)")
-            elif self.position.direction == Direction.SHORT:
-                take_profit_price = self.position.entry_price * (1 - tp_pct)
-                if current_price <= take_profit_price:
-                    should_exit = True
-                    exit_reason = "take_profit"
-                    logger.info(f"🎯 Take profit: ${current_price:,.2f} <= ${take_profit_price:,.2f} (entry -{tp_pct*100:.1f}%)")
+            if self.position.dca_count > 0 and not self.position.tp1_done:
+                tp1_pct = 0.015
+                if self.position.direction == Direction.LONG:
+                    tp1_price = self.position.entry_price * (1 + tp1_pct)
+                    if current_price >= tp1_price:
+                        should_exit = True
+                        exit_reason = "take_profit_1"
+                        exit_qty_contracts = max(1, self.position.qty // 2)
+                        logger.info(f"🎯 TP1: ${current_price:,.2f} >= ${tp1_price:,.2f} (entry +1.5%, qty={exit_qty_contracts})")
+                elif self.position.direction == Direction.SHORT:
+                    tp1_price = self.position.entry_price * (1 - tp1_pct)
+                    if current_price <= tp1_price:
+                        should_exit = True
+                        exit_reason = "take_profit_1"
+                        exit_qty_contracts = max(1, self.position.qty // 2)
+                        logger.info(f"🎯 TP1: ${current_price:,.2f} <= ${tp1_price:,.2f} (entry -1.5%, qty={exit_qty_contracts})")
+
+            if not should_exit:
+                tp2_pct = 0.03
+                if self.position.direction == Direction.LONG:
+                    tp2_price = self.position.entry_price * (1 + tp2_pct)
+                    if current_price >= tp2_price:
+                        should_exit = True
+                        exit_reason = "take_profit_2" if self.position.dca_count > 0 else "take_profit"
+                        exit_qty_contracts = self.position.qty
+                        logger.info(f"🎯 TP2: ${current_price:,.2f} >= ${tp2_price:,.2f} (entry +3.0%)")
+                elif self.position.direction == Direction.SHORT:
+                    tp2_price = self.position.entry_price * (1 - tp2_pct)
+                    if current_price <= tp2_price:
+                        should_exit = True
+                        exit_reason = "take_profit_2" if self.position.dca_count > 0 else "take_profit"
+                        exit_qty_contracts = self.position.qty
+                        logger.info(f"🎯 TP2: ${current_price:,.2f} <= ${tp2_price:,.2f} (entry -3.0%)")
 
         if should_exit:
             # Exit intent 생성
             intents = create_exit_intent(position=self.position, reason=exit_reason)
+            intents.exit_intent.qty = exit_qty_contracts
 
             # Phase 11b: Exit order 발주 (DoD: "Place exit order")
             if self.rest_client is not None:
@@ -530,7 +554,7 @@ class Orchestrator:
                     exit_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
                     # Convert contracts to BTC quantity
                     contract_size = 0.001
-                    qty_btc = self.position.qty * contract_size
+                    qty_btc = exit_qty_contracts * contract_size
 
                     exit_order = self.rest_client.place_order(
                         symbol="BTCUSDT",  # Linear USDT Futures
@@ -563,7 +587,7 @@ class Orchestrator:
                         "order_id": order_id,
                         "order_link_id": order_link_id,
                         "side": exit_side,
-                        "qty": self.position.qty,
+                        "qty": exit_qty_contracts,
                         "price": current_price,  # Market price (참고용)
                         "signal_id": self.position.signal_id,
                     }

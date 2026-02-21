@@ -224,7 +224,7 @@ def _handle_exit_pending(
         return State.EXIT_PENDING, new_position, intents
 
     elif event.type == EventType.FILL:
-        # 완전 청산
+        # 청산 체결 (전량 또는 분할)
         remaining_qty = current_position.qty - event.filled_qty
 
         if remaining_qty < 0:
@@ -235,8 +235,17 @@ def _handle_exit_pending(
             intents.entry_blocked = True
             return State.HALT, None, intents
 
-        # 정상 청산 완료 → FLAT
-        return State.FLAT, None, intents
+        if remaining_qty == 0:
+            # 전량 청산
+            return State.FLAT, None, intents
+
+        # 분할 익절 체결 후 잔량 보유
+        new_position = replace(
+            current_position,
+            qty=remaining_qty,
+            tp1_done=True,
+        )
+        return State.IN_POSITION, new_position, intents
 
     elif event.type in [EventType.REJECT, EventType.CANCEL]:
         # 청산 실패 → 상태 유지 (재시도)
