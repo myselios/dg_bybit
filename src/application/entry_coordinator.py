@@ -111,19 +111,19 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     # Stage 판별 (Policy Section 4)
     if equity_usdt < 300:
         # Stage 1: Expansion ($100 → $300)
-        max_loss_usd_cap = 10.0
-        loss_pct_cap = 0.10  # 10%
-        leverage = 3.0
+        max_loss_usd_cap = 15.0  # 2026-02-20: 10 → 15
+        loss_pct_cap = 0.15  # 2026-02-20: 10% → 15%
+        leverage = 5.0  # 2026-02-20: 3x → 5x
     elif equity_usdt < 700:
         # Stage 2: Acceleration ($300 → $700)
-        max_loss_usd_cap = 20.0
-        loss_pct_cap = 0.08  # 8%
-        leverage = 3.0
+        max_loss_usd_cap = 30.0  # 2026-02-20: 20 → 30
+        loss_pct_cap = 0.10  # 2026-02-20: 8% → 10%
+        leverage = 5.0  # 2026-02-20: 3x → 5x
     else:
         # Stage 3: Preservation ($700 → $1,000)
-        max_loss_usd_cap = 30.0
-        loss_pct_cap = 0.06  # 6%
-        leverage = 2.0
+        max_loss_usd_cap = 45.0  # 2026-02-20: 30 → 45
+        loss_pct_cap = 0.08  # 2026-02-20: 6% → 8%
+        leverage = 5.0  # 2026-02-20: 2x → 5x
 
     # Max loss USDT: min(usd_cap, equity * pct_cap)
     # Codex Review Fix #3: 고정 cap과 % cap 중 작은 값 사용
@@ -132,15 +132,8 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     # Direction (Buy → LONG, Sell → SHORT)
     direction = "LONG" if signal.side == "Buy" else "SHORT"
 
-    # Stop distance (ATR 기반 동적 계산, R:R >= 2:1 목표)
-    # ATR이 전달되면 ATR * SL_MULTIPLIER → pct 변환, clamp(0.5%, 2.0%)
-    SL_MULTIPLIER = 0.7
-    SL_MIN_PCT = 0.005  # 0.5%
-    SL_MAX_PCT = 0.02   # 2.0%
-    if atr > 0 and signal.price > 0:
-        stop_distance_pct = max(SL_MIN_PCT, min(atr * SL_MULTIPLIER / signal.price, SL_MAX_PCT))
-    else:
-        stop_distance_pct = 0.01  # Fallback 1%
+    # Stop distance (고정 2.2%)
+    stop_distance_pct = 0.022
 
     # Leverage는 위에서 Stage별로 설정됨 (Stage 1/2: 3x, Stage 3: 2x)
 

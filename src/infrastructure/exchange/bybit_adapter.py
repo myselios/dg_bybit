@@ -21,7 +21,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 
-from infrastructure.exchange.bybit_rest_client import BybitRestClient
+from infrastructure.exchange.bybit_rest_client import BybitRestClient, RateLimitError
 from infrastructure.exchange.bybit_ws_client import BybitWsClient
 from domain.events import ExecutionEvent, EventType
 from application.atr_calculator import ATRCalculator, Kline as ATRKline
@@ -72,6 +72,14 @@ class BybitAdapter:
         self._mark_price: float = 0.0
         self._equity_usdt: float = 0.0  # Linear USDT-Margined equity
         self._last_update_ts: float = 0.0
+
+        # REST 호출 분산/백오프 (Bybit rate limit 대응)
+        self._next_rest_retry_ts: float = 0.0
+        self._last_ticker_refresh_ts: float = 0.0
+        self._last_wallet_refresh_ts: float = 0.0
+        self._last_position_refresh_ts: float = 0.0
+        self._last_execution_refresh_ts: float = 0.0
+        self._last_kline_refresh_ts: float = 0.0
 
         # WS health tracking
         self._ws_last_heartbeat_ts: float = time.time()
@@ -234,130 +242,121 @@ class BybitAdapter:
 
     def update_market_data(self):
         """
-        REST API로 시장 데이터 업데이트 (Phase 12a-2 통합)
+        REST API로 시장 데이터 업데이트 (rate-limit 안전 버전)
 
-        호출: 1초마다 (tick loop)
-        업데이트 항목:
-        - Mark price, Index price, Funding rate (GET /v5/market/tickers)
-        - Equity (GET /v5/account/wallet-balance)
-        - Position (GET /v5/position/list)
-        - Trade history → PnL, Loss streak (GET /v5/execution/list)
-        - Kline → ATR, ATR percentile, Grid spacing (GET /v5/market/kline)
-        - Kline → MA slope, Market regime (GET /v5/market/kline)
+        호출은 외부 루프(현재 30초)에서 오지만, 엔드포인트별로 추가 분산한다.
+        - tickers: 10초
+        - wallet/position: 30초
+        - execution list: 60초
+        - kline(ATR/Regime): 120초
         """
+        now = time.time()
+
+        # Rate limit 백오프 윈도우 중에는 즉시 반환
+        if now < self._next_rest_retry_ts:
+            return
+
         try:
-            # 1. Mark price, Index price, Funding rate 조회
-            tickers_response = self.rest_client.get_tickers(category="linear", symbol="BTCUSDT")
-            result = tickers_response.get("result", {})
-            ticker_list = result.get("list", [])
-            if ticker_list:
-                ticker = ticker_list[0]
-                self._mark_price = float(ticker.get("markPrice", 0.0))
-                self._index_price = float(ticker.get("indexPrice", 0.0))
-                self._funding_rate = float(ticker.get("fundingRate", 0.0001))
+            # 1) Mark/Index/Funding (상대적으로 자주)
+            if now - self._last_ticker_refresh_ts >= 10.0 or self._mark_price <= 0:
+                tickers_response = self.rest_client.get_tickers(category="linear", symbol="BTCUSDT")
+                result = tickers_response.get("result", {})
+                ticker_list = result.get("list", [])
+                if ticker_list:
+                    ticker = ticker_list[0]
+                    self._mark_price = float(ticker.get("markPrice", 0.0))
+                    self._index_price = float(ticker.get("indexPrice", 0.0))
+                    self._funding_rate = float(ticker.get("fundingRate", 0.0001))
+                self._last_ticker_refresh_ts = now
 
-            # 2. Equity 조회 (Linear USDT: UNIFIED 계정)
-            wallet_response = self.rest_client.get_wallet_balance(accountType="UNIFIED")
-            result = wallet_response.get("result", {})
-            wallet_list = result.get("list", [])
-            if wallet_list:
-                wallet_data = wallet_list[0]
-                # Linear USDT: totalEquity (USDT 단위)
-                self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
+            # 2) Equity + Position (중간 빈도)
+            if now - self._last_wallet_refresh_ts >= 30.0 or self._equity_usdt <= 0:
+                wallet_response = self.rest_client.get_wallet_balance(accountType="UNIFIED")
+                result = wallet_response.get("result", {})
+                wallet_list = result.get("list", [])
+                if wallet_list:
+                    wallet_data = wallet_list[0]
+                    self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
+                self._last_wallet_refresh_ts = now
 
-            # 3. Position 조회
-            position_response = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
-            result = position_response.get("result", {})
-            position_list = result.get("list", [])
-            if position_list:
-                self._current_position = position_list[0]
+            if now - self._last_position_refresh_ts >= 30.0 or self._current_position is None:
+                position_response = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
+                result = position_response.get("result", {})
+                position_list = result.get("list", [])
+                if position_list:
+                    self._current_position = position_list[0]
+                self._last_position_refresh_ts = now
 
-            # 4. Trade history 조회 (SessionRiskTracker 사용)
-            execution_response = self.rest_client.get_execution_list(category="linear", symbol="BTCUSDT", limit=50)
-            result = execution_response.get("result", {})
-            trade_list = result.get("list", [])
+            # 3) Trade history/PnL (저빈도)
+            if now - self._last_execution_refresh_ts >= 60.0:
+                execution_response = self.rest_client.get_execution_list(category="linear", symbol="BTCUSDT", limit=50)
+                result = execution_response.get("result", {})
+                trade_list = result.get("list", [])
 
-            # 4.1. Last fill price 설정 (Grid 기준점)
-            if trade_list:
-                # 가장 최근 체결 (list[0])의 execPrice 사용
-                latest_exec = trade_list[0]
-                exec_price_str = latest_exec.get("execPrice")
-                if exec_price_str:
-                    self._last_fill_price = float(exec_price_str)
+                if trade_list:
+                    latest_exec = trade_list[0]
+                    exec_price_str = latest_exec.get("execPrice")
+                    if exec_price_str:
+                        self._last_fill_price = float(exec_price_str)
 
-            # Trade 객체로 변환 (SessionRiskTracker용)
-            trades = []
-            for trade_data in trade_list:
-                closed_pnl = trade_data.get("closedPnl")
-                exec_time = trade_data.get("execTime")
-                if closed_pnl is not None and exec_time is not None:
-                    # execTime은 milliseconds이므로 seconds로 변환
-                    timestamp = float(exec_time) / 1000.0
-                    trades.append(Trade(
-                        closed_pnl=float(closed_pnl),
-                        timestamp=timestamp
-                    ))
+                trades = []
+                for trade_data in trade_list:
+                    closed_pnl = trade_data.get("closedPnl")
+                    exec_time = trade_data.get("execTime")
+                    if closed_pnl is not None and exec_time is not None:
+                        timestamp = float(exec_time) / 1000.0
+                        trades.append(Trade(closed_pnl=float(closed_pnl), timestamp=timestamp))
 
-            # SessionRiskTracker로 Daily/Weekly PnL, Loss streak 계산
-            current_date = datetime.now(timezone.utc)
-            self._daily_realized_pnl_usd = self.session_risk_tracker.track_daily_pnl(trades, current_date)
-            self._weekly_realized_pnl_usd = self.session_risk_tracker.track_weekly_pnl(trades, current_date)
-            self._loss_streak_count = self.session_risk_tracker.calculate_loss_streak(trades)
+                current_date = datetime.now(timezone.utc)
+                self._daily_realized_pnl_usd = self.session_risk_tracker.track_daily_pnl(trades, current_date)
+                self._weekly_realized_pnl_usd = self.session_risk_tracker.track_weekly_pnl(trades, current_date)
+                self._loss_streak_count = self.session_risk_tracker.calculate_loss_streak(trades)
+                self._last_execution_refresh_ts = now
 
-            # 5. Kline 조회 (ATR/Regime 계산용)
-            kline_response = self.rest_client.get_kline(
-                category="linear",
-                symbol="BTCUSDT",
-                interval="60",  # 1-hour
-                limit=200  # 14-period ATR + 20-period MA + buffer
-            )
-            result = kline_response.get("result", {})
-            kline_list = result.get("list", [])
+            # 4) Kline/ATR/Regime (가장 저빈도)
+            if now - self._last_kline_refresh_ts >= 120.0 or self._atr is None:
+                kline_response = self.rest_client.get_kline(
+                    category="linear",
+                    symbol="BTCUSDT",
+                    interval="60",
+                    limit=200
+                )
+                result = kline_response.get("result", {})
+                kline_list = result.get("list", [])
 
-            if kline_list and len(kline_list) >= 20:  # MA period 최소 요구사항
-                # Kline 데이터를 Kline 객체로 변환
-                klines_atr = []
-                klines_regime = []
-                for kline_data in reversed(kline_list):  # Bybit은 최신순, 역순으로 변환
-                    # kline_data: [startTime, open, high, low, close, volume, turnover]
-                    high = float(kline_data[2])
-                    low = float(kline_data[3])
-                    close = float(kline_data[4])
+                if kline_list and len(kline_list) >= 20:
+                    klines_atr = []
+                    klines_regime = []
+                    for kline_data in reversed(kline_list):
+                        high = float(kline_data[2])
+                        low = float(kline_data[3])
+                        close = float(kline_data[4])
+                        klines_atr.append(ATRKline(high=high, low=low, close=close))
+                        klines_regime.append(RegimeKline(close=close, high=high, low=low))
 
-                    klines_atr.append(ATRKline(high=high, low=low, close=close))
-                    klines_regime.append(RegimeKline(close=close, high=high, low=low))
+                    if len(klines_atr) >= 15:
+                        self._atr = self.atr_calculator.calculate_atr(klines_atr)
+                        if self._mark_price > 0:
+                            self._atr_pct_24h = (self._atr / self._mark_price) * 100.0
 
-                # ATR 계산 (14-period 이상 필요)
-                if len(klines_atr) >= 15:  # 14 + 1 (previous close)
-                    self._atr = self.atr_calculator.calculate_atr(klines_atr)
+                        atr_history = []
+                        for i in range(max(15, len(klines_atr) - 100), len(klines_atr)):
+                            if i >= 15:
+                                atr_history.append(self.atr_calculator.calculate_atr(klines_atr[:i]))
+                        if atr_history:
+                            self._atr_percentile = self.atr_calculator.calculate_atr_percentile(self._atr, atr_history)
 
-                    # ATR percentage 계산 (mark price 대비)
-                    if self._mark_price > 0:
-                        self._atr_pct_24h = (self._atr / self._mark_price) * 100.0
+                    if len(klines_regime) >= 21:
+                        self._ma_slope_pct = self.market_regime_analyzer.calculate_ma_slope(klines_regime)
 
-                    # ATR percentile 계산 (rolling 100-period)
-                    # 단순화: 최근 100개 kline의 ATR을 계산하여 history로 사용
-                    # (실제로는 별도 history 저장 필요)
-                    atr_history = []
-                    for i in range(max(15, len(klines_atr) - 100), len(klines_atr)):
-                        if i >= 15:
-                            atr_val = self.atr_calculator.calculate_atr(klines_atr[:i])
-                            atr_history.append(atr_val)
-                    if atr_history:
-                        self._atr_percentile = self.atr_calculator.calculate_atr_percentile(
-                            self._atr, atr_history
-                        )
+                self._last_kline_refresh_ts = now
 
-                # Market Regime 계산 (20-period MA 이상 필요)
-                if len(klines_regime) >= 21:  # 20 + 1 (slope 계산용)
-                    self._ma_slope_pct = self.market_regime_analyzer.calculate_ma_slope(klines_regime)
-                    # Regime classification
-                    # Note: classify_regime은 별도 호출 필요 시 사용
-                    # (Orchestrator에서 get_ma_slope_pct() + get_atr_percentile()로 판단)
+            self._last_update_ts = now
 
-            # 업데이트 타임스탬프 기록
-            self._last_update_ts = time.time()
-
+        except RateLimitError as e:
+            retry_after = max(5.0, float(getattr(e, "retry_after", 10.0) or 10.0))
+            self._next_rest_retry_ts = time.time() + retry_after
+            logger.warning(f"Rate limit hit, backing off {retry_after:.1f}s: {e}")
         except Exception as e:
             logger.error(f"Market data update failed: {e}")
 

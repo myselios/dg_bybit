@@ -147,7 +147,7 @@ def recover_missing_stop(
     return False, "NONE"
 
 
-SL_MULTIPLIER = 0.7
+SL_MULTIPLIER = 1.2  # 2026-02-20: 0.7 → 1.2 (손절 완화, 노이즈 필터링)
 
 
 @dataclass
@@ -165,14 +165,8 @@ def calculate_stop_price(
     direction: Direction,
     atr: Optional[float],
 ) -> float:
-    """ATR 기반 stop price 계산 (R:R >= 2:1)"""
-    if atr and atr > 0:
-        stop_distance_usd = atr * SL_MULTIPLIER
-        min_stop = entry_price * 0.005
-        max_stop = entry_price * 0.02
-        stop_distance_usd = max(min_stop, min(stop_distance_usd, max_stop))
-    else:
-        stop_distance_usd = entry_price * 0.01  # Fallback 1%
+    """고정 손절가 계산 (평단 대비 2.2%)"""
+    stop_distance_usd = entry_price * 0.022
 
     if direction == Direction.LONG:
         return entry_price - stop_distance_usd

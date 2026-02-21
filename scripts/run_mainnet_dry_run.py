@@ -300,16 +300,16 @@ def run_mainnet(
             logger.error("   Minimum $100 required for Mainnet Dry-Run")
             return
 
-        # Leverage 설정 (Stage 1: 3x, Isolated Margin)
+        # Leverage 설정 (2026-02-20: 3x → 5x)
         try:
             leverage_result = rest_client.set_margin_mode(
                 symbol="BTCUSDT",
-                buy_leverage="3",
-                sell_leverage="3",
+                buy_leverage="5",
+                sell_leverage="5",
                 category="linear",
                 trade_mode=0,  # Isolated Margin
             )
-            logger.info(f"✅ Leverage set to 3x (Isolated Margin): retCode={leverage_result.get('retCode')}")
+            logger.info(f"✅ Leverage set to 5x (Isolated Margin): retCode={leverage_result.get('retCode')}")
         except Exception as e:
             logger.warning(f"⚠️ Leverage setting failed (may already be set): {e}")
 
@@ -416,7 +416,10 @@ def run_mainnet(
                     bybit_adapter.update_market_data()
                     last_market_refresh = now
                     if tick_count <= 5 or tick_count % 60 == 0:
-                        logger.info(f"  📊 Market data refreshed: mark_price=${bybit_adapter.get_mark_price():,.2f}, "
+                        pos = bybit_adapter.get_position()
+                        logger.info(f"  📊 Market data refreshed: equity=${bybit_adapter.get_equity_usdt():,.2f}, "
+                                    f"mark_price=${bybit_adapter.get_mark_price():,.2f}, "
+                                    f"position={pos.get('side', 'None')} {pos.get('size', '0')}, "
                                     f"ma_slope={bybit_adapter.get_ma_slope_pct():.4f}%, "
                                     f"funding={bybit_adapter.get_funding_rate():.6f}, "
                                     f"atr={bybit_adapter.get_atr()}")

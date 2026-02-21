@@ -160,6 +160,7 @@ class Orchestrator:
         self.pending_order: Optional[dict] = None  # Pending order 정보 (FILL event 매칭용)
         self.pending_order_timestamp: Optional[float] = None  # Phase 12a-4c: Pending order 발주 시각 (timeout 체크용)
         self.current_signal_id: Optional[str] = None  # 현재 Signal ID
+        self.last_halt_reason: Optional[str] = None
         self.grid_spacing: float = 0.0  # Grid spacing (ATR * 2.0)
 
         # Session Risk Policy 설정 (Phase 9c)
@@ -244,6 +245,16 @@ class Orchestrator:
         # (3) Position management + Exit decision
         execution_order.append("position")
         exit_intent = self._manage_position()
+
+        # Position 단계에서 HALT 전환되면 이유를 채워서 즉시 반환
+        if self.state == State.HALT:
+            halt_reason = self.last_halt_reason or "position_management_halt"
+            return TickResult(
+                state=self.state,
+                execution_order=execution_order,
+                halt_reason=halt_reason,
+                exit_intent=exit_intent,
+            )
 
         # (4) Entry decision
         execution_order.append("entry")
@@ -422,6 +433,7 @@ class Orchestrator:
         if self.position.stop_status == StopStatus.ERROR:
             logger.error("🚨 Stop recovery failed (ERROR), HALT — 포지션에 Stop 없음")
             self.state = State.HALT
+            self.last_halt_reason = "stop_recovery_failed_no_protective_stop"
             return None
 
         # Phase 11b: Stop hit + Grid take-profit 체크
@@ -435,23 +447,21 @@ class Orchestrator:
             should_exit = True
             exit_reason = "stop_loss_hit"
 
-        # 2) Grid take-profit 체크 (ATR * 2.0 기반)
+        # 2) Take-profit 체크 (평단 대비 3.0%)
         if not should_exit:
-            atr = self.market_data.get_atr()
-            if atr is not None and atr > 0:
-                tp_spacing = atr * 1.5  # Take-profit spacing (ATR * 1.5, R:R >= 2:1)
-                if self.position.direction == Direction.LONG:
-                    take_profit_price = self.position.entry_price + tp_spacing
-                    if current_price >= take_profit_price:
-                        should_exit = True
-                        exit_reason = "take_profit"
-                        logger.info(f"🎯 Take profit: ${current_price:,.2f} >= ${take_profit_price:,.2f} (entry + ATR*1.5)")
-                elif self.position.direction == Direction.SHORT:
-                    take_profit_price = self.position.entry_price - tp_spacing
-                    if current_price <= take_profit_price:
-                        should_exit = True
-                        exit_reason = "take_profit"
-                        logger.info(f"🎯 Take profit: ${current_price:,.2f} <= ${take_profit_price:,.2f} (entry - ATR*1.5)")
+            tp_pct = 0.03
+            if self.position.direction == Direction.LONG:
+                take_profit_price = self.position.entry_price * (1 + tp_pct)
+                if current_price >= take_profit_price:
+                    should_exit = True
+                    exit_reason = "take_profit"
+                    logger.info(f"🎯 Take profit: ${current_price:,.2f} >= ${take_profit_price:,.2f} (entry +3.0%)")
+            elif self.position.direction == Direction.SHORT:
+                take_profit_price = self.position.entry_price * (1 - tp_pct)
+                if current_price <= take_profit_price:
+                    should_exit = True
+                    exit_reason = "take_profit"
+                    logger.info(f"🎯 Take profit: ${current_price:,.2f} <= ${take_profit_price:,.2f} (entry -3.0%)")
 
         if should_exit:
             # Exit intent 생성
@@ -551,6 +561,27 @@ class Orchestrator:
                     self.last_stop_update_at = current_time
 
                 except Exception as e:
+                    err = str(e)
+
+                    # 거래소 기준 "제로 포지션"이면 stop 복구 실패로 누적하지 말고 상태 동기화
+                    if "zero position" in err.lower() and self.rest_client is not None:
+                        try:
+                            pos_resp = self.rest_client.get_position(category="linear", symbol="BTCUSDT")
+                            plist = pos_resp.get("result", {}).get("list", [])
+                            size = 0.0
+                            if plist:
+                                size = float(plist[0].get("size", "0") or 0)
+                            if size == 0.0:
+                                logger.warning("Stop update skipped: exchange position is zero -> syncing to FLAT")
+                                self.state = State.FLAT
+                                self.position = None
+                                self.pending_order = None
+                                self.pending_order_timestamp = None
+                                self.amend_fail_count = 0
+                                return None
+                        except Exception as sync_err:
+                            logger.warning(f"Position sync after stop failure failed: {sync_err}")
+
                     self.amend_fail_count += 1
                     self.position.stop_recovery_fail_count += 1
                     logger.warning(f"Stop update failed ({self.position.stop_recovery_fail_count}/3): {type(e).__name__}: {e}")
@@ -599,8 +630,8 @@ class Orchestrator:
         if atr is None:
             return {"blocked": True, "reason": "atr_unavailable"}
 
-        # Grid spacing 계산 (ATR * 0.3 → 재진입 빈도 증가, 더 좁은 그리드)
-        self.grid_spacing = calculate_grid_spacing(atr=atr, multiplier=0.3)
+        # Grid spacing 계산 (ATR * 0.2 → 재진입 빈도 증가, 더 좁은 그리드, 50% more aggressive)
+        self.grid_spacing = calculate_grid_spacing(atr=atr, multiplier=0.2)
 
         # 현재 가격
         current_price = self.market_data.get_current_price()
@@ -719,16 +750,8 @@ class Orchestrator:
         # Step 7: FLAT → ENTRY_PENDING 전환
         self.state = State.ENTRY_PENDING
 
-        # Stop distance 계산 (ATR 기반, create_position_from_fill에서 사용)
-        SL_MULTIPLIER = 0.7
-        if atr and atr > 0:
-            stop_dist_usd = atr * SL_MULTIPLIER
-            min_stop = signal.price * 0.005
-            max_stop = signal.price * 0.02
-            stop_dist_usd = max(min_stop, min(stop_dist_usd, max_stop))
-            stop_distance_pct = stop_dist_usd / signal.price
-        else:
-            stop_distance_pct = 0.01  # Fallback 1%
+        # Stop distance 계산 (고정 2.2%, create_position_from_fill에서 사용)
+        stop_distance_pct = 0.022
 
         # Pending order 저장 (FILL event 매칭용)
         self.pending_order = {

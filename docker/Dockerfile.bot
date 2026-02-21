@@ -24,9 +24,12 @@ ENV BYBIT_TESTNET=true
 HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
     CMD pgrep -f "run_.*_dry_run.py" || exit 1
 
-# Entrypoint (docker-entrypoint.sh 사용)
-# root 권한으로 전환 (chmod 필요)
+# 소스코드 최신화 (베이스 이미지 코드 오버라이드)
 USER root
+COPY src/ /app/src/
+COPY scripts/ /app/scripts/
+
+# Entrypoint (docker-entrypoint.sh 사용)
 COPY docker/docker-entrypoint.sh /app/docker/docker-entrypoint.sh
 RUN chmod +x /app/docker/docker-entrypoint.sh
 
