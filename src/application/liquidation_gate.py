@@ -124,7 +124,7 @@ def check_liquidation_gate(params, api_failure: bool = False) -> LiquidationGate
     # 3. Fallback 처리 (API 실패 시)
     if liq_distance_pct is None:
         # Fallback Rule 1: leverage > 3 → REJECT
-        if params.leverage > 3.0:
+        if params.leverage > 5.0:  # 2026-02-20: 3.0 → 5.0
             return LiquidationGateResult(
                 allowed=False,
                 reject_reason="leverage_too_high_without_liq_check",

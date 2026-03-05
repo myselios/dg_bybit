@@ -42,6 +42,33 @@ def _check_has_position(rest_client) -> bool:
         return False
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    """문자/숫자 값을 float로 안전 변환"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_cum_exec_qty(order: Dict[str, Any]) -> float:
+    """
+    Open order payload에서 누적 체결 수량 추출.
+
+    Bybit 응답 필드가 환경/버전에 따라 다를 수 있어 후보 필드를 순차 확인한다.
+    """
+    candidates = [
+        "cumExecQty",      # Bybit V5 일반 필드
+        "cum_exec_qty",    # snake_case 변형
+        "executedQty",     # 일부 래퍼/구버전
+        "execQty",         # execution-like payload
+        "cumFilledQty",    # 변형 케이스
+    ]
+    for key in candidates:
+        if key in order:
+            return _to_float(order.get(key), 0.0)
+    return 0.0
+
+
 def _recover_position_from_api(rest_client, pending_order: Optional[dict]) -> Optional[Position]:
     """거래소 Position API에서 포지션을 복구한다. 포지션 없으면 None."""
     try:
@@ -308,7 +335,30 @@ def check_pending_order_fallback(
 
     if orders:
         # 주문이 여전히 open 상태 (미체결 또는 부분 체결)
-        order_status = orders[0].get("orderStatus")
+        order = orders[0]
+        order_status = order.get("orderStatus")
+        cum_exec_qty = _extract_cum_exec_qty(order)
+
+        # 핵심: open 주문이어도 부분 체결로 실포지션이 생길 수 있다.
+        # 이 경우 ENTRY_PENDING 고착을 막기 위해 즉시 포지션 API 재확인.
+        if state == State.ENTRY_PENDING and cum_exec_qty > 0:
+            logger.warning(
+                f"Order {order_id} is open but partially filled "
+                f"(cumExecQty={cum_exec_qty}). Checking position sync..."
+            )
+            return _resolve_by_position_check(rest_client, state, pending_order)
+
+        # 추가 안전장치: OPEN 상태 장기 지속 시에도 포지션 존재 여부 확인
+        # (WS 이벤트 유실/REST execution 지연 시 ENTRY_PENDING 고착 방지)
+        if state == State.ENTRY_PENDING and elapsed >= 30.0:
+            has_position = _check_has_position(rest_client)
+            if has_position:
+                logger.warning(
+                    f"Order {order_id} still open after {elapsed:.1f}s but exchange position exists. "
+                    "Recovering to IN_POSITION."
+                )
+                return _resolve_by_position_check(rest_client, state, pending_order)
+
         logger.warning(f"Order {order_id} still {order_status}, waiting...")
         return FallbackResult()
 

@@ -9,9 +9,9 @@
 
 # Session Risk Policy (Phase 9a)
 session_risk:
-  # Daily Loss Cap (일일 손실 상한)
-  daily_loss_cap_pct: 5.0  # 5% equity
-  daily_loss_cap_note: "Equity 5% 손실 시 HALT, 다음날 UTC 0시 해제"
+  # Daily Loss Cap (일일 손실 상한) - 공격적 전략
+  daily_loss_cap_pct: 15.0  # 15% equity (공격적)
+  daily_loss_cap_note: "Equity 15% 손실 시 HALT, 다음날 UTC 0시 해제"
 
   # Weekly Loss Cap (주간 손실 상한)
   weekly_loss_cap_pct: 12.5  # 12.5% equity
@@ -39,10 +39,10 @@ session_risk:
 
 # Per-Trade Cap (Phase 9b, ADR-0001)
 per_trade_cap:
-  # Stage 1 (equity < $300)
-  stage_1_max_loss_usd: 10.0  # $10 (10% equity at $100)
-  stage_1_loss_pct: 10.0  # 10%
-  stage_1_note: "수익 스케일링 위해 $3→$10 상향 (3~5 contracts 가능)"
+  # Stage 1 (equity < $300) - 공격적 전략
+  stage_1_max_loss_usd: 25.0  # $25 (25% equity at $100, 공격적)
+  stage_1_loss_pct: 25.0  # 25%
+  stage_1_note: "공격적 전략: 거래당 최대 $25 손실 허용"
 
   # Stage 2 ($300 ≤ equity < $700)
   stage_2_max_loss_usd: 20.0  # $20
@@ -78,9 +78,9 @@ dry_run_limits:
   mainnet_initial_max_trades: 50
   mainnet_initial_note: "초기 30~50 거래 후 Kill Switch 발동 증거 확인"
 
-  # 4. Mainnet 첫 주 일일 거래 제한
-  mainnet_first_week_max_trades_per_day: 5
-  mainnet_first_week_note: "첫 주는 Stage 1 제한 (5 trades/day) 강제"
+  # 4. Mainnet 첫 주 일일 거래 제한 - 공격적 전략
+  mainnet_first_week_max_trades_per_day: 15
+  mainnet_first_week_note: "공격적 전략: 일일 최대 15회 거래"
 
 # Environment (Mainnet/Testnet 분리)
 environment:
@@ -97,7 +97,7 @@ environment:
   mainnet_api_base_url: "https://api.bybit.com"
   mainnet_ws_url: "wss://stream.bybit.com/v5/private"
   mainnet_symbol: "BTCUSDT"  # Linear USDT-Margined
-  mainnet_leverage: 3  # ⚠️ 참고용 (실제 동작: Stage 1/2=3x, Stage 3=2x, entry_coordinator.py 참조)
+  mainnet_leverage: 5  # ⚠️ 공격적 전략: 5배 레버리지 (청산 거리 -20%)
   # 실제 leverage는 코드에서 Stage별로 관리 (src/application/entry_coordinator.py:108-126)
 
   # Margin Mode (ADR-0012): Isolated Margin 고정 (tradeMode=0)
@@ -110,21 +110,25 @@ environment:
   # BYBIT_MAINNET_API_KEY
   # BYBIT_MAINNET_API_SECRET
 
-# Strategy Multipliers (R:R 비율 관리)
+# Strategy Multipliers - 수익 최적화 (2026-02-16)
 strategy:
-  # Grid Entry Spacing (entry trigger)
-  grid_entry_multiplier: 0.3  # ATR * 0.3 (~$167 at ATR=$556)
-  grid_entry_note: "재진입 빈도 조절. 작을수록 자주 진입."
+  # Grid Entry Spacing - 수수료 절감 우선
+  grid_entry_multiplier: 0.5  # ATR * 0.5 (진입 빈도 60% 감소)
+  grid_entry_note: "수수료 절감: 진입 빈도 줄이고 거래당 수익 확대"
 
-  # Take-Profit Multiplier
-  tp_multiplier: 1.5  # ATR * 1.5 (~$834 at ATR=$556)
-  tp_note: "ATR 기반 TP. R:R >= 2:1 유지 목표."
+  # Take-Profit Multiplier - 더 큰 수익 추구
+  tp_multiplier: 2.0  # ATR * 2.0 (거래당 수익 2배)
+  tp_note: "수익 최적화: 큰 수익 목표로 수수료 대비 수익 개선"
 
-  # Stop-Loss Multiplier
-  sl_multiplier: 0.7  # ATR * 0.7 (~$389 at ATR=$556)
+  # Stop-Loss Multiplier - 노이즈 회피
+  sl_multiplier: 0.7  # ATR * 0.7 (노이즈 손절 방지)
   sl_min_pct: 0.005  # 최소 0.5%
   sl_max_pct: 0.02   # 최대 2.0%
-  sl_note: "ATR 기반 SL. 고정 3% → 동적. R:R = TP/SL = 2.14:1"
+  sl_note: "손절 최적화: 노이즈 회피하면서 리스크 관리. R:R = 2.86:1"
+  
+  # 추가 필터 (횡보장 진입 방지)
+  ma_slope_min_pct: 0.002  # MA slope 최소 0.2% (방향성 필터)
+  funding_max_abs_pct: 0.0003  # Funding rate 절대값 0.03% 이하
 
 # Kill Switch (최소 구현, 추후 확장)
 killswitch:

@@ -93,6 +93,52 @@ class TestCheckPendingOrderFallback:
         assert result.new_state is None
         assert result.clear_pending is False
 
+    def test_open_order_partial_fill_with_position_recovers_to_in_position(self):
+        """open order + cumExecQty>0 + position 존재 → ENTRY_PENDING -> IN_POSITION"""
+        client = _mock_rest_client(
+            open_orders={"result": {"list": [{"orderStatus": "PartiallyFilled", "cumExecQty": "0.001"}]}},
+            pos_response={"result": {"list": [{"size": "0.001", "avgPrice": "67105.2", "side": "Sell"}]}}
+        )
+        pending = {
+            "order_id": "ord123",
+            "order_link_id": "link123",
+            "signal_id": "sig123",
+        }
+
+        result = check_pending_order_fallback(
+            rest_client=client,
+            state=State.ENTRY_PENDING,
+            pending_order=pending,
+            elapsed=12.0,
+        )
+
+        assert result.new_state == State.IN_POSITION
+        assert result.clear_pending is True
+        assert result.new_position is not _NO_CHANGE
+        assert result.new_position.direction == Direction.SHORT
+
+    def test_open_order_stale_but_position_exists_recovers_to_in_position(self):
+        """open order 장기지연(>=30s) + position 존재 → ENTRY_PENDING -> IN_POSITION"""
+        client = _mock_rest_client(
+            open_orders={"result": {"list": [{"orderStatus": "New", "cumExecQty": "0"}]}},
+            pos_response={"result": {"list": [{"size": "0.005", "avgPrice": "67105.2", "side": "Sell"}]}}
+        )
+        pending = {
+            "order_id": "ord999",
+            "order_link_id": "link999",
+            "signal_id": "sig999",
+        }
+
+        result = check_pending_order_fallback(
+            rest_client=client,
+            state=State.ENTRY_PENDING,
+            pending_order=pending,
+            elapsed=35.0,
+        )
+
+        assert result.new_state == State.IN_POSITION
+        assert result.clear_pending is True
+
     def test_order_id_none_exit_pending_no_position_goes_flat(self):
         """order_id=None + EXIT_PENDING + position 없음 → FLAT"""
         client = _mock_rest_client()

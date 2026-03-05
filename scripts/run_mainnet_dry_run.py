@@ -294,11 +294,9 @@ def run_mainnet(
         initial_equity = bybit_adapter.get_equity_usdt()
         logger.info(f"✅ Equity: ${initial_equity:.2f} USDT")
 
-        # 초기 잔고 검증 (최소 $100)
+        # 초기 잔고 검증 제거 (2026-02-22)
         if initial_equity < 100.0:
-            logger.error(f"❌ FAIL: Insufficient equity (${initial_equity:.2f} < $100.00)")
-            logger.error("   Minimum $100 required for Mainnet Dry-Run")
-            return
+            logger.warning(f"⚠️ Low equity start: ${initial_equity:.2f} (< $100.00), continuing by user request")
 
         # Leverage 설정 (2026-02-20: 3x → 5x)
         try:

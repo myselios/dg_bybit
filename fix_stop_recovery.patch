@@ -1,0 +1,26 @@
+--- orchestrator.py.orig
++++ orchestrator.py
+@@ -550,11 +550,23 @@
+                     self.position.stop_recovery_fail_count = 0
+                     logger.info(f"Stop update success: {result.new_stop_price}")
+                 else:
++                    # Zero position 에러 감지 → 포지션 이미 청산됨
++                    error_msg = str(result.error) if result.error else ""
++                    if "zero position" in error_msg.lower() or "retCode=10001" in error_msg:
++                        logger.warning("⚠️ Zero position detected, clearing position state")
++                        self.position = None
++                        self.state = State.FLAT
++                        return None
++                    
+                     # Stop update 실패 → fail_count 증가
+                     self.position.stop_recovery_fail_count += 1
+                     logger.warning(f"Stop update failed ({self.position.stop_recovery_fail_count}/3): {type(e).__name__}: {e}")
+ 
+                     if self.position.stop_recovery_fail_count >= 3:
++                        # 최종 재확인: REST API로 포지션 확인
++                        logger.warning("Stop recovery failed 3 times, verifying position via REST API")
++                        # 여기서 REST API로 포지션 조회 후 없으면 FLAT 전환
++                        
+                         # 3번 실패 → stop_status=ERROR로 전환
+                         self.position.stop_status = StopStatus.ERROR
+                         logger.error(f"🚨 Stop recovery limit reached (3 failures), status=ERROR")
