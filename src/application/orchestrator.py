@@ -499,7 +499,6 @@ class Orchestrator:
                         side=dca_side,
                         order_type="Market",
                         qty=str(add_qty_btc),  # FIXED: BTC amount
-                        qty=str(add_qty_contracts),  # Fix: contracts 직접 전달
                         order_link_id=f"dca_{self.position.signal_id}_{dca_idx+1}_{int(time.time())}",
                         time_in_force="GTC",
                         category="linear",
