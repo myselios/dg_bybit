@@ -270,16 +270,13 @@ class BybitAdapter:
                 self._last_ticker_refresh_ts = now
 
             # 2) Equity + Position (중간 빈도)
-            # FIX 2026-03-06: Use availableBalance instead of totalEquity
-            # totalEquity includes unrealized PnL, but availableBalance is what matters for new orders
             if now - self._last_wallet_refresh_ts >= 30.0 or self._equity_usdt <= 0:
                 wallet_response = self.rest_client.get_wallet_balance(accountType="UNIFIED")
                 result = wallet_response.get("result", {})
                 wallet_list = result.get("list", [])
                 if wallet_list:
                     wallet_data = wallet_list[0]
-                    # CRITICAL: Use availableBalance for order placement, not totalEquity
-                    self._equity_usdt = float(wallet_data.get("availableBalance", 0.0))
+                    self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
                 self._last_wallet_refresh_ts = now
 
             if now - self._last_position_refresh_ts >= 30.0 or self._current_position is None:

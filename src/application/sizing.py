@@ -114,10 +114,12 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
     )
 
     # Step 2: Margin 기준 qty 계산
-    # available_usdt = equity_usdt * 0.8 (80%만 사용, buffer)
+    # available_usdt = equity_usdt * 0.5 (50%만 사용, buffer)
+    # Reason: totalEquity != availableBalance (Bybit UNIFIED account)
+    # availableBalance can be significantly lower due to margin requirements
     # max_notional_usdt = available_usdt * leverage
     # qty_from_margin = max_notional_usdt / entry_price
-    available_usdt = params.equity_usdt * 0.8
+    available_usdt = params.equity_usdt * 0.5  # Reduced from 0.8 to 0.5
     max_notional_usdt = available_usdt * params.leverage
     qty_from_margin = max_notional_usdt / params.entry_price_usd
 
