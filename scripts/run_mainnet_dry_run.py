@@ -433,8 +433,8 @@ def run_mainnet(
                 if tick_count % 10 == 0 or current_state != previous_state:
                     logger.info(f"  → State: {current_state}, Halt: {result.halt_reason}")
 
-                # Entry 차단 이유 로깅 (처음 발생 시 또는 이유 변경 시)
-                if result.entry_blocked and tick_count <= 20:
+                # Entry 차단 이유 로깅 (항상 로깅 - 디버깅용)
+                if result.entry_blocked:
                     # ATR 값 추가 로깅
                     if result.entry_block_reason == "atr_too_low":
                         atr_pct = bybit_adapter.get_atr_pct_24h()

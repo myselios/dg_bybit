@@ -836,6 +836,9 @@ class Orchestrator:
 
         except Exception as e:
             # Order placement 실패 → 차단
+            logger.error(f"❌ place_order FAILED: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"blocked": True, "reason": f"order_placement_failed: {str(e)}"}
 
         # Step 7: FLAT → ENTRY_PENDING 전환
