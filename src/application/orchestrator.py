@@ -806,14 +806,16 @@ class Orchestrator:
 
             logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({contracts * 0.001} BTC) @ ${signal.price:,.2f}")
 
-            # Limit GTC 주문 (현재가 → 즉시 체결 가능, Grid 가격 → 대기 주문)
-            # Note: PostOnly는 현재가에서 taker로 취소되므로 GTC 사용
+            # TEST 2026-03-06: Change Limit to Market order
+            # Reason: Manual Market orders work, but Limit orders fail with 'ab not enough'
+            # This tests if order type is the issue
+            logger.info(f"📤 TEST Entry order (Market): {signal.side} {contracts} contracts @ Market")
             order_result = self.rest_client.place_order(
                 symbol="BTCUSDT",
                 side=signal.side,
-                order_type="Limit",
-                qty=str(contracts),  # Fix: contracts 직접 전달 (BTC 수량 아님)
-                price=str(signal.price),
+                order_type="Market",  # TEST: Changed from Limit to Market
+                qty=str(contracts),
+                price=None,  # Market orders don't need price
                 time_in_force="GTC",
                 order_link_id=f"entry_{self.current_signal_id}",
                 category="linear",
