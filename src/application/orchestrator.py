@@ -818,18 +818,19 @@ class Orchestrator:
 
             logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({contracts * 0.001} BTC) @ ${signal.price:,.2f}")
 
-            # TEST 2026-03-06: Change Limit to Market order
-            # Reason: Manual Market orders work, but Limit orders fail with 'ab not enough'
-            # This tests if order type is the issue
-            logger.info(f"📤 TEST Entry order (Market): {signal.side} {contracts} contracts @ Market")
+            # TEST 2026-03-06: Fixed orderLinkId + Market order
+            # Test if unique orderLinkId helps
+            import time
+            fixed_order_id = f"entry_fixed_{int(time.time())}"
+            logger.info(f"📤 TEST Entry order (Market, fixed ID): {signal.side} {contracts} contracts, ID={fixed_order_id}")
             order_result = self.rest_client.place_order(
                 symbol="BTCUSDT",
                 side=signal.side,
-                order_type="Market",  # TEST: Changed from Limit to Market
+                order_type="Market",
                 qty=str(contracts),
-                price=None,  # Market orders don't need price
+                price=None,
                 time_in_force="GTC",
-                order_link_id=f"entry_{self.current_signal_id}",
+                order_link_id=fixed_order_id,  # TEST: Unique ID based on timestamp
                 category="linear",
             )
 
