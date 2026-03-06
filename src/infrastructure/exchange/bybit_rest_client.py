@@ -296,6 +296,7 @@ class BybitRestClient:
         price: Optional[str] = None,
         category: str = "linear",
         reduce_only: bool = False,
+        position_idx: int = 0,
     ) -> Dict[str, Any]:
         """
         주문 발주
@@ -309,6 +310,7 @@ class BybitRestClient:
             time_in_force: 유효 기간 (기본: GoodTillCancel)
             price: 주문 가격 (Limit 주문 시 필수)
             category: 카테고리 (기본: linear)
+            position_idx: 포지션 인덱스 (0=one-way, 1=buy-side, 2=sell-side)
 
         Returns:
             Dict: 응답 JSON
@@ -337,6 +339,7 @@ class BybitRestClient:
             "qty": str(qty),  # Bybit API는 string으로 받음
             "timeInForce": time_in_force,
             "orderLinkId": order_link_id,
+            "positionIdx": position_idx,  # FIX 2026-03-06: Required for UNIFIED account
         }
 
         # Limit 주문이면 price 추가
