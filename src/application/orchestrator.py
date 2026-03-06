@@ -111,6 +111,7 @@ class Orchestrator:
         self.config_hash = config_hash
         self.git_commit = git_commit
         self.tick_counter = 0  # Tick counter (general purpose)
+        self._last_entry_attempt = 0.0  # TEST: Cooldown tracking
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
         self.state = State.FLAT
@@ -197,6 +198,17 @@ class Orchestrator:
 
         # Phase 9d: current_timestamp 초기화 (Slippage anomaly 체크용)
         self.current_timestamp = self.market_data.get_timestamp()
+
+        # TEST 2026-03-06: Cooldown after failed entry
+        if hasattr(self, '_last_entry_attempt') and self._last_entry_attempt > 0:
+            time_since_last = self.current_timestamp - self._last_entry_attempt
+            if time_since_last < 10.0:  # 10 second cooldown
+                return TickResult(
+                    state=self.state,
+                    execution_order=["entry_cooldown"],
+                    entry_blocked=True,
+                    entry_block_reason=f"entry_cooldown: {10 - time_since_last:.1f}s remaining",
+                )
 
         execution_order = []
         halt_reason = None
@@ -829,6 +841,8 @@ class Orchestrator:
 
             # Phase 12b Fix: Validate retCode and order_id
             if ret_code != 0 or not order_id:
+                # TEST: Record failed attempt time for cooldown
+                self._last_entry_attempt = time.time()
                 raise ValueError(f"Entry order failed: retCode={ret_code}, response={order_result}")
 
         except Exception as e:
@@ -836,6 +850,8 @@ class Orchestrator:
             logger.error(f"❌ place_order FAILED: {type(e).__name__}: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+            # TEST: Record failed attempt time for cooldown
+            self._last_entry_attempt = time.time()
             return {"blocked": True, "reason": f"order_placement_failed: {str(e)}"}
 
         # Step 7: FLAT → ENTRY_PENDING 전환
