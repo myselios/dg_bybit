@@ -67,6 +67,9 @@ class SizingResult:
     reject_reason: str | None = None
 
 
+# HOTFIX 2026-03-06: Limit max contracts to prevent margin issues
+MAX_CONTRACTS_HARD_CAP = 5
+
 def calculate_contracts(params: SizingParams) -> SizingResult:
     """
     Position sizing (loss budget + margin 제약) — Linear USDT
@@ -95,6 +98,7 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
         5. Tick/Lot size 보정
         6. 보정 후 재검증 (margin feasibility)
         7. 최소 수량 검증
+        8. HOTFIX: Max contracts hard cap (5)
 
     Linear Formula:
         loss_usdt_at_stop = qty * entry_price * stop_distance_pct
@@ -138,6 +142,11 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
 
     if required_margin_usdt + fee_buffer_usdt > params.equity_usdt:
         return SizingResult(contracts=0, reject_reason="margin_insufficient")
+
+    # HOTFIX 2026-03-06: Hard cap on max contracts to prevent "ab not enough" error
+    # Manual test showed 5 contracts works, 9 contracts fails
+    if contracts > MAX_CONTRACTS_HARD_CAP:
+        contracts = MAX_CONTRACTS_HARD_CAP
 
     # 성공
     return SizingResult(contracts=contracts, reject_reason=None)
