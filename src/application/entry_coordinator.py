@@ -135,7 +135,7 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     # Stop distance (ATR 기반, clamp 0.5%~2.0%)
     # 2026-03-07: 고정 2.2% → ATR * 0.7 기반 (policy v2.5)
     if atr > 0 and signal.price > 0:
-        raw_stop_pct = (atr * 0.7) / signal.price
+        raw_stop_pct = (atr * 1.5) / signal.price
         stop_distance_pct = max(0.005, min(0.02, raw_stop_pct))
     else:
         stop_distance_pct = 0.01  # fallback 1.0%

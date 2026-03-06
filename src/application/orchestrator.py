@@ -495,7 +495,7 @@ class Orchestrator:
         # trail_distance = entry_atr * 0.5 (없으면 trail_price * 1.5% fallback)
         if not should_exit:
             trail_atr = self.entry_atr or 0.0
-            trail_distance = trail_atr * 0.5 if trail_atr > 0 else self.trail_price * 0.015
+            trail_distance = trail_atr * 1.0 if trail_atr > 0 else self.trail_price * 0.01
             if self.position.direction == Direction.LONG:
                 if current_price < self.trail_price - trail_distance:
                     should_exit = True
@@ -819,7 +819,7 @@ class Orchestrator:
 
         # Stop distance (ATR 기반, sizing_params와 동일 계산)
         if atr > 0 and signal.price > 0:
-            stop_distance_pct = max(0.005, min(0.02, (atr * 0.7) / signal.price))
+            stop_distance_pct = max(0.005, min(0.02, (atr * 1.5) / signal.price))
         else:
             stop_distance_pct = 0.01
 
