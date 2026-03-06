@@ -73,6 +73,15 @@ class MarketDataInterface(Protocol):
         """
         ...
 
+    def get_available_usdt(self) -> float:
+        """
+        가용 잔고 (USDT 단위).
+
+        Returns:
+            float: Available balance in USDT for new orders
+        """
+        ...
+
     def get_rest_latency_p95_1m(self) -> float:
         """
         REST API latency p95 (1분 윈도우, seconds).

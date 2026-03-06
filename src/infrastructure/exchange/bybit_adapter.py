@@ -71,6 +71,7 @@ class BybitAdapter:
         # 상태 캐싱
         self._mark_price: float = 0.0
         self._equity_usdt: float = 0.0  # Linear USDT-Margined equity
+        self._available_usdt: float = 0.0  # FIX: Available balance
         self._last_update_ts: float = 0.0
 
         # REST 호출 분산/백오프 (Bybit rate limit 대응)
@@ -121,6 +122,10 @@ class BybitAdapter:
     def get_equity_usdt(self) -> float:
         """계정 Equity (USDT 단위) — Linear USDT-Margined"""
         return self._equity_usdt
+
+    def get_available_usdt(self) -> float:
+        """가용 잔고 (USDT 단위)"""
+        return self._available_usdt
 
     def get_rest_latency_p95_1m(self) -> float:
         """REST API latency p95 (1분 윈도우, seconds)"""
@@ -277,6 +282,7 @@ class BybitAdapter:
                 if wallet_list:
                     wallet_data = wallet_list[0]
                     self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
+                    self._available_usdt = float(wallet_data.get("totalAvailableBalance", wallet_data.get("totalEquity", 0.0)))
                 self._last_wallet_refresh_ts = now
 
             if now - self._last_position_refresh_ts >= 30.0 or self._current_position is None:

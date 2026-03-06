@@ -47,6 +47,7 @@ class SizingParams:
     stop_distance_pct: float
     leverage: float
     equity_usdt: float
+    available_usdt: float
     fee_rate: float
     direction: str
     qty_step: int
@@ -119,7 +120,7 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
     # availableBalance can be significantly lower due to margin requirements
     # max_notional_usdt = available_usdt * leverage
     # qty_from_margin = max_notional_usdt / entry_price
-    available_usdt = params.equity_usdt * 0.5  # Reduced from 0.8 to 0.5
+    available_usdt = params.available_usdt * 0.8  # Reduced from 0.8 to 0.5
     max_notional_usdt = available_usdt * params.leverage
     qty_from_margin = max_notional_usdt / params.entry_price_usd
 
@@ -142,7 +143,7 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
     required_margin_usdt = notional_usdt / params.leverage
     fee_buffer_usdt = notional_usdt * params.fee_rate * 2  # entry + exit
 
-    if required_margin_usdt + fee_buffer_usdt > params.equity_usdt:
+    if required_margin_usdt + fee_buffer_usdt > params.available_usdt:
         return SizingResult(contracts=0, reject_reason="margin_insufficient")
 
     # HOTFIX 2026-03-06: Hard cap on max contracts to prevent "ab not enough" error
