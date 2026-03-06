@@ -478,7 +478,6 @@ class Orchestrator:
             if dca_idx < len(dca_triggers) and adverse_pct >= dca_triggers[dca_idx]:
                 base_qty = self.position.base_qty if self.position.base_qty > 0 else self.position.qty
                 add_qty_contracts = max(1, int(round(base_qty * dca_mults[dca_idx])))
-                add_qty_btc = add_qty_contracts * 0.001
                 dca_side = "Buy" if self.position.direction == Direction.LONG else "Sell"
                 try:
                     logger.info(f"📥 DCA #{dca_idx+1} trigger: adverse={adverse_pct:.2f}% >= {dca_triggers[dca_idx]:.2f}% -> {add_qty_contracts} contracts")
@@ -486,7 +485,7 @@ class Orchestrator:
                         symbol="BTCUSDT",
                         side=dca_side,
                         order_type="Market",
-                        qty=str(add_qty_btc),
+                        qty=str(add_qty_contracts),  # Fix: contracts 직접 전달
                         order_link_id=f"dca_{self.position.signal_id}_{dca_idx+1}_{int(time.time())}",
                         time_in_force="GTC",
                         category="linear",
@@ -552,14 +551,11 @@ class Orchestrator:
                 try:
                     # Exit order 발주 (Market order for immediate execution)
                     exit_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
-                    # Convert contracts to BTC quantity
-                    contract_size = 0.001
-                    qty_btc = exit_qty_contracts * contract_size
 
                     exit_order = self.rest_client.place_order(
                         symbol="BTCUSDT",  # Linear USDT Futures
                         side=exit_side,
-                        qty=str(qty_btc),  # BTC quantity
+                        qty=str(exit_qty_contracts),  # Fix: contracts 직접 전달
                         order_link_id=f"exit_{self.position.signal_id}_{int(time.time())}",
                         order_type="Market",  # Market order (즉시 체결)
                         time_in_force="GTC",
@@ -804,12 +800,11 @@ class Orchestrator:
             # Signal ID 생성
             self.current_signal_id = generate_signal_id()
 
-            # Bybit Linear USDT API: qty는 BTC quantity (계산: contracts * contract_size)
-            # 예: contracts=831, contract_size=0.001 → qty_btc=0.831 BTC
-            contract_size = 0.001  # Bybit Linear BTCUSDT: 0.001 BTC per contract
-            qty_btc = contracts * contract_size
+            # Bybit Linear USDT API: qty는 계약 수(contracts) 직접 전달
+            # 예: contracts=9 → qty="9" (각 contract = 0.001 BTC)
+            # Fix: 2026-03-06 - BTC quantity가 아닌 contract count를 전달해야 함
 
-            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({qty_btc} BTC) @ ${signal.price:,.2f}")
+            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({contracts * 0.001} BTC) @ ${signal.price:,.2f}")
 
             # Limit GTC 주문 (현재가 → 즉시 체결 가능, Grid 가격 → 대기 주문)
             # Note: PostOnly는 현재가에서 taker로 취소되므로 GTC 사용
@@ -817,7 +812,7 @@ class Orchestrator:
                 symbol="BTCUSDT",
                 side=signal.side,
                 order_type="Limit",
-                qty=str(qty_btc),
+                qty=str(contracts),  # Fix: contracts 직접 전달 (BTC 수량 아님)
                 price=str(signal.price),
                 time_in_force="GTC",
                 order_link_id=f"entry_{self.current_signal_id}",
