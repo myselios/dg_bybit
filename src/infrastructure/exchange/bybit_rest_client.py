@@ -130,7 +130,7 @@ class BybitRestClient:
         SSOT: docs/plans/task_plan.md Phase 7 - Clock 주입 (determinism)
         Phase 13b: 3초 과거로 조정 (클라이언트 시간이 서버보다 미래인 문제 해결)
         """
-        return int((self.clock() - 3.0) * 1000)  # 3초 과거로 조정
+        return int(self.clock() * 1000)  # TEST: Removed -3.0 adjustment
 
     def _generate_signature(self, timestamp: int, params: Dict[str, Any], method: str = "GET") -> str:
         """

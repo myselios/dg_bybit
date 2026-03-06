@@ -829,7 +829,7 @@ class Orchestrator:
                 order_type="Market",
                 qty=str(contracts),
                 price=None,
-                time_in_force="GTC",
+                time_in_force="IOC",  # TEST: Changed from GTC to IOC
                 order_link_id=fixed_order_id,  # TEST: Unique ID based on timestamp
                 category="linear",
             )
