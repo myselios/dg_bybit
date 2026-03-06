@@ -1,7 +1,7 @@
 # docs/specs/account_builder_policy.md
 # Account Builder Policy Specification (Stable Defaults + Tunables)
-Last Updated: 2026-02-13 (KST)
-Version: 2.4
+Last Updated: 2026-03-07 (KST)
+Version: 2.5 (코드 기준 동기화)
 
 ## 목적 (Purpose)
 
@@ -174,19 +174,20 @@ Anti-flap (ENTRY evaluation time only):
 > NOTE: 아래 수치는 기본값이며, 튜닝은 config 변경으로 가능(변경 이력 기록).
 
 ### 5.1 Stage 1 — Expansion ($100 → $300) : Aggressive
-- default_leverage: 3x
-- max_loss_usd_cap: $10 (v2.4: $3→$10, 수익 스케일링 위해 상향)
-- loss_pct_cap: 10% (v2.4: 3%→10%, 소액 계좌 3~5 contracts 진입 가능)
+- default_leverage: 5x (v2.5: 3x→5x, entry_coordinator.py 코드 기준)
+- max_loss_usd_cap: $15 (v2.5: $10→$15, entry_coordinator.py 코드 기준)
+- loss_pct_cap: 15% (v2.5: 10%→15%, entry_coordinator.py 코드 기준)
 - EV gate: expected_profit_usd >= estimated_fee_usd * 2.0
-- volatility: ATR_pct_24h > 2% (v2.4: 3%→2%, BTC 저변동 구간 진입 허용)
+- volatility: ATR_pct_24h > 2%
 - maker_only_default: true
-- max_trades/day: 10 (v2.4: 5→10, 소액 계좌 기회 포착 빈도 확보)
-- liq_distance_min_pct: 30%
+- max_trades/day: 10
+- liq_distance_min_pct: 20% (v2.5: 30%→20%, 5x leverage 기준 청산거리 ~20%)
+- ⚠️ 리스크 주의: 5x leverage + DCA(-2/-4/-6%) 조합 시 DCA2(-4%)가 청산 경계선
 
 ### 5.2 Stage 2 — Acceleration ($300 → $700) : Balanced
-- default_leverage: 3x
-- max_loss_usd_cap: $20
-- loss_pct_cap: 8%
+- default_leverage: 5x (v2.5: 3x→5x, entry_coordinator.py 코드 기준)
+- max_loss_usd_cap: $30 (v2.5: $20→$30, entry_coordinator.py 코드 기준)
+- loss_pct_cap: 10% (v2.5: 8%→10%, entry_coordinator.py 코드 기준)
 - EV gate: expected_profit_usd >= estimated_fee_usd * 2.5
 - volatility: ATR_pct_24h > 4%
 - maker_only_default: false (maker preferred)
@@ -194,18 +195,19 @@ Anti-flap (ENTRY evaluation time only):
 - liq_distance_min_pct: 30%
 
 ### 5.3 Stage 3 — Preservation ($700 → $1,000) : Defensive
-- default_leverage: 2x
-- max_loss_usd_cap: $30
-- loss_pct_cap: 6%
+- default_leverage: 5x (v2.5: 2x→5x, entry_coordinator.py 코드 기준)
+- max_loss_usd_cap: $45 (v2.5: $30→$45, entry_coordinator.py 코드 기준)
+- loss_pct_cap: 8% (v2.5: 6%→8%, entry_coordinator.py 코드 기준)
 - EV gate: expected_profit_usd >= estimated_fee_usd * 3.0
 - volatility: ATR_pct_24h > 5%
 - max_trades/day: 10
 - liq_distance_min_pct: 20%
 
-### 5.4 Leverage Policy (clarified)
-- Each stage defines its `default_leverage`.
-- Leverage increase above stage default is forbidden.
-- Decrease is allowed (e.g., stage2/3 operate at lower leverage when risk gates tighten).
+### 5.4 Leverage Policy (v2.5)
+- 전 Stage 3x 통일 (v2.5: 5x→3x, DCA 제거 + Trailing Stop 전략 전환)
+- 3x 기준 청산거리 ≈ 33% (DCA -4/-6% 안전하게 흡수 가능)
+- Leverage 증가 금지. 감소는 허용.
+- DCA: 비활성화 (2026-03-07. 5x에서 -4%/-6% DCA = 청산 위험)
 
 ---
 
@@ -342,16 +344,25 @@ If 3 consecutive maker timeouts for the same signal:
 
 ## 10.1 Position Sizing (Bybit Linear USDT) — ADR Required (math), Tunables (bounds)
 
-### 10.1.1 Step A: Stop Distance (ATR-based Dynamic, v2.4)
+### 10.1.1 Step A: Stop Distance (v2.5: 고정값 사용 중)
 Inputs:
-- ATR (14-period, from market data)
 - entry_price
 
-Rule (v2.4: Grid→ATR 전환, R:R 2.14:1 최적화):
-- stop_distance_pct = clamp(ATR * 0.7 / entry_price, min=0.5%, max=2.0%)
+Rule (v2.5: 코드 기준, entry_coordinator.py:136):
+- stop_distance_pct = 0.022 (2.2% 고정)
+- TP1: +1.5% (DCA 후 50% 청산), TP2: +3.0% (전량 청산)
+- R:R = 3.0 / 2.2 = 1.36:1 (목표 2.14:1 미달)
+
+Config 목표값 (safety_limits.yaml — 현재 코드 미적용):
+- stop_distance = ATR * 0.7 (sl_multiplier: 0.7), clamp(0.5%, 2.0%)
+- take_profit = ATR * 2.0 (tp_multiplier: 2.0)
+- grid_entry_spacing = ATR * 0.5 (grid_entry_multiplier: 0.5)
+- 목표 R:R = 2.0/0.7 = 2.86:1
+
+TODO: config 값을 코드에 실제 적용 필요 (현재 하드코딩과 config 불일치)
 
 Fallback:
-- if ATR unavailable or <= 0 => stop_distance_pct = 1.0%
+- if ATR unavailable or <= 0 => stop_distance_pct = 0.022 (2.2% 고정)
 
 Reject:
 - if stop_distance_pct <= 0 or missing => REJECT
@@ -442,6 +453,7 @@ REVIEW TRIGGER:
 
 | Date | Version | Change | ADR |
 |------|---------|--------|-----|
+| 2026-03-07 | 2.5 | 코드 기준 동기화: leverage 5x, max_loss $15/$30/$45, stop 2.2% 고정, TP 3% 고정 | - |
 | 2026-02-08 | 2.3 | Margin Mode Isolated 정책 추가 (Section 10.0) | ADR-0012 |
 | 2026-01-21 | 2.2 | HALT vs COOLDOWN 정의 정렬 (SSOT 충돌 수정) | ADR-0007 |
 | 2026-01-18 | 2.1 | 정책 스펙을 "불변/튜닝 분리 + 데이터모델 스키마"로 정리 | - |

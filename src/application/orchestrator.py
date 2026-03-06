@@ -177,6 +177,10 @@ class Orchestrator:
         self.last_stop_update_at: float = 0.0  # 마지막 stop 갱신 시각
         self.amend_fail_count: int = 0  # Amend 실패 횟수
 
+        # Trailing Stop 상태 (2026-03-07)
+        self.trail_price: Optional[float] = None  # 포지션 중 최고/최저 유리가격
+        self.entry_atr: Optional[float] = None    # 진입 시점 ATR (Trailing 거리 계산용)
+
     def run_tick(self) -> TickResult:
         """
         Tick 실행 (Emergency → Events → Position → Entry)
@@ -465,94 +469,47 @@ class Orchestrator:
             self.last_halt_reason = "stop_recovery_failed_no_protective_stop"
             return None
 
-        # Phase 11b: Stop hit + Grid take-profit 체크
+        # 포지션 진입가 기반 청산 로직 (2026-03-07 개편)
         current_price = self.market_data.get_current_price()
 
         should_exit = False
         exit_reason = "stop_loss_hit"
+        exit_qty_contracts = self.position.qty
 
-        # 1) Stop loss hit 체크
+        # Trailing Stop: trail_price 갱신
+        if self.trail_price is None:
+            self.trail_price = current_price
+        elif self.position.direction == Direction.LONG:
+            if current_price > self.trail_price:
+                self.trail_price = current_price
+        else:  # SHORT
+            if current_price < self.trail_price:
+                self.trail_price = current_price
+
+        # 1) Hard SL 체크 (거래소 stop_price 기준 안전장치)
         if check_stop_hit(current_price=current_price, position=self.position):
             should_exit = True
             exit_reason = "stop_loss_hit"
 
-        # 2) DCA 체크 (-2/-4/-6%)
-        if not should_exit and self.rest_client is not None and not self.position.entry_working:
-            adverse_pct = 0.0
-            if self.position.direction == Direction.LONG:
-                adverse_pct = max(0.0, (self.position.entry_price - current_price) / self.position.entry_price * 100.0)
-            else:
-                adverse_pct = max(0.0, (current_price - self.position.entry_price) / self.position.entry_price * 100.0)
-
-            dca_triggers = [2.0, 4.0, 6.0]
-            dca_mults = [0.5, 0.75, 1.0]
-            dca_idx = self.position.dca_count
-            if dca_idx < len(dca_triggers) and adverse_pct >= dca_triggers[dca_idx]:
-                base_qty = self.position.base_qty if self.position.base_qty > 0 else self.position.qty
-                add_qty_contracts = max(1, int(round(base_qty * dca_mults[dca_idx])))
-                dca_side = "Buy" if self.position.direction == Direction.LONG else "Sell"
-                try:
-                    add_qty_btc = add_qty_contracts * 0.001  # FIXED: Convert to BTC
-                    logger.info(f"📥 DCA #{dca_idx+1} trigger: adverse={adverse_pct:.2f}% >= {dca_triggers[dca_idx]:.2f}% -> {add_qty_contracts} contracts ({add_qty_btc} BTC)")
-                    dca_order = self.rest_client.place_order(
-                        symbol="BTCUSDT",
-                        side=dca_side,
-                        order_type="Market",
-                        qty=str(add_qty_btc),  # FIXED: BTC amount
-                        order_link_id=f"dca_{self.position.signal_id}_{dca_idx+1}_{int(time.time())}",
-                        time_in_force="GTC",
-                        category="linear",
-                    )
-                    ret_code = dca_order.get("retCode", -1)
-                    result = dca_order.get("result", {})
-                    order_id = result.get("orderId")
-                    if ret_code == 0 and order_id:
-                        self.position.entry_working = True
-                        self.position.entry_order_id = order_id
-                        self.position.dca_pending = True
-                    else:
-                        logger.warning(f"DCA order failed: retCode={ret_code}, response={dca_order}")
-                except Exception as e:
-                    logger.warning(f"DCA order exception: {e}")
-
-        # 3) Take-profit 체크
-        # - 기본: +3.0% 전량
-        # - DCA 이후: TP1 +1.5% (50%), TP2 +3.0% (잔량)
-        exit_qty_contracts = self.position.qty
+        # 2) Trailing Stop 체크 (2026-03-07: 고정 TP 대체)
+        # trail_distance = entry_atr * 0.5 (없으면 trail_price * 1.5% fallback)
         if not should_exit:
-            if self.position.dca_count > 0 and not self.position.tp1_done:
-                tp1_pct = 0.015
-                if self.position.direction == Direction.LONG:
-                    tp1_price = self.position.entry_price * (1 + tp1_pct)
-                    if current_price >= tp1_price:
-                        should_exit = True
-                        exit_reason = "take_profit_1"
-                        exit_qty_contracts = max(1, self.position.qty // 2)
-                        logger.info(f"🎯 TP1: ${current_price:,.2f} >= ${tp1_price:,.2f} (entry +1.5%, qty={exit_qty_contracts})")
-                elif self.position.direction == Direction.SHORT:
-                    tp1_price = self.position.entry_price * (1 - tp1_pct)
-                    if current_price <= tp1_price:
-                        should_exit = True
-                        exit_reason = "take_profit_1"
-                        exit_qty_contracts = max(1, self.position.qty // 2)
-                        logger.info(f"🎯 TP1: ${current_price:,.2f} <= ${tp1_price:,.2f} (entry -1.5%, qty={exit_qty_contracts})")
-
-            if not should_exit:
-                tp2_pct = 0.03
-                if self.position.direction == Direction.LONG:
-                    tp2_price = self.position.entry_price * (1 + tp2_pct)
-                    if current_price >= tp2_price:
-                        should_exit = True
-                        exit_reason = "take_profit_2" if self.position.dca_count > 0 else "take_profit"
-                        exit_qty_contracts = self.position.qty
-                        logger.info(f"🎯 TP2: ${current_price:,.2f} >= ${tp2_price:,.2f} (entry +3.0%)")
-                elif self.position.direction == Direction.SHORT:
-                    tp2_price = self.position.entry_price * (1 - tp2_pct)
-                    if current_price <= tp2_price:
-                        should_exit = True
-                        exit_reason = "take_profit_2" if self.position.dca_count > 0 else "take_profit"
-                        exit_qty_contracts = self.position.qty
-                        logger.info(f"🎯 TP2: ${current_price:,.2f} <= ${tp2_price:,.2f} (entry -3.0%)")
+            trail_atr = self.entry_atr or 0.0
+            trail_distance = trail_atr * 0.5 if trail_atr > 0 else self.trail_price * 0.015
+            if self.position.direction == Direction.LONG:
+                if current_price < self.trail_price - trail_distance:
+                    should_exit = True
+                    exit_reason = "trailing_stop"
+                    logger.info(
+                        f"Trailing Stop LONG: price=${current_price:,.2f} < trail=${self.trail_price:,.2f} - dist=${trail_distance:,.2f}"
+                    )
+            else:  # SHORT
+                if current_price > self.trail_price + trail_distance:
+                    should_exit = True
+                    exit_reason = "trailing_stop"
+                    logger.info(
+                        f"Trailing Stop SHORT: price=${current_price:,.2f} > trail=${self.trail_price:,.2f} + dist=${trail_distance:,.2f}"
+                    )
 
         if should_exit:
             # Exit intent 생성
@@ -565,13 +522,13 @@ class Orchestrator:
                     # Exit order 발주 (Market order for immediate execution)
                     exit_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
 
-                    exit_qty_btc = exit_qty_contracts * 0.001  # FIXED: Convert to BTC
+                    exit_qty_btc = round(exit_qty_contracts * 0.001, 3)
                     exit_order = self.rest_client.place_order(
-                        symbol="BTCUSDT",  # Linear USDT Futures
+                        symbol="BTCUSDT",
                         side=exit_side,
-                        qty=str(exit_qty_btc),  # FIXED: BTC amount
+                        qty=str(exit_qty_btc),  # BTC 단위 (contracts * 0.001)
                         order_link_id=f"exit_{self.position.signal_id}_{int(time.time())}",
-                        order_type="Market",  # Market order (즉시 체결)
+                        order_type="Market",
                         time_in_force="GTC",
                         price=None,  # Market order: no price
                         category="linear",
@@ -589,7 +546,11 @@ class Orchestrator:
                         # 주문 실패 시 IN_POSITION 유지 (다음 tick에서 재시도)
                         return intents.exit_intent
 
-                    logger.info(f"✅ Exit order placed: orderId={order_id}, side={exit_side}")
+                    logger.info(f"✅ Exit order placed: orderId={order_id}, side={exit_side}, reason={exit_reason}")
+
+                    # Trailing Stop 상태 초기화
+                    self.trail_price = None
+                    self.entry_atr = None
 
                     # State 전이: IN_POSITION → EXIT_PENDING
                     self.state = State.EXIT_PENDING
@@ -814,27 +775,17 @@ class Orchestrator:
             # Signal ID 생성
             self.current_signal_id = generate_signal_id()
 
-            # Bybit Linear USDT API: qty는 계약 수(contracts) 직접 전달
-            # 예: contracts=9 → qty="9" (각 contract = 0.001 BTC)
-            # Fix: 2026-03-06 - BTC quantity가 아닌 contract count를 전달해야 함
-
-            # CRITICAL FIX 2026-03-06: Bybit Linear qty is in BTC, not contracts!
-            # 1 contract = 0.001 BTC
-            # qty="5" means 5 BTC (WRONG)
-            # qty="0.005" means 0.005 BTC = 5 contracts (CORRECT)
-            qty_btc = contracts * 0.001
-            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({qty_btc} BTC) @ Market")
-
-            import time
-            fixed_order_id = f"entry_fixed_{int(time.time())}"
+            entry_qty_btc = round(contracts * 0.001, 3)  # BTC 단위 (contracts * 0.001)
+            order_link_id_entry = f"entry_{self.current_signal_id}_{int(time.time())}"
+            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({entry_qty_btc} BTC) @ ${signal.price:,.2f}")
             order_result = self.rest_client.place_order(
                 symbol="BTCUSDT",
                 side=signal.side,
-                order_type="Market",
-                qty=str(qty_btc),  # FIXED: BTC amount, not contract count
-                price=None,
+                order_type="Limit",
+                qty=str(entry_qty_btc),
+                price=str(signal.price),
                 time_in_force="GTC",
-                order_link_id=fixed_order_id,
+                order_link_id=order_link_id_entry,
                 category="linear",
             )
 
@@ -862,8 +813,15 @@ class Orchestrator:
         # Step 7: FLAT → ENTRY_PENDING 전환
         self.state = State.ENTRY_PENDING
 
-        # Stop distance 계산 (고정 2.2%, create_position_from_fill에서 사용)
-        stop_distance_pct = 0.022
+        # Trailing Stop 상태 초기화 (진입 시점)
+        self.trail_price = signal.price
+        self.entry_atr = atr
+
+        # Stop distance (ATR 기반, sizing_params와 동일 계산)
+        if atr > 0 and signal.price > 0:
+            stop_distance_pct = max(0.005, min(0.02, (atr * 0.7) / signal.price))
+        else:
+            stop_distance_pct = 0.01
 
         # Pending order 저장 (FILL event 매칭용)
         self.pending_order = {

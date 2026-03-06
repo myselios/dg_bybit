@@ -2,25 +2,39 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-02-14 (12:05 KST)
-Bot Status: Mainnet 실거래 중 (IN_POSITION)
-Equity: ~$109 USDT
+Last Updated: 2026-03-07 (KST)
+Bot Status: 재배포 필요 (qty 버그 수정 + 전략 개편 완료)
+Equity: ~$170 USDT
 Target: $1,000 USDT
 
 ---
 
-## 현재 설정 (Quick Reference)
-- R:R Ratio: 2.14:1 (TP=ATR*1.5, SL=ATR*0.7)
-- Grid Entry: ATR*0.3 spacing
+## 현재 설정 (Quick Reference) — v2.5 전략
+- 레버리지: 3x (전 Stage 통일, 2026-03-07 변경)
+- SL: ATR * 0.7 기반, clamp(0.5%~2.0%)
+- TP: Trailing Stop (trail_price 대비 ATR*0.5 이탈 시 청산)
+- DCA: 비활성화 (손실최소 + Trailing 전략)
+- Grid Entry: ATR * 0.2 spacing
 - Order: GTC Limit (entry), Market (exit, reduce_only)
 - Max Trades/Day: 10
 - Stage: 1 ($100-$300)
+- 목표 R:R: 3:1 이상
 
 ---
 
-## P0: 즉시 — 전부 완료 (2026-02-13~14)
+## P0: 즉시 처리 필요
 
-없음. 상세 이력은 하단 "완료 이력" 참조.
+- [x] qty 버그 수정 (contracts → BTC 단위) (2026-03-07)
+  - Entry/Exit: `str(contracts * 0.001)`로 수정
+  - DCA: 비활성화
+- [x] 전략 개편 (2026-03-07)
+  - 레버리지 5x→3x
+  - SL ATR 기반 (고정 2.2% 제거)
+  - TP 고정값 → Trailing Stop
+  - DCA 제거
+- [x] 정책 문서 동기화 (policy v2.5) (2026-03-07)
+- [ ] **재배포 필요** — `docker compose build --no-cache bot && docker compose up -d bot`
+  - 변경 파일: orchestrator.py, entry_coordinator.py, safety_limits.yaml
 
 ## P1: 단기 (코드 품질 + 데이터 축적)
 

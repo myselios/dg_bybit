@@ -110,25 +110,36 @@ environment:
   # BYBIT_MAINNET_API_KEY
   # BYBIT_MAINNET_API_SECRET
 
-# Strategy Multipliers - 수익 최적화 (2026-02-16)
+# Strategy Multipliers (2026-03-07: 전략 개편 - 손실최소/그리디수익)
 strategy:
-  # Grid Entry Spacing - 수수료 절감 우선
-  grid_entry_multiplier: 0.5  # ATR * 0.5 (진입 빈도 60% 감소)
-  grid_entry_note: "수수료 절감: 진입 빈도 줄이고 거래당 수익 확대"
+  # Leverage (전 Stage 통일)
+  leverage: 3  # 2026-03-07: 5x→3x (DCA 제거 + Trailing Stop 전략)
 
-  # Take-Profit Multiplier - 더 큰 수익 추구
-  tp_multiplier: 2.0  # ATR * 2.0 (거래당 수익 2배)
-  tp_note: "수익 최적화: 큰 수익 목표로 수수료 대비 수익 개선"
+  # Grid Entry Spacing
+  grid_entry_multiplier: 0.2  # ATR * 0.2 (orchestrator.py 실제값 기준)
+  grid_entry_note: "ATR 기반 그리드 간격 (orchestrator.py:733)"
 
-  # Stop-Loss Multiplier - 노이즈 회피
-  sl_multiplier: 0.7  # ATR * 0.7 (노이즈 손절 방지)
-  sl_min_pct: 0.005  # 최소 0.5%
-  sl_max_pct: 0.02   # 최대 2.0%
-  sl_note: "손절 최적화: 노이즈 회피하면서 리스크 관리. R:R = 2.86:1"
-  
+  # Stop-Loss (ATR 기반, 코드 실제 적용)
+  sl_multiplier: 0.7  # ATR * 0.7 → stop_distance_pct = clamp(ATR*0.7/price, 0.5%, 2.0%)
+  sl_min_pct: 0.005
+  sl_max_pct: 0.02
+  sl_note: "entry_coordinator.py ATR 기반 SL (2026-03-07 적용)"
+
+  # Trailing Stop (고정 TP 대체)
+  trailing_stop_atr_mult: 0.5  # trail_price에서 ATR*0.5 이탈 시 청산
+  trailing_stop_fallback_pct: 0.015  # ATR 없을 때 trail_price * 1.5%
+  trailing_stop_note: "orchestrator.py Trailing Stop (2026-03-07 적용). 추세 끝까지 수익."
+
+  # DCA 비활성화 (2026-03-07)
+  dca_enabled: false
+  dca_note: "3x 레버리지 + Trailing Stop 전략. DCA는 손실최소 원칙과 반대."
+
+  # R:R 목표
+  target_rr: 3.0  # 목표 R:R 3:1 이상 (SL ATR*0.7, TP Trailing)
+
   # 추가 필터 (횡보장 진입 방지)
-  ma_slope_min_pct: 0.002  # MA slope 최소 0.2% (방향성 필터)
-  funding_max_abs_pct: 0.0003  # Funding rate 절대값 0.03% 이하
+  ma_slope_min_pct: 0.002
+  funding_max_abs_pct: 0.0003
 
 # Kill Switch (최소 구현, 추후 확장)
 killswitch:

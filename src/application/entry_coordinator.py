@@ -111,19 +111,19 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     # Stage 판별 (Policy Section 4)
     if equity_usdt < 300:
         # Stage 1: Expansion ($100 → $300)
-        max_loss_usd_cap = 15.0  # 2026-02-20: 10 → 15
-        loss_pct_cap = 0.15  # 2026-02-20: 10% → 15%
-        leverage = 5.0  # 2026-02-20: 3x → 5x
+        max_loss_usd_cap = 15.0
+        loss_pct_cap = 0.15
+        leverage = 3.0  # 2026-03-07: 5x→3x (DCA 제거 + Trailing Stop 전략 전환)
     elif equity_usdt < 700:
         # Stage 2: Acceleration ($300 → $700)
-        max_loss_usd_cap = 30.0  # 2026-02-20: 20 → 30
-        loss_pct_cap = 0.10  # 2026-02-20: 8% → 10%
-        leverage = 5.0  # 2026-02-20: 3x → 5x
+        max_loss_usd_cap = 30.0
+        loss_pct_cap = 0.10
+        leverage = 3.0  # 2026-03-07: 5x→3x
     else:
         # Stage 3: Preservation ($700 → $1,000)
-        max_loss_usd_cap = 45.0  # 2026-02-20: 30 → 45
-        loss_pct_cap = 0.08  # 2026-02-20: 6% → 8%
-        leverage = 5.0  # 2026-02-20: 2x → 5x
+        max_loss_usd_cap = 45.0
+        loss_pct_cap = 0.08
+        leverage = 3.0  # 2026-03-07: 5x→3x
 
     # Max loss USDT: min(usd_cap, equity * pct_cap)
     # Codex Review Fix #3: 고정 cap과 % cap 중 작은 값 사용
@@ -132,8 +132,13 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     # Direction (Buy → LONG, Sell → SHORT)
     direction = "LONG" if signal.side == "Buy" else "SHORT"
 
-    # Stop distance (고정 2.2%)
-    stop_distance_pct = 0.022
+    # Stop distance (ATR 기반, clamp 0.5%~2.0%)
+    # 2026-03-07: 고정 2.2% → ATR * 0.7 기반 (policy v2.5)
+    if atr > 0 and signal.price > 0:
+        raw_stop_pct = (atr * 0.7) / signal.price
+        stop_distance_pct = max(0.005, min(0.02, raw_stop_pct))
+    else:
+        stop_distance_pct = 0.01  # fallback 1.0%
 
     # Leverage는 위에서 Stage별로 설정됨 (Stage 1/2: 3x, Stage 3: 2x)
 
