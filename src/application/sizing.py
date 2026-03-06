@@ -68,7 +68,7 @@ class SizingResult:
 
 
 # HOTFIX 2026-03-06: Limit max contracts to prevent margin issues
-MAX_CONTRACTS_HARD_CAP = 5
+MAX_CONTRACTS_HARD_CAP = 1  # TEST: 1 contract = 0.001 BTC minimum
 
 def calculate_contracts(params: SizingParams) -> SizingResult:
     """
