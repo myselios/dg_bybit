@@ -492,11 +492,13 @@ class Orchestrator:
                 add_qty_contracts = max(1, int(round(base_qty * dca_mults[dca_idx])))
                 dca_side = "Buy" if self.position.direction == Direction.LONG else "Sell"
                 try:
-                    logger.info(f"📥 DCA #{dca_idx+1} trigger: adverse={adverse_pct:.2f}% >= {dca_triggers[dca_idx]:.2f}% -> {add_qty_contracts} contracts")
+                    add_qty_btc = add_qty_contracts * 0.001  # FIXED: Convert to BTC
+                    logger.info(f"📥 DCA #{dca_idx+1} trigger: adverse={adverse_pct:.2f}% >= {dca_triggers[dca_idx]:.2f}% -> {add_qty_contracts} contracts ({add_qty_btc} BTC)")
                     dca_order = self.rest_client.place_order(
                         symbol="BTCUSDT",
                         side=dca_side,
                         order_type="Market",
+                        qty=str(add_qty_btc),  # FIXED: BTC amount
                         qty=str(add_qty_contracts),  # Fix: contracts 직접 전달
                         order_link_id=f"dca_{self.position.signal_id}_{dca_idx+1}_{int(time.time())}",
                         time_in_force="GTC",
@@ -564,10 +566,11 @@ class Orchestrator:
                     # Exit order 발주 (Market order for immediate execution)
                     exit_side = "Sell" if self.position.direction == Direction.LONG else "Buy"
 
+                    exit_qty_btc = exit_qty_contracts * 0.001  # FIXED: Convert to BTC
                     exit_order = self.rest_client.place_order(
                         symbol="BTCUSDT",  # Linear USDT Futures
                         side=exit_side,
-                        qty=str(exit_qty_contracts),  # Fix: contracts 직접 전달
+                        qty=str(exit_qty_btc),  # FIXED: BTC amount
                         order_link_id=f"exit_{self.position.signal_id}_{int(time.time())}",
                         order_type="Market",  # Market order (즉시 체결)
                         time_in_force="GTC",
@@ -816,21 +819,23 @@ class Orchestrator:
             # 예: contracts=9 → qty="9" (각 contract = 0.001 BTC)
             # Fix: 2026-03-06 - BTC quantity가 아닌 contract count를 전달해야 함
 
-            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({contracts * 0.001} BTC) @ ${signal.price:,.2f}")
+            # CRITICAL FIX 2026-03-06: Bybit Linear qty is in BTC, not contracts!
+            # 1 contract = 0.001 BTC
+            # qty="5" means 5 BTC (WRONG)
+            # qty="0.005" means 0.005 BTC = 5 contracts (CORRECT)
+            qty_btc = contracts * 0.001
+            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({qty_btc} BTC) @ Market")
 
-            # TEST 2026-03-06: Fixed orderLinkId + Market order
-            # Test if unique orderLinkId helps
             import time
             fixed_order_id = f"entry_fixed_{int(time.time())}"
-            logger.info(f"📤 TEST Entry order (Market, fixed ID): {signal.side} {contracts} contracts, ID={fixed_order_id}")
             order_result = self.rest_client.place_order(
                 symbol="BTCUSDT",
                 side=signal.side,
                 order_type="Market",
-                qty=str(contracts),
+                qty=str(qty_btc),  # FIXED: BTC amount, not contract count
                 price=None,
-                time_in_force="IOC",  # TEST: Changed from GTC to IOC
-                order_link_id=fixed_order_id,  # TEST: Unique ID based on timestamp
+                time_in_force="GTC",
+                order_link_id=fixed_order_id,
                 category="linear",
             )
 
