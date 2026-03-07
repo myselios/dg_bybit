@@ -150,12 +150,16 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     qty_step = 1
     contract_size = 0.001  # 1 contract = 0.001 BTC
 
+    # FIX 2026-03-07: Add available_usdt parameter
+    available_usdt = market_data.get_available_usdt()
+    
     return SizingParams(
         max_loss_usdt=max_loss_usdt,
         entry_price_usd=signal.price,
         stop_distance_pct=stop_distance_pct,
         leverage=leverage,
         equity_usdt=equity_usdt,
+        available_usdt=available_usdt,  # FIX: Required parameter added
         fee_rate=fee_rate,
         direction=direction,
         qty_step=qty_step,
