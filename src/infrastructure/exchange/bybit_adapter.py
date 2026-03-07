@@ -282,7 +282,11 @@ class BybitAdapter:
                 if wallet_list:
                     wallet_data = wallet_list[0]
                     self._equity_usdt = float(wallet_data.get("totalEquity", 0.0))
-                    self._available_usdt = float(wallet_data.get("totalAvailableBalance", wallet_data.get("totalEquity", 0.0)))
+                    avail_str = wallet_data.get("totalAvailableBalance", "")
+                    if avail_str and avail_str.strip():
+                        self._available_usdt = float(avail_str)
+                    else:
+                        self._available_usdt = float(wallet_data.get("totalEquity", 0.0))
                 self._last_wallet_refresh_ts = now
 
             if now - self._last_position_refresh_ts >= 30.0 or self._current_position is None:
