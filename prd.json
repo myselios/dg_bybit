@@ -1,0 +1,110 @@
+{
+  "$schema": "ai_automation PRD v1",
+  "project_name": "cbgb_v3_profit_fix",
+  "goal": "CBGB 봇 핵심 버그 3개 수정 + SL 사이징 정합성 + 대시보드 매매일지 — 수익률 향상",
+  "tech_stack": {
+    "language": "python",
+    "framework": null,
+    "database": null,
+    "infrastructure": ["docker"]
+  },
+  "context": {
+    "existing_patterns": "Clean Architecture (domain/application/infrastructure). TDD with pytest. 422 tests passing.",
+    "constraints": "봇 운영 중. 기존 테스트 깨지면 안 됨. FLOW.md 상태 전이 수정 없음.",
+    "references": [
+      "docs/constitution/FLOW.md",
+      "docs/specs/account_builder_policy.md",
+      "src/application/orchestrator.py",
+      "src/application/sizing.py",
+      "src/application/stop_manager.py",
+      "src/application/entry_coordinator.py",
+      "src/dashboard/data_pipeline.py",
+      "src/dashboard/ui_components.py"
+    ],
+    "architecture_doc": "architecture.md"
+  },
+  "stories": [
+    {
+      "id": "S1",
+      "title": "Trailing Stop 거리 ATR*0.5로 수정",
+      "description": "As a trader, I want trailing stop distance to follow policy (ATR*0.5) so that TP is reachable and win rate improves.",
+      "acceptance_criteria": [
+        "orchestrator.py:538 trail_distance = trail_atr * 0.5 (현재 1.0)",
+        "Fallback: trail_price * 0.015 (현재 0.01 — 1% → 1.5%로 상향)",
+        "SHORT trailing stop: price > trail_price + trail_distance 시 청산",
+        "LONG trailing stop: price < trail_price - trail_distance 시 청산",
+        "test_trailing_stop_long_triggers_at_atr05 통과",
+        "test_trailing_stop_short_triggers_at_atr05 통과",
+        "기존 trailing stop 관련 테스트 모두 통과"
+      ],
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "id": "S2",
+      "title": "Max Contracts 안전 상한 5로 복원 + 110007 에러 방지",
+      "description": "As a trader, I want max contracts capped at 5 so that 'ab not enough' errors stop happening and entries succeed reliably.",
+      "acceptance_criteria": [
+        "sizing.py MAX_CONTRACTS_HARD_CAP = 5 (현재 1000)",
+        "available_usdt * 0.8 계산 후 재검증도 동일 available_usdt * 0.8 기준으로 통일",
+        "contracts=6 입력 시 5로 클램프되는 테스트 통과",
+        "equity=$139, price=$70000, max_loss=$14, lev=3x → contracts≤5 검증",
+        "기존 sizing 테스트 모두 통과"
+      ],
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "id": "S3",
+      "title": "exchange_position_not_flat 자동 복구",
+      "description": "As a trader, I want the bot to auto-recover when exchange has a position but state=FLAT, so it never leaves positions unmanaged.",
+      "acceptance_criteria": [
+        "orchestrator._attempt_entry()에서 ex_size>0 감지 시 포지션을 복구하고 IN_POSITION으로 전환",
+        "복구된 포지션은 stop_manager가 즉시 SL 설정",
+        "복구 실패 시 WARN 로그 + entry blocked (기존 동작 유지)",
+        "test_exchange_position_not_flat_triggers_recovery 통과",
+        "test_exchange_position_not_flat_recovery_failure_keeps_blocked 통과",
+        "재시작 없이 자동으로 정상 상태 복귀"
+      ],
+      "priority": 2,
+      "dependencies": []
+    },
+    {
+      "id": "S4",
+      "title": "SL 사이징 정합성 수정 (entry_coordinator ATR*1.5 → ATR*0.7)",
+      "description": "As a trader, I want position sizing to use the same ATR multiplier as actual SL placement so that risk calculations are accurate.",
+      "acceptance_criteria": [
+        "entry_coordinator.py:138 raw_stop_pct = (atr * 0.7) / signal.price (현재 1.5)",
+        "stop_manager.calculate_stop_price와 동일한 ATR*0.7 기준 사용",
+        "clamp(0.5%~2.0%) 유지",
+        "test_build_sizing_params_uses_atr07 통과",
+        "sizing과 실제 SL이 동일 ATR 배수 사용하는 통합 테스트 통과",
+        "기존 entry_coordinator 테스트 모두 통과"
+      ],
+      "priority": 2,
+      "dependencies": ["S2"]
+    },
+    {
+      "id": "S5",
+      "title": "대시보드 매매일지 탭 추가",
+      "description": "As a trader, I want a trading journal tab in the dashboard that shows each completed trade with PnL, entry/exit, hold time so I can track performance.",
+      "acceptance_criteria": [
+        "대시보드에 '매매일지' 탭 추가 (trades_*.jsonl 데이터 표시)",
+        "컬럼: 날짜, 방향, 진입가, 청산가, qty_btc, PnL($), 수수료, Hold시간(분), 시장상황",
+        "PnL 양수=초록, 음수=빨강 색상",
+        "누적 PnL 라인 차트 (날짜별)",
+        "승률 / 평균PnL / 최대손실 / 총 트레이드 수 요약 카드",
+        "hold_seconds가 null이면 '-' 표시",
+        "기존 대시보드 탭(PnL, 분석 등) 정상 동작 유지"
+      ],
+      "priority": 3,
+      "dependencies": []
+    }
+  ],
+  "non_functional": {
+    "performance": "pytest -q 전체 통과, 대시보드 데이터 로드 3초 이내",
+    "security": "시크릿 하드코딩 없음, .env 커밋 금지",
+    "scalability": "단일 Docker 컨테이너",
+    "testing": "커버리지 80%+, 신규 코드 100% 커버"
+  }
+}

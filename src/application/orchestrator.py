@@ -112,6 +112,11 @@ class Orchestrator:
         self.git_commit = git_commit
         self.tick_counter = 0  # Tick counter (general purpose)
         self._last_entry_attempt = 0.0  # TEST: Cooldown tracking
+        # entry fill만 추적 (exit fill이 LFP를 오염시키는 것을 방지)
+        # 초기값은 adapter LFP로 설정 (재시작 시 기존 그리드 기준점 유지)
+        self._last_entry_fill_price: Optional[float] = (
+            market_data.get_last_fill_price() if market_data is not None else None
+        )
 
         # Position recovery: 기존 포지션이 있으면 State.IN_POSITION으로 시작
         self.state = State.FLAT
@@ -349,6 +354,35 @@ class Orchestrator:
         2. WebSocket FILL event 처리 (match → position create → state transition)
         """
         from application.rest_fallback import check_pending_order_fallback, _NO_CHANGE
+        from application.rest_fallback import _recover_position_from_api
+
+        # (0) Orphan state 안전망: pending=None인데 ENTRY/EXIT_PENDING 상태 → 강제 복구
+        # 원인: REST fallback이 clear_pending=True + new_state=None 반환 시 발생
+        if (self.state in [State.ENTRY_PENDING, State.EXIT_PENDING] and
+                self.pending_order is None and
+                self.rest_client is not None):
+            logger.warning(
+                f"Orphan state detected: state={self.state}, pending=None — recovering via position API"
+            )
+            try:
+                position = _recover_position_from_api(self.rest_client, pending_order=None)
+                if self.state == State.ENTRY_PENDING:
+                    if position is not None:
+                        self.position = position
+                        self.state = State.IN_POSITION
+                        logger.info("Orphan ENTRY_PENDING recovered → IN_POSITION")
+                    else:
+                        self.state = State.FLAT
+                        logger.info("Orphan ENTRY_PENDING recovered → FLAT (no exchange position)")
+                elif self.state == State.EXIT_PENDING:
+                    if position is None:
+                        self.state = State.FLAT
+                        self._last_entry_fill_price = None
+                        logger.info("Orphan EXIT_PENDING recovered → FLAT")
+                    # position이 있으면 EXIT_PENDING 유지 (아직 청산 중)
+            except Exception as e:
+                logger.error(f"Orphan state recovery failed: {type(e).__name__}: {e}")
+            return  # 이번 tick은 여기서 종료, 다음 tick에서 정상 진행
 
         # (1) REST API polling fallback (WebSocket timeout 시)
         WEBSOCKET_TIMEOUT = 10.0
@@ -390,6 +424,7 @@ class Orchestrator:
                 if self.state == State.ENTRY_PENDING:
                     self.position = position
                     self.state = State.IN_POSITION
+                    self._last_entry_fill_price = position.entry_price  # entry fill만 LFP 갱신
                     self.pending_order = None
                     self.pending_order_timestamp = None
                 elif self.state == State.EXIT_PENDING:
@@ -397,6 +432,7 @@ class Orchestrator:
                         self._log_completed_trade(event=event, position=self.position)
                     self.position = None
                     self.state = State.FLAT
+                    self._last_entry_fill_price = None  # exit 후 Grid 초기화 (역추세 재진입 방지)
                     self.pending_order = None
                     self.pending_order_timestamp = None
 
@@ -419,7 +455,11 @@ class Orchestrator:
 
         # State 변경
         if result.new_state is not None:
+            prev_state = self.state
             self.state = result.new_state
+            # _last_entry_fill_price: fallback으로 FLAT 전환 시 리셋
+            if result.new_state == State.FLAT and prev_state == State.EXIT_PENDING:
+                self._last_entry_fill_price = None
 
         # Position 변경
         if result.new_position is not _NO_CHANGE:
@@ -495,7 +535,7 @@ class Orchestrator:
         # trail_distance = entry_atr * 0.5 (없으면 trail_price * 1.5% fallback)
         if not should_exit:
             trail_atr = self.entry_atr or 0.0
-            trail_distance = trail_atr * 1.0 if trail_atr > 0 else self.trail_price * 0.01
+            trail_distance = trail_atr * 0.5 if trail_atr > 0 else self.trail_price * 0.015
             if self.position.direction == Direction.LONG:
                 if current_price < self.trail_price - trail_distance:
                     should_exit = True
@@ -576,12 +616,15 @@ class Orchestrator:
         current_time = self.market_data.get_timestamp()
 
         # Step 1: Stop 갱신 필요 여부 판단
+        # ACTIVE 상태는 30초 debounce, 초기(MISSING/PENDING)는 2초
+        _stop_debounce = 30.0 if self.position.stop_status == StopStatus.ACTIVE else 2.0
         if should_update_stop(
             position_qty=self.position.qty,
             stop_qty=self.position.qty if self.position.stop_order_id else 0,
             last_stop_update_at=self.last_stop_update_at,
             current_time=current_time,
             entry_working=self.position.entry_working,
+            debounce_seconds=_stop_debounce,
         ):
             # Step 2: Stop action 결정 (AMEND/CANCEL_AND_PLACE/PLACE)
             action = determine_stop_action(
@@ -672,9 +715,25 @@ class Orchestrator:
                 plist = pos_resp.get("result", {}).get("list", [])
                 ex_size = float(plist[0].get("size", "0") or 0) if plist else 0.0
                 if ex_size > 0.0:
+                    # 거래소 포지션 복구 시도
+                    try:
+                        from application.rest_fallback import _recover_position_from_api
+                        recovered = _recover_position_from_api(self.rest_client, pending_order=None)
+                        if recovered is not None:
+                            self.position = recovered
+                            self.state = State.IN_POSITION
+                            logger.warning(
+                                f"exchange_position_not_flat: recovered position "
+                                f"{recovered.direction.value} qty={recovered.qty} "
+                                f"@ {recovered.entry_price} -> IN_POSITION"
+                            )
+                            return {"blocked": True, "reason": "state_not_flat"}
+                    except Exception as recovery_err:
+                        logger.warning(f"exchange_position_not_flat recovery failed: {recovery_err}")
                     return {"blocked": True, "reason": "exchange_position_not_flat"}
             except Exception as e:
                 logger.warning(f"Entry precheck position query failed: {e}")
+                return {"blocked": True, "reason": "exchange_position_not_flat"}
 
         # Step 2: degraded_mode 체크
         ws_degraded = self.market_data.is_ws_degraded()
@@ -698,8 +757,9 @@ class Orchestrator:
         # 현재 가격
         current_price = self.market_data.get_current_price()
 
-        # 마지막 체결 가격 (Grid 기준점)
-        last_fill_price = self.market_data.get_last_fill_price()
+        # 마지막 체결 가격 (entry fill만, Grid 기준점)
+        # exit fill이 LFP를 오염시키는 것을 방지하기 위해 adapter LFP 대신 직접 관리
+        last_fill_price = self._last_entry_fill_price
 
         # Funding rate + MA slope (첫 진입 방향 결정용, Phase 13c)
         funding_rate = self.market_data.get_funding_rate()

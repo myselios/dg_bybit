@@ -301,3 +301,181 @@ def test_initial_entry_regime_aware_realistic():
     )
     assert signal2 is not None
     assert signal2.side == "Buy"  # 음수 funding → Buy
+
+
+# ========== Wave 3: Grid 역추세 방지 테스트 ==========
+
+
+def test_grid_sell_blocked_in_strong_uptrend():
+    """
+    Wave 3: Grid Sell 신호 + 강한 상승 추세 → None (차단)
+
+    시나리오: BTC 상승 추세 (ma_slope=0.6%) + 가격이 grid_up 도달 → 원래는 Sell
+    → 하지만 추세가 상승이므로 SHORT 진입은 역추세 → 차단해야 함
+
+    Given: last_fill_price=69000, price=69200(grid_up), ma_slope=0.6%(상승 추세)
+    When: generate_signal()
+    Then: None (Sell 차단)
+    """
+    from src.application.signal_generator import generate_signal, T_TREND
+
+    last_fill_price = 69000.0
+    grid_spacing = 115.0
+    current_price = last_fill_price + grid_spacing + 1  # grid_up 도달
+
+    signal = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=T_TREND + 0.1,  # 강한 상승 추세
+        funding_rate=0.0001,
+    )
+    assert signal is None, (
+        f"Grid Sell in strong uptrend (ma={T_TREND+0.1}%) should be blocked, got {signal}"
+    )
+
+
+def test_grid_buy_blocked_in_strong_downtrend():
+    """
+    Wave 3: Grid Buy 신호 + 강한 하락 추세 → None (차단)
+
+    시나리오: BTC 하락 추세 (ma_slope=-0.6%) + 가격이 grid_down 도달 → 원래는 Buy
+    → 하지만 추세가 하락이므로 LONG 진입은 역추세 → 차단해야 함
+
+    Given: last_fill_price=69000, price=68884(grid_down), ma_slope=-0.6%(하락 추세)
+    When: generate_signal()
+    Then: None (Buy 차단)
+    """
+    from src.application.signal_generator import generate_signal, T_TREND
+
+    last_fill_price = 69000.0
+    grid_spacing = 115.0
+    current_price = last_fill_price - grid_spacing - 1  # grid_down 도달
+
+    signal = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=-(T_TREND + 0.1),  # 강한 하락 추세
+        funding_rate=-0.0001,
+    )
+    assert signal is None, (
+        f"Grid Buy in strong downtrend (ma={-(T_TREND+0.1)}%) should be blocked, got {signal}"
+    )
+
+
+def test_grid_sell_allowed_in_neutral_or_down_trend():
+    """
+    Wave 3: Grid Sell 신호 + 중립/하락 추세 → 허용
+
+    ma_slope이 T_TREND 미만이면 Grid Sell 허용.
+    """
+    from src.application.signal_generator import generate_signal, T_TREND
+
+    last_fill_price = 69000.0
+    grid_spacing = 115.0
+    current_price = last_fill_price + grid_spacing + 1
+
+    # 중립 추세 → 허용
+    signal = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=0.1,  # 중립
+        funding_rate=0.0001,
+    )
+    assert signal is not None, "Grid Sell in neutral trend should be allowed"
+    assert signal.side == "Sell"
+
+    # 하락 추세 → Sell 허용 (추세 방향과 일치)
+    signal2 = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=-(T_TREND + 0.1),  # 강한 하락 추세에서도 Sell은 허용
+        funding_rate=-0.0001,
+    )
+    assert signal2 is not None, "Grid Sell in downtrend should be allowed"
+    assert signal2.side == "Sell"
+
+
+def test_grid_buy_allowed_in_neutral_or_up_trend():
+    """
+    Wave 3: Grid Buy 신호 + 중립/상승 추세 → 허용
+    """
+    from src.application.signal_generator import generate_signal, T_TREND
+
+    last_fill_price = 69000.0
+    grid_spacing = 115.0
+    current_price = last_fill_price - grid_spacing - 1
+
+    # 중립 → 허용
+    signal = generate_signal(
+        current_price=current_price,
+        last_fill_price=last_fill_price,
+        grid_spacing=grid_spacing,
+        ma_slope_pct=0.1,
+        funding_rate=0.0001,
+    )
+    assert signal is not None, "Grid Buy in neutral trend should be allowed"
+    assert signal.side == "Buy"
+
+
+# ========== S4: SL Sizing ATR*0.7 정합성 ==========
+
+
+class TestSizingParamsStopDistance:
+    """S4: build_sizing_params의 stop_distance_pct가 ATR*0.7 기반인지 검증
+
+    현재 버그: entry_coordinator.py:138 에서 atr * 1.5 사용 중
+    수정 목표: atr * 0.7 사용
+    """
+
+    def test_build_sizing_params_uses_atr07(self):
+        """build_sizing_params stop_distance_pct가 ATR*0.7 기반인지 검증
+
+        atr=1000, price=70000
+        기대: ATR*0.7/price = 700/70000 = 0.01 (1%) → clamp(0.5%,2.0%) → 0.01
+        현재 버그: ATR*1.5/price = 1500/70000 = 0.0214 → clamp → 0.02
+        이 테스트는 현재 코드에서 FAIL해야 함 (RED)
+        """
+        from src.application.entry_coordinator import build_sizing_params
+        from src.application.signal_generator import Signal
+        from unittest.mock import MagicMock
+
+        # Arrange
+        signal = Signal(side="Buy", price=70000.0, qty=1)
+        market_data = MagicMock()
+        market_data.get_equity_usdt.return_value = 139.0
+        market_data.get_available_usdt.return_value = 139.0
+        atr = 1000.0
+
+        # Act
+        params = build_sizing_params(signal, market_data, atr=atr)
+
+        # Assert: ATR*0.7 기반 → 700/70000 = 0.01
+        import pytest
+        assert params.stop_distance_pct == pytest.approx(0.01, abs=1e-6)
+
+    def test_build_sizing_params_stop_distance_clamped(self):
+        """극단값에서도 clamp(0.5%~2.0%) 적용
+
+        atr=100 (매우 작음), price=70000
+        ATR*0.7/price = 70/70000 = 0.001 → clamp 하한 → 0.005 (0.5%)
+        """
+        from src.application.entry_coordinator import build_sizing_params
+        from src.application.signal_generator import Signal
+        from unittest.mock import MagicMock
+
+        # Arrange
+        signal = Signal(side="Buy", price=70000.0, qty=1)
+        market_data = MagicMock()
+        market_data.get_equity_usdt.return_value = 139.0
+        market_data.get_available_usdt.return_value = 139.0
+        atr = 100.0  # 매우 작은 ATR
+
+        # Act
+        params = build_sizing_params(signal, market_data, atr=atr)
+
+        # Assert: ATR*0.7/price = 70/70000 = 0.001 → clamp → 0.005
+        assert params.stop_distance_pct == 0.005

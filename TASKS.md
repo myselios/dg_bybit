@@ -2,9 +2,9 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-03-07 (KST)
-Bot Status: 재배포 필요 (qty 버그 수정 + 전략 개편 완료)
-Equity: ~$170 USDT
+Last Updated: 2026-03-12 (KST)
+Bot Status: 운영 중 (3버그 수정 + 재배포 완료 2026-03-12)
+Equity: ~$139 USDT
 Target: $1,000 USDT
 
 ---
@@ -33,8 +33,10 @@ Target: $1,000 USDT
   - TP 고정값 → Trailing Stop
   - DCA 제거
 - [x] 정책 문서 동기화 (policy v2.5) (2026-03-07)
-- [ ] **재배포 필요** — `docker compose build --no-cache bot && docker compose up -d bot`
-  - 변경 파일: orchestrator.py, entry_coordinator.py, safety_limits.yaml
+- [x] **재배포 완료** (2026-03-12) — 3개 버그 수정 후 재배포
+  - Wave 1: _last_entry_fill_price (exit fill 오염 방지)
+  - Wave 2: orphan ENTRY/EXIT_PENDING 안전망
+  - Wave 3: Grid 역추세 진입 차단 (ma_slope 필터)
 
 ## P1: 단기 (코드 품질 + 데이터 축적)
 

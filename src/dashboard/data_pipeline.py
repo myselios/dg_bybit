@@ -88,6 +88,84 @@ def parse_jsonl(file_path: Path) -> List[TradeLogV1]:
     return logs
 
 
+def load_journal_df(log_dir: Path) -> pd.DataFrame:
+    """trades_*.jsonl 파일들을 읽어 DataFrame 반환.
+
+    Args:
+        log_dir: trades_*.jsonl 파일이 있는 디렉토리 경로,
+                 또는 단일 .jsonl 파일 경로
+
+    Returns:
+        pd.DataFrame with columns: direction, entry_price, exit_price,
+        qty_btc, realized_pnl_usd, fee_usd, hold_minutes, market_regime,
+        exit_time, order_id, side
+    """
+    all_trades = []
+
+    # 단일 파일 경로인 경우
+    if log_dir.is_file():
+        files = [log_dir]
+    else:
+        files = sorted(log_dir.glob("trades_*.jsonl"))
+
+    for f in files:
+        with open(f) as fp:
+            for line in fp:
+                line = line.strip()
+                if line:
+                    try:
+                        all_trades.append(json.loads(line))
+                    except Exception:
+                        pass
+
+    if not all_trades:
+        return pd.DataFrame(columns=[
+            "order_id", "direction", "side", "entry_price", "exit_price",
+            "qty_btc", "realized_pnl_usd", "fee_usd", "hold_minutes",
+            "market_regime", "exit_time"
+        ])
+
+    df = pd.DataFrame(all_trades)
+
+    # hold_minutes: hold_seconds / 60 (None 유지)
+    if "hold_seconds" in df.columns:
+        df["hold_minutes"] = df["hold_seconds"].apply(
+            lambda x: x / 60 if x is not None and not pd.isna(x) else None
+        )
+    else:
+        df["hold_minutes"] = None
+
+    return df
+
+
+def calculate_journal_stats(df: pd.DataFrame) -> dict:
+    """DataFrame에서 요약 통계 계산.
+
+    Returns:
+        dict with keys: win_rate, avg_pnl, max_loss, total_trades, total_pnl
+    """
+    if df.empty or "realized_pnl_usd" not in df.columns:
+        return {
+            "win_rate": 0.0,
+            "avg_pnl": 0.0,
+            "max_loss": 0.0,
+            "total_trades": 0,
+            "total_pnl": 0.0,
+        }
+
+    pnl = df["realized_pnl_usd"].dropna()
+    wins = (pnl > 0).sum()
+    total = len(pnl)
+
+    return {
+        "win_rate": wins / total if total > 0 else 0.0,
+        "avg_pnl": float(pnl.mean()) if total > 0 else 0.0,
+        "max_loss": float(pnl.min()) if total > 0 else 0.0,
+        "total_trades": int(total),
+        "total_pnl": float(pnl.sum()),
+    }
+
+
 def to_dataframe(logs: List[TradeLogV1]) -> pd.DataFrame:
     """
     TradeLogV1 리스트를 DataFrame으로 변환

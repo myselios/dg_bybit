@@ -34,8 +34,10 @@ from src.dashboard.ui_components import (
     create_pnl_chart,
     create_trade_distribution,
     create_session_risk_gauge,
+    create_journal_tab,
     get_date_range,
 )
+from src.dashboard.data_pipeline import load_journal_df, calculate_journal_stats
 from src.dashboard.file_watcher import (
     get_latest_modification_time,
     has_directory_changed,
@@ -445,8 +447,8 @@ def main():
 
     st.markdown("---")
 
-    # --- Tabs (Overview / Risk / Diagnostics) ---
-    tab1, tab2, tab3 = st.tabs(["📊 Overview", "⚙️ Risk & Config", "⚡ Diagnostics"])
+    # --- Tabs (Overview / Risk / Diagnostics / 매매일지) ---
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "⚙️ Risk & Config", "⚡ Diagnostics", "📒 매매일지"])
 
     # TAB 1: Overview
     with tab1:
@@ -684,6 +686,54 @@ def main():
             st.subheader("레이턴시 통계")
             latency = calculate_latency_stats(df)
             st.json(latency)
+
+    # TAB 4: 매매일지
+    with tab4:
+        st.header("📒 매매일지")
+        log_path_journal = Path(log_dir)
+        journal_df = load_journal_df(log_path_journal) if log_path_journal.exists() else pd.DataFrame()
+        journal_stats = calculate_journal_stats(journal_df)
+
+        # 요약 통계
+        col_j1, col_j2, col_j3, col_j4 = st.columns(4)
+        with col_j1:
+            st.metric("총 거래", journal_stats["total_trades"])
+        with col_j2:
+            st.metric("승률", f"{journal_stats['win_rate'] * 100:.1f}%")
+        with col_j3:
+            st.metric("평균 PnL", f"${journal_stats['avg_pnl']:.2f}")
+        with col_j4:
+            st.metric("최대 손실", f"${journal_stats['max_loss']:.2f}")
+
+        st.markdown("---")
+
+        journal_data = create_journal_tab(journal_df)
+        if journal_data["empty"]:
+            st.info("거래 기록이 없습니다.")
+        else:
+            # 누적 PnL 차트
+            if journal_data["cumulative_pnl"]:
+                import plotly.graph_objects as _go
+                fig_j = _go.Figure(
+                    _go.Scatter(
+                        y=journal_data["cumulative_pnl"],
+                        mode="lines+markers",
+                        name="누적 PnL",
+                        line=dict(color="#00cec9", width=2),
+                    )
+                )
+                fig_j.update_layout(
+                    title="누적 PnL",
+                    yaxis_title="PnL (USDT)",
+                    template="plotly_white",
+                    height=300,
+                    margin=dict(l=40, r=40, t=40, b=40),
+                )
+                st.plotly_chart(fig_j, use_container_width=True)
+
+            # 거래 테이블
+            table_df = pd.DataFrame(journal_data["table_data"])
+            st.dataframe(table_df, use_container_width=True, hide_index=True)
 
     # --- Footer ---
     st.sidebar.markdown("---")

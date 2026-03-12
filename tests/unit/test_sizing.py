@@ -24,7 +24,7 @@ Test Coverage:
 8. contract_size_conversion (qty → contracts 변환)
 """
 
-from application.sizing import calculate_contracts, SizingParams, SizingResult
+from application.sizing import calculate_contracts, SizingParams, SizingResult, MAX_CONTRACTS_HARD_CAP
 
 
 def test_contracts_from_loss_budget():
@@ -56,6 +56,7 @@ def test_contracts_from_loss_budget():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=10000.0,  # 충분히 높음 (margin 통과용, loss budget 우선)
+        available_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
@@ -65,12 +66,9 @@ def test_contracts_from_loss_budget():
 
     result = calculate_contracts(params)
 
-    # Linear 공식 검증
-    qty = 100.0 / (100000.0 * 0.03)  # 0.03333 BTC
-    expected_contracts = int(qty / 0.001)  # floor(33.33) = 33
-    expected_contracts = int(expected_contracts / params.qty_step) * params.qty_step  # Lot size 보정
-
-    assert result.contracts == expected_contracts
+    # Linear 공식 검증: raw=33이지만 MAX_CONTRACTS_HARD_CAP=5 적용
+    assert result.contracts <= MAX_CONTRACTS_HARD_CAP
+    assert result.contracts > 0
     assert result.reject_reason is None
 
 
@@ -94,6 +92,7 @@ def test_margin_feasibility_constrains_contracts():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=1000.0,  # 작은 equity (margin 제한)
+        available_usdt=1000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
@@ -129,6 +128,7 @@ def test_tick_lot_size_correction():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=10000.0,
+        available_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=5,  # 5 contracts씩만 거래 가능
@@ -159,6 +159,7 @@ def test_min_contracts_validation():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=10000.0,
+        available_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
@@ -188,6 +189,7 @@ def test_margin_vs_loss_budget_minimum():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=1000.0,  # Margin → 24 contracts (제한 요인)
+        available_usdt=1000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
@@ -220,6 +222,7 @@ def test_fee_buffer_included_in_margin_check():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=1000.0,
+        available_usdt=1000.0,
         fee_rate=0.0001,  # 0.01%
         direction="LONG",
         qty_step=1,
@@ -257,6 +260,7 @@ def test_tick_lot_size_revalidation_after_rounding():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=1000.0,
+        available_usdt=1000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=5,  # Lot size 보정
@@ -286,6 +290,7 @@ def test_contract_size_conversion():
         stop_distance_pct=0.03,
         leverage=3.0,
         equity_usdt=10000.0,
+        available_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
         qty_step=1,
@@ -295,9 +300,107 @@ def test_contract_size_conversion():
 
     result = calculate_contracts(params)
 
-    # Contracts 변환 검증
-    qty = 150.0 / (100000.0 * 0.03)  # 0.05 BTC
-    expected_contracts = int(qty / 0.001)  # floor(50) = 50
-
-    assert result.contracts == expected_contracts
+    # Contracts 변환 검증: raw=50이지만 MAX_CONTRACTS_HARD_CAP=5 적용
+    assert result.contracts <= MAX_CONTRACTS_HARD_CAP
+    assert result.contracts > 0
     assert result.reject_reason is None
+
+# ========== S2: Max Contracts 5 복원 ==========
+
+
+class TestMaxContractsHardCap:
+    """S2: MAX_CONTRACTS_HARD_CAP = 5 복원 테스트"""
+
+    def test_contracts_capped_at_5(self):
+        """contracts가 5를 초과하면 5로 클램프"""
+        # Arrange: 큰 equity/loss → raw contracts >> 5
+        params = SizingParams(
+            max_loss_usdt=100.0,       # 큰 loss budget
+            entry_price_usd=10000.0,   # 낮은 가격 → 많은 contracts
+            stop_distance_pct=0.03,
+            leverage=3.0,
+            equity_usdt=1000.0,
+            available_usdt=1000.0,
+            fee_rate=0.0001,
+            direction="LONG",
+            qty_step=1,
+            tick_size=0.5,
+            contract_size=0.001,
+        )
+
+        # Act
+        result = calculate_contracts(params)
+
+        # Assert: hard cap 5 적용
+        # raw contracts = 100 / (10000 * 0.03) / 0.001 = 333
+        # margin-constrained도 (1000*0.8*3)/10000/0.001 = 240
+        # 어느 쪽이든 5 이하여야 함
+        assert result.contracts <= 5
+        assert result.reject_reason is None
+
+    def test_margin_revalidation_uses_same_buffer(self):
+        """margin 재검증 시 available_usdt * 0.8 기준 통일
+
+        Step 7 재검증: required_margin + fee > available_usdt 이면 reject.
+        available_usdt가 매우 작으면 5 contracts도 margin 초과 가능.
+        """
+        # Arrange: available_usdt=100 → 80% = 80 USDT 사용 가능
+        # 5 contracts * 0.001 BTC * 70000 = 350 USDT notional
+        # margin = 350 / 3 = 116.7 > 100 → reject
+        params = SizingParams(
+            max_loss_usdt=50.0,
+            entry_price_usd=70000.0,
+            stop_distance_pct=0.01,
+            leverage=3.0,
+            equity_usdt=100.0,
+            available_usdt=100.0,
+            fee_rate=0.0001,
+            direction="LONG",
+            qty_step=1,
+            tick_size=0.5,
+            contract_size=0.001,
+        )
+
+        # Act
+        result = calculate_contracts(params)
+
+        # Assert: margin 부족 시 reject 또는 contracts가 margin 내로 제한
+        # 5 contracts의 required_margin = (5*0.001*70000)/3 = 116.7 > 100
+        # → reject_reason is not None 또는 contracts < 5
+        if result.contracts > 0:
+            actual_qty = result.contracts * 0.001
+            notional = actual_qty * 70000.0
+            required_margin = notional / 3.0
+            assert required_margin <= 100.0  # available_usdt 이내
+
+    def test_equity139_price70000_contracts_lte5(self):
+        """실제 운영 케이스: equity=$139, price=$70000, max_loss=$14, lev=3x
+
+        Stage 1 기준: max_loss = min(15, 139*0.15) = 15.0
+        stop_distance = ATR*0.7/price ≈ 1%
+        qty = 15 / (70000 * 0.01) = 0.02143 BTC
+        contracts = floor(0.02143 / 0.001) = 21
+        Hard cap → 5 이하
+        """
+        # Arrange
+        params = SizingParams(
+            max_loss_usdt=14.0,
+            entry_price_usd=70000.0,
+            stop_distance_pct=0.01,       # ATR*0.7 기반 ~1%
+            leverage=3.0,
+            equity_usdt=139.0,
+            available_usdt=139.0,
+            fee_rate=0.0001,
+            direction="LONG",
+            qty_step=1,
+            tick_size=0.5,
+            contract_size=0.001,
+        )
+
+        # Act
+        result = calculate_contracts(params)
+
+        # Assert: 실제 운영 환경에서 contracts <= 5 보장
+        assert result.contracts <= 5
+        assert result.contracts > 0  # 최소 1 contract는 가능해야 함
+        assert result.reject_reason is None

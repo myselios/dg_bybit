@@ -69,7 +69,7 @@ class SizingResult:
 
 
 # HOTFIX 2026-03-06: Limit max contracts to prevent margin issues
-MAX_CONTRACTS_HARD_CAP = 1000  # Reset: Allow normal sizing
+MAX_CONTRACTS_HARD_CAP = 5  # Safety limit: prevent 110007 ab not enough
 
 def calculate_contracts(params: SizingParams) -> SizingResult:
     """
@@ -137,19 +137,20 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
     if contracts < params.qty_step:
         return SizingResult(contracts=0, reject_reason="qty_below_minimum")
 
+    # HOTFIX 2026-03-06: Hard cap on max contracts to prevent "ab not enough" error
+    # Manual test showed 5 contracts works, 9 contracts fails
+    # Apply before re-validation so margin check uses capped value
+    if contracts > MAX_CONTRACTS_HARD_CAP:
+        contracts = MAX_CONTRACTS_HARD_CAP
+
     # Step 7: 보정 후 재검증 (margin feasibility, USDT-denominated)
     actual_qty = contracts * params.contract_size
     notional_usdt = actual_qty * params.entry_price_usd
     required_margin_usdt = notional_usdt / params.leverage
     fee_buffer_usdt = notional_usdt * params.fee_rate * 2  # entry + exit
 
-    if required_margin_usdt + fee_buffer_usdt > params.available_usdt:
+    if required_margin_usdt + fee_buffer_usdt > available_usdt:
         return SizingResult(contracts=0, reject_reason="margin_insufficient")
-
-    # HOTFIX 2026-03-06: Hard cap on max contracts to prevent "ab not enough" error
-    # Manual test showed 5 contracts works, 9 contracts fails
-    if contracts > MAX_CONTRACTS_HARD_CAP:
-        contracts = MAX_CONTRACTS_HARD_CAP
 
     # 성공
     return SizingResult(contracts=contracts, reject_reason=None)

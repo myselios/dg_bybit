@@ -21,7 +21,7 @@ Test Coverage:
 import pytest
 from application.orchestrator import Orchestrator
 from infrastructure.exchange.fake_market_data import FakeMarketData
-from domain.state import State, Position, Direction
+from domain.state import State, Position, Direction, StopStatus
 
 
 class MockRestClient:
@@ -30,9 +30,16 @@ class MockRestClient:
     def __init__(self, should_fail=False):
         self.should_fail = should_fail
         self.orders = []
+        self._position_size: float = 0.0
+
+    def inject_position_size(self, size: float):
+        """포지션 크기 주입 (IN_POSITION 테스트용)"""
+        self._position_size = size
 
     def get_position(self, symbol: str, category: str = "linear"):
-        """Mock get_position — returns empty (no position)"""
+        """Mock get_position — inject_position_size로 주입 가능"""
+        if self._position_size > 0:
+            return {"retCode": 0, "result": {"list": [{"size": str(self._position_size)}]}}
         return {"retCode": 0, "result": {"list": []}}
 
     def set_trading_stop(self, symbol: str, stop_loss: str, category: str = "linear", position_idx: int = 0, sl_trigger_by: str = "MarkPrice"):
@@ -662,7 +669,9 @@ def test_p0_1_stop_error_triggers_halt():
 
     fake_data = FakeMarketData(current_price=67000.0, equity_usdt=110.0)
     fake_data.inject_atr(300.0)
-    orchestrator = Orchestrator(market_data=fake_data, rest_client=MockRestClient())
+    mock_client = MockRestClient()
+    mock_client.inject_position_size(0.001)  # IN_POSITION 동기화 통과용
+    orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
 
     orchestrator.state = State.IN_POSITION
     orchestrator.position = Position(
@@ -688,6 +697,7 @@ def test_p0_2_exit_order_uses_reduce_only():
     fake_data = FakeMarketData(current_price=67000.0, equity_usdt=110.0)
     fake_data.inject_atr(300.0)
     mock_client = MockRestClient()
+    mock_client.inject_position_size(0.001)  # IN_POSITION 동기화 통과용
     orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
 
     orchestrator.state = State.IN_POSITION
@@ -762,6 +772,7 @@ def test_p0_4_recovery_stop_price_none():
     fake_data = FakeMarketData(current_price=67000.0, equity_usdt=110.0)
     fake_data.inject_atr(300.0)
     mock_client = MockRestClient()
+    mock_client.inject_position_size(0.001)  # IN_POSITION 동기화 통과용
     orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
 
     # Simulate recovery position (stop_price=None)
@@ -803,6 +814,7 @@ def test_stop_recovery_uses_set_trading_stop():
             return {"retCode": 0, "retMsg": "OK"}
 
     mock_client = TrackingMockClient()
+    mock_client.inject_position_size(0.001)  # IN_POSITION 동기화 통과용
     orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
 
     orchestrator.state = State.IN_POSITION
@@ -824,3 +836,402 @@ def test_stop_recovery_uses_set_trading_stop():
     assert orchestrator.position.stop_status == StopStatus.ACTIVE, f"Should be ACTIVE, got {orchestrator.position.stop_status}"
     assert orchestrator.position.stop_price is not None, "stop_price should be set"
     assert orchestrator.state == State.IN_POSITION, "Should remain IN_POSITION"
+
+
+# ========== Wave 1: last_fill_price 오염 방지 테스트 ==========
+
+
+def test_entry_fill_updates_last_entry_fill_price():
+    """
+    Wave 1: Entry FILL → _last_entry_fill_price 업데이트
+
+    Given: ENTRY_PENDING + FILL event(entry)
+    When: run_tick()
+    Then: orchestrator._last_entry_fill_price == entry exec_price
+    """
+    fake_data = FakeMarketData(current_price=70000.0, equity_usdt=140.0)
+    orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
+
+    orchestrator.state = State.ENTRY_PENDING
+    orchestrator.pending_order = {
+        "order_id": "entry_001",
+        "order_link_id": "entry_lnk_001",
+        "side": "Sell",
+        "qty": 4,
+        "price": 70000.0,
+        "signal_id": "sig_001",
+    }
+    fake_data.inject_fill_event(
+        order_id="entry_001",
+        filled_qty=4,
+        order_link_id="entry_lnk_001",
+        side="Sell",
+        price=70000.0,
+    )
+
+    orchestrator.run_tick()
+
+    assert orchestrator.state == State.IN_POSITION
+    assert orchestrator._last_entry_fill_price == 70000.0, (
+        f"Entry fill should set _last_entry_fill_price=70000.0, got {orchestrator._last_entry_fill_price}"
+    )
+
+
+def test_exit_fill_resets_last_entry_fill_price():
+    """
+    Wave 1: Exit FILL → _last_entry_fill_price = None 리셋
+
+    시나리오: SHORT 포지션 청산 후 Grid가 exit 가격 기준으로 초기화되는 버그 방지.
+
+    Given: EXIT_PENDING + FILL event(exit), _last_entry_fill_price가 이전 값으로 설정됨
+    When: run_tick()
+    Then: orchestrator._last_entry_fill_price == None
+    """
+    fake_data = FakeMarketData(current_price=70000.0, equity_usdt=140.0)
+    orchestrator = Orchestrator(market_data=fake_data, rest_client=None)
+
+    # 이전 entry fill price가 설정된 상태
+    orchestrator._last_entry_fill_price = 69500.0
+
+    orchestrator.state = State.EXIT_PENDING
+    orchestrator.position = Position(
+        qty=4,
+        entry_price=69500.0,
+        direction=Direction.SHORT,
+        signal_id="sig_002",
+        stop_price=71000.0,
+    )
+    orchestrator.pending_order = {
+        "order_id": "exit_001",
+        "order_link_id": "exit_lnk_001",
+        "side": "Buy",
+        "qty": 4,
+        "price": 70000.0,
+        "signal_id": "sig_002",
+    }
+    fake_data.inject_fill_event(
+        order_id="exit_001",
+        filled_qty=4,
+        order_link_id="exit_lnk_001",
+        side="Buy",
+        price=70000.0,
+    )
+
+    orchestrator.run_tick()
+
+    assert orchestrator.state == State.FLAT
+    assert orchestrator._last_entry_fill_price is None, (
+        f"Exit fill should reset _last_entry_fill_price to None, got {orchestrator._last_entry_fill_price}"
+    )
+
+
+# ========== Wave 2: ENTRY_PENDING 고착 방지 테스트 ==========
+
+
+def test_orphan_entry_pending_with_position_recovers_to_in_position():
+    """
+    Wave 2: ENTRY_PENDING + pending=None + 거래소 포지션 존재 → IN_POSITION 복구
+
+    재현 시나리오:
+    1. REST fallback이 clear_pending=True, new_state=None 반환
+    2. pending_order=None, state=ENTRY_PENDING 고착
+    3. 다음 tick에서 안전망이 포지션 API 조회 후 IN_POSITION으로 복구
+
+    Given: state=ENTRY_PENDING, pending_order=None, 거래소 포지션 Sell 0.004 존재
+    When: run_tick()
+    Then: state=IN_POSITION, position is not None
+    """
+    fake_data = FakeMarketData(current_price=70000.0, equity_usdt=140.0)
+    fake_data._atr = None  # entry 시도 차단 (ATR 없으면 atr_unavailable로 차단됨)
+
+    class PositionMockClient(MockRestClient):
+        def get_position(self, symbol, category="linear"):
+            return {
+                "retCode": 0,
+                "result": {
+                    "list": [{
+                        "size": "0.004",
+                        "avgPrice": "69594.7",
+                        "side": "Sell",
+                    }]
+                },
+            }
+        def get_open_orders(self, **kwargs):
+            return {"retCode": 0, "result": {"list": []}}
+        def get_execution_list(self, **kwargs):
+            return {"retCode": 0, "result": {"list": []}}
+
+    mock_client = PositionMockClient()
+    mock_client.inject_position_size(0.004)  # IN_POSITION state consistency 통과용
+    orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+
+    # 고착 상태 재현: ENTRY_PENDING + pending=None
+    # (초기화 시 position이 recovery됐으므로 orphan 상황을 만들려면 position도 초기화)
+    orchestrator.state = State.ENTRY_PENDING
+    orchestrator.position = None  # consistency check 통과를 위해 초기화 후 orphan 안전망이 복구
+    orchestrator.pending_order = None
+    orchestrator.pending_order_timestamp = None
+
+    orchestrator.run_tick()
+
+    assert orchestrator.state == State.IN_POSITION, (
+        f"Orphan ENTRY_PENDING with exchange position should recover to IN_POSITION, got {orchestrator.state}"
+    )
+    assert orchestrator.position is not None, "Position should be recovered from exchange"
+
+
+def test_orphan_entry_pending_without_position_recovers_to_flat():
+    """
+    Wave 2: ENTRY_PENDING + pending=None + 거래소 포지션 없음 → FLAT 복구
+
+    시나리오: 주문이 취소됐거나 체결 실패. 포지션 없으므로 FLAT으로 리셋.
+
+    Given: state=ENTRY_PENDING, pending_order=None, 거래소 포지션 없음
+    When: run_tick()
+    Then: state=FLAT
+    """
+    fake_data = FakeMarketData(current_price=70000.0, equity_usdt=140.0)
+    fake_data._atr = None  # entry 시도 차단
+
+    class NoPositionMockClient(MockRestClient):
+        def get_position(self, symbol, category="linear"):
+            return {"retCode": 0, "result": {"list": []}}
+
+    mock_client = NoPositionMockClient()
+    orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+
+    orchestrator.state = State.ENTRY_PENDING
+    orchestrator.pending_order = None
+    orchestrator.pending_order_timestamp = None
+
+    orchestrator.run_tick()
+
+    assert orchestrator.state == State.FLAT, (
+        f"Orphan ENTRY_PENDING without exchange position should recover to FLAT, got {orchestrator.state}"
+    )
+
+
+# ===== S1: Trailing Stop ATR*0.5 =====
+
+
+class TestTrailingStopDistance:
+    """Trailing Stop 거리가 ATR*0.5인지 검증
+
+    현재 버그: orchestrator.py:538에서 trail_distance = trail_atr * 1.0
+    정책 SSOT: ATR*0.5 (account_builder_policy.md)
+    """
+
+    def test_trailing_stop_long_triggers_at_atr05(self):
+        """LONG 포지션: trail_price - ATR*0.5 이하로 내려가면 청산
+
+        설정: trail_price=70000, ATR=500
+        - ATR*0.5 = 250 → threshold = 70000 - 250 = 69750
+        - ATR*1.0 = 500 → threshold = 70000 - 500 = 69500 (현재 버그)
+        - price = 69700 → ATR*0.5 기준 청산(O), ATR*1.0 기준 홀드(X)
+
+        이 테스트는 현재 FAIL (버그: ATR*1.0 사용 중)
+        """
+        # Arrange
+        fake_data = FakeMarketData(current_price=69700.0, equity_usdt=150.0)
+        fake_data.inject_atr(500.0)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)  # IN_POSITION 동기화 통과용
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=69000.0,
+            direction=Direction.LONG,
+            signal_id="trail_long_test",
+            stop_price=68000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 70000.0
+        orchestrator.entry_atr = 500.0
+
+        # Act
+        result = orchestrator.run_tick()
+
+        # Assert: ATR*0.5=250, 69700 < 70000-250=69750 → 청산이어야 함
+        assert orchestrator.state == State.EXIT_PENDING, (
+            f"LONG trailing stop should trigger at ATR*0.5: "
+            f"price=69700 < trail=70000 - ATR*0.5=250 = 69750, "
+            f"but got state={orchestrator.state}"
+        )
+
+    def test_trailing_stop_short_triggers_at_atr05(self):
+        """SHORT 포지션: trail_price + ATR*0.5 이상으로 올라가면 청산
+
+        설정: trail_price=70000, ATR=500
+        - ATR*0.5 = 250 → threshold = 70000 + 250 = 70250
+        - ATR*1.0 = 500 → threshold = 70000 + 500 = 70500 (현재 버그)
+        - price = 70300 → ATR*0.5 기준 청산(O), ATR*1.0 기준 홀드(X)
+
+        이 테스트는 현재 FAIL (버그: ATR*1.0 사용 중)
+        """
+        # Arrange
+        fake_data = FakeMarketData(current_price=70300.0, equity_usdt=150.0)
+        fake_data.inject_atr(500.0)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=71000.0,
+            direction=Direction.SHORT,
+            signal_id="trail_short_test",
+            stop_price=72000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 70000.0
+        orchestrator.entry_atr = 500.0
+
+        # Act
+        result = orchestrator.run_tick()
+
+        # Assert: ATR*0.5=250, 70300 > 70000+250=70250 → 청산이어야 함
+        assert orchestrator.state == State.EXIT_PENDING, (
+            f"SHORT trailing stop should trigger at ATR*0.5: "
+            f"price=70300 > trail=70000 + ATR*0.5=250 = 70250, "
+            f"but got state={orchestrator.state}"
+        )
+
+    def test_trailing_stop_fallback_uses_1point5_pct(self):
+        """ATR=0일 때 fallback: trail_price * 0.015 (1.5%)
+
+        설정: ATR=0 (또는 None), trail_price=70000
+        - 정책 fallback: 70000 * 0.015 = 1050
+        - 현재 버그 fallback: 70000 * 0.01 = 700
+        - price = 69200 → 1.5% 기준 홀드(70000-1050=68950), 1.0% 기준 청산(70000-700=69300)
+
+        이 테스트는 현재 FAIL (버그: 1.0% fallback 사용 중)
+        """
+        # Arrange
+        fake_data = FakeMarketData(current_price=69200.0, equity_usdt=150.0)
+        fake_data._atr = 100.0  # Orchestrator 초기화용 (entry gate 통과)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=69000.0,
+            direction=Direction.LONG,
+            signal_id="trail_fallback_test",
+            stop_price=68000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 70000.0
+        orchestrator.entry_atr = 0.0  # ATR=0 → fallback 경로
+
+        # Act
+        result = orchestrator.run_tick()
+
+        # Assert: fallback=1.5%, 69200 > 70000-1050=68950 → 홀드이어야 함
+        # 현재 버그(1.0%): 69200 < 70000-700=69300 → 잘못된 청산
+        assert orchestrator.state == State.IN_POSITION, (
+            f"Trailing stop fallback should use 1.5%: "
+            f"price=69200 > trail=70000 - 1.5%=1050 = 68950 → should HOLD, "
+            f"but got state={orchestrator.state}"
+        )
+
+
+# ===== S3: exchange_position_not_flat 자동 복구 =====
+
+
+class TestExchangePositionRecovery:
+    """exchange_position_not_flat 감지 시 자동 복구
+
+    현재 버그: orchestrator.py:718에서 거래소 포지션 있는데 state=FLAT이면
+    entry만 차단하고 복구하지 않음. IN_POSITION으로 자동 복구해야 함.
+    """
+
+    def test_exchange_position_not_flat_triggers_recovery(self):
+        """거래소에 포지션 있고 state=FLAT → IN_POSITION으로 자동 복구
+
+        시나리오: 봇 재시작 후 state=FLAT인데 거래소에 Buy 0.004 포지션 존재.
+        _attempt_entry()에서 이를 감지하면 entry 차단만이 아니라
+        state=IN_POSITION으로 복구해야 함.
+        """
+        # Arrange
+        fake_data = FakeMarketData(current_price=70000.0, equity_usdt=150.0)
+        fake_data.inject_atr(300.0)
+        fake_data.inject_last_fill_price(69500.0)
+
+        class RecoveryMockClient(MockRestClient):
+            """get_position이 기존 포지션 반환"""
+            def get_position(self, symbol="BTCUSDT", category="linear"):
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "list": [{
+                            "size": "0.004",
+                            "avgPrice": "69500.0",
+                            "side": "Buy",
+                        }]
+                    },
+                }
+
+        mock_client = RecoveryMockClient()
+        # 주의: Orchestrator 생성자가 position recovery를 수행하므로
+        # 생성 후 강제로 FLAT으로 리셋하여 버그 상황 재현
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+        orchestrator.state = State.FLAT
+        orchestrator.position = None
+
+        # Act
+        result = orchestrator.run_tick()
+
+        # Assert: 복구 후 IN_POSITION이어야 함
+        assert orchestrator.state == State.IN_POSITION, (
+            f"exchange_position_not_flat should trigger recovery to IN_POSITION, "
+            f"got state={orchestrator.state}"
+        )
+        assert orchestrator.position is not None, (
+            "Position should be recovered from exchange data"
+        )
+        assert orchestrator.position.direction == Direction.LONG, (
+            f"Recovered position should be LONG (side=Buy), "
+            f"got {orchestrator.position.direction}"
+        )
+
+    def test_exchange_position_not_flat_recovery_failure_keeps_blocked(self):
+        """복구 API 실패 시 기존 동작 유지 (entry blocked, state=FLAT)
+
+        시나리오: get_position API 호출 자체가 실패(네트워크 오류 등).
+        복구할 수 없으므로 기존 동작대로 entry만 차단.
+        """
+        # Arrange
+        fake_data = FakeMarketData(current_price=70000.0, equity_usdt=150.0)
+        fake_data.inject_atr(300.0)
+        fake_data.inject_last_fill_price(69500.0)
+
+        class FailingMockClient(MockRestClient):
+            """get_position 호출 시 예외 발생"""
+            def get_position(self, symbol="BTCUSDT", category="linear"):
+                raise Exception("Network timeout (mock)")
+
+        mock_client = FailingMockClient()
+        # 생성자에서 position recovery도 실패하므로 FLAT으로 시작
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+
+        # state=FLAT 확인 (생성자 recovery 실패)
+        assert orchestrator.state == State.FLAT, "Should start FLAT after recovery failure"
+
+        # Act
+        result = orchestrator.run_tick()
+
+        # Assert: 복구 실패 → FLAT 유지, entry blocked
+        assert orchestrator.state == State.FLAT, (
+            f"Recovery failure should keep state=FLAT, got {orchestrator.state}"
+        )
+        assert result.entry_blocked is True, (
+            "Entry should be blocked when position API fails"
+        )
