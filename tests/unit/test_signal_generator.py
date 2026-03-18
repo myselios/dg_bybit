@@ -219,16 +219,17 @@ def test_initial_entry_signal_when_no_last_fill():
     assert signal_range_extreme is not None
     assert signal_range_extreme.side == "Sell"
 
-    # Case 4: Range + Funding 낮음 + 약한 방향성 → MA 방향 진입
+    # Case 4: Range + Funding 낮음 + 약한 방향성 → None (차단)
+    # T_RANGE_ENTRY=0.5%로 상향됨 (ranging 0% 승률 실적 반영, 2026-03-13)
+    # 0.1%는 T_RANGE_ENTRY(0.5%) 미달 → 진입 보류
     signal_range_mild = generate_signal(
         current_price=current_price,
         last_fill_price=last_fill_price,
         grid_spacing=grid_spacing,
-        ma_slope_pct=0.1,  # Range, 약한 양(+) 방향성 (>= 0.02%)
+        ma_slope_pct=0.1,  # Range, 약한 방향성 (< T_RANGE_ENTRY=0.5%)
         funding_rate=0.0005,  # 0.05% (극단 아님)
     )
-    assert signal_range_mild is not None  # 약한 방향성 진입
-    assert signal_range_mild.side == "Buy"  # MA slope 양(+) → Buy
+    assert signal_range_mild is None  # T_RANGE_ENTRY=0.5% 미달 → 차단
 
     # Case 5: Range + Funding 낮음 + dead flat → None (진입 보류)
     signal_dead_flat = generate_signal(

@@ -106,6 +106,11 @@ def log_completed_trade(
     pending_order: Optional[Dict[str, Any]],
     pending_order_timestamp: Optional[float],
     event: Any,
+    signal_reason: Optional[str] = None,
+    t_trend: Optional[float] = None,
+    reflection_pattern: Optional[str] = None,
+    hypothesis: Optional[str] = None,
+    param_delta: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     완료된 거래를 Trade Log v1.0으로 기록한다.
@@ -189,6 +194,11 @@ def log_completed_trade(
         latency_ws_ms = 0.0
         latency_total_ms = 0.0
 
+    # 진입/청산 시각 및 보유 시간
+    entry_time = position.entry_time  # transition.py에서 entry fill timestamp 설정
+    exit_time = now
+    hold_seconds = (exit_time - entry_time) if entry_time else None
+
     trade_log = TradeLogV1(
         order_id=order_id,
         fills=fills,
@@ -208,10 +218,19 @@ def log_completed_trade(
         exit_price=exit_price,
         realized_pnl_usd=realized_pnl_usd,
         fee_usd=fee_usd,
+        entry_time=entry_time,
+        exit_time=exit_time,
+        hold_seconds=hold_seconds,
         schema_version="1.0",
         config_hash=config_hash,
         git_commit=git_commit,
         exchange_server_time_offset_ms=exchange_server_time_offset_ms,
+        ma_slope_pct=ma_slope_pct,
+        t_trend=t_trend,
+        signal_reason=signal_reason,
+        reflection_pattern=reflection_pattern,
+        hypothesis=hypothesis,
+        param_delta=param_delta,
     )
 
     validate_trade_log_v1(trade_log)

@@ -27,6 +27,7 @@ Phase 12b: Mainnet Dry-Run Script (⚠️ 실거래 환경)
 import argparse
 import time
 import logging
+import logging.handlers
 import sys
 import os
 import traceback
@@ -49,11 +50,17 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 # Setup logging (Mainnet 전용 디렉토리)
 Path("logs/mainnet").mkdir(parents=True, exist_ok=True)
+_file_handler = logging.handlers.RotatingFileHandler(
+    'logs/mainnet/mainnet.log',
+    maxBytes=50 * 1024 * 1024,  # 50MB per file
+    backupCount=5,               # 최대 5개 (총 250MB)
+    encoding='utf-8',
+)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/mainnet/mainnet.log'),
+        _file_handler,
         logging.StreamHandler()
     ]
 )

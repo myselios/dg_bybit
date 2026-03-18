@@ -75,6 +75,19 @@ class TradeLogV1:
     git_commit: str
     exchange_server_time_offset_ms: Optional[float]
 
+    # 시각/보유 시간 (대시보드용, Optional)
+    entry_time: Optional[float] = None  # 진입 시각 (Unix timestamp, seconds)
+    exit_time: Optional[float] = None   # 청산 시각 (Unix timestamp, seconds)
+    hold_seconds: Optional[float] = None  # 포지션 보유 시간 (seconds)
+
+    # 에이전트 분석 필드 (ReflectionAgent, Optional)
+    ma_slope_pct: Optional[float] = None        # 진입 시 MA slope (%)
+    t_trend: Optional[float] = None             # 진입 시 T_TREND 임계값 (%)
+    signal_reason: Optional[str] = None         # 진입 근거 (예: "trend_up_entry")
+    reflection_pattern: Optional[str] = None    # 사후 패턴 분류 (good_entry / regime_mismatch 등)
+    hypothesis: Optional[str] = None            # ReflectionAgent 가설 텍스트
+    param_delta: Optional[Dict[str, Any]] = None  # 자동 적용된 파라미터 변경
+
 
 def calculate_market_regime(ma_slope_pct: float, atr_percentile: float) -> str:
     """

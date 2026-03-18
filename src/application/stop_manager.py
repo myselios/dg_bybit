@@ -61,23 +61,20 @@ def should_update_stop(
     if entry_working:
         return False
 
-    # (2) Delta 계산
+    # (2) Debounce 체크 (stop_qty=0 포함 — 매 틱 API 호출 방지)
+    time_since_last_update = current_time - last_stop_update_at
+    if time_since_last_update < debounce_seconds:
+        return False
+
+    # (3) stop_qty=0이면 초기 설정 필요 (debounce 통과 후)
     if stop_qty == 0:
-        # stop_qty=0이면 갱신 필요 (초기 상태)
         return True
 
     delta = abs(position_qty - stop_qty)
-    delta_pct = delta / stop_qty if stop_qty > 0 else 0.0
+    delta_pct = delta / stop_qty
 
-    # (3) Delta threshold 체크
+    # (4) Delta threshold 체크
     if delta_pct < threshold_pct:
-        # Delta < 20% → 갱신 불필요
-        return False
-
-    # (4) Debounce 체크
-    time_since_last_update = current_time - last_stop_update_at
-    if time_since_last_update < debounce_seconds:
-        # Debounce 2초 이내 → 차단
         return False
 
     # (5) Delta >= 20% + Debounce 통과 → 갱신 필요
@@ -165,8 +162,14 @@ def calculate_stop_price(
     direction: Direction,
     atr: Optional[float],
 ) -> float:
-    """고정 손절가 계산 (평단 대비 2.2%)"""
-    stop_distance_usd = entry_price * 0.022
+    """손절가 계산 (ATR * 0.7, clamp 0.5%~2.0%). ATR 없으면 1% fallback."""
+    if atr is None:
+        stop_distance_usd = entry_price * 0.01  # 1% fallback
+    else:
+        raw_distance = atr * 0.7
+        min_distance = entry_price * 0.005  # 0.5%
+        max_distance = entry_price * 0.020  # 2.0%
+        stop_distance_usd = max(min_distance, min(raw_distance, max_distance))
 
     if direction == Direction.LONG:
         return entry_price - stop_distance_usd

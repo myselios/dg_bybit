@@ -452,8 +452,8 @@ def test_clock_injection_for_deterministic_timestamp():
     # When: _get_timestamp() 호출
     timestamp_ms = client._get_timestamp()
 
-    # Then: Fake clock의 timestamp 사용 (고정, -3초 조정)
-    assert timestamp_ms == int((fixed_timestamp - 3.0) * 1000)
+    # Then: Fake clock의 timestamp 사용 (고정, 조정 없음)
+    assert timestamp_ms == int(fixed_timestamp * 1000)
 
     # When: 다시 호출해도 동일 (deterministic)
     timestamp_ms_2 = client._get_timestamp()

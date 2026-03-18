@@ -59,6 +59,9 @@ from application.stop_manager import should_update_stop, determine_stop_action, 
 # KillSwitch Integration (Codex Review Fix #2)
 from infrastructure.safety.killswitch import KillSwitch
 
+# Agentic v1: ReflectionAgent 자동 실행
+from application.agents.reflection_agent import ReflectionAgent
+
 
 @dataclass
 class TickResult:
@@ -174,6 +177,10 @@ class Orchestrator:
         # S6 ThresholdCalibrator: 동적 임계값 보정 (최초 1회)
         self._threshold_calibrator = ThresholdCalibrator()
         self._threshold_config: Optional[ThresholdConfig] = None
+
+        # Agentic v1: ReflectionAgent (트레이드 완료 후 자동 분석)
+        self._reflection_agent = ReflectionAgent()
+        self._recent_trades: List[Dict[str, Any]] = []  # 최근 트레이드 버퍼 (최대 20건)
 
         # Session Risk Policy 설정 (Phase 9c)
         self.daily_loss_cap_pct = 5.0  # 5% equity
@@ -313,9 +320,11 @@ class Orchestrator:
         )
 
     def _log_completed_trade(self, event: Dict[str, Any], position: Optional[Position]) -> None:
-        """Thin delegate to trade_logging.log_completed_trade()"""
+        """트레이드 완료 로그 + ReflectionAgent 자동 분석 + 파라미터 자동 갱신"""
         if position is None:
             return
+
+        # 기본 로그 기록
         log_completed_trade(
             market_data=self.market_data,
             log_storage=self.log_storage,
@@ -325,7 +334,71 @@ class Orchestrator:
             pending_order=self.pending_order,
             pending_order_timestamp=self.pending_order_timestamp,
             event=event,
+            t_trend=self._threshold_config.t_trend if self._threshold_config else None,
         )
+
+        # ReflectionAgent: 트레이드 결과 분석
+        self._run_reflection(position, event)
+
+    def _run_reflection(self, position: Position, event: Dict[str, Any]) -> None:
+        """ReflectionAgent 실행 + 파라미터 자동 갱신 + Telegram 알림."""
+        try:
+            # 진입 가격, 청산 가격으로 PnL 계산
+            if hasattr(event, 'exec_price'):
+                exit_price = float(event.exec_price)
+            else:
+                exit_price = float(event.get("execPrice", position.entry_price))
+
+            qty_btc = position.qty * 0.001
+            if position.direction == Direction.LONG:
+                pnl_usd = (exit_price - position.entry_price) * qty_btc
+            else:
+                pnl_usd = (position.entry_price - exit_price) * qty_btc
+
+            trade_data = {
+                "trade_id": f"T-{int(time.time())}",
+                "direction": position.direction.value,
+                "entry_price": position.entry_price,
+                "exit_price": exit_price,
+                "pnl_usd": pnl_usd,
+                "hold_seconds": getattr(position, "entry_time", 0) and (time.time() - position.entry_time) or 0,
+                "ma_slope_pct": self.market_data.get_ma_slope_pct(),
+                "funding_rate": self.market_data.get_funding_rate(),
+            }
+
+            result = self._reflection_agent.analyze(trade_data)
+            logger.info(
+                f"[Reflection] {result.outcome} | pattern={result.pattern} | "
+                f"{result.hypothesis[:80]}"
+            )
+
+            # 최근 트레이드 버퍼 갱신 (최대 20건)
+            self._recent_trades = (self._recent_trades + [trade_data])[-20:]
+
+            # param_delta 있으면 즉시 자동 적용
+            if result.param_delta and "T_TREND" in result.param_delta:
+                new_t_trend = result.param_delta["T_TREND"]
+                if new_t_trend and isinstance(new_t_trend, float):
+                    old_t_trend = self._threshold_config.t_trend if self._threshold_config else 0.05
+                    self._threshold_config = ThresholdConfig(
+                        t_trend=new_t_trend,
+                        t_range_entry=new_t_trend * 0.25,
+                    )
+                    logger.info(
+                        f"[AutoParam] T_TREND 자동 갱신: {old_t_trend:.4f}% → {new_t_trend:.4f}% "
+                        f"(pattern={result.pattern})"
+                    )
+                    # Telegram 알림 (단방향)
+                    if hasattr(self, "telegram") and self.telegram:
+                        self.telegram.send_param_change(
+                            param_name="T_TREND",
+                            old_val=old_t_trend,
+                            new_val=new_t_trend,
+                            reason=result.hypothesis,
+                        )
+
+        except Exception as e:
+            logger.error(f"[Reflection] 분석 중 오류 (무시): {type(e).__name__}: {e}")
 
     def get_state(self) -> State:
         """현재 상태 반환"""

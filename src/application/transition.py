@@ -121,7 +121,8 @@ def _handle_entry_pending(
             signal_id=pending_order.signal_id,
             stop_status=StopStatus.PENDING,
             entry_working=False,
-            base_qty=event.filled_qty
+            base_qty=event.filled_qty,
+            entry_time=event.timestamp,
         )
 
         # Stop PLACE intent
@@ -143,7 +144,8 @@ def _handle_entry_pending(
             stop_status=StopStatus.PENDING,
             entry_working=True,  # 잔량 주문 활성
             entry_order_id=event.order_id,
-            base_qty=event.filled_qty
+            base_qty=event.filled_qty,
+            entry_time=event.timestamp,
         )
 
         # Stop PLACE intent (즉시)
@@ -166,7 +168,8 @@ def _handle_entry_pending(
                 signal_id=pending_order.signal_id,
                 stop_status=StopStatus.PENDING,
                 entry_working=False,  # 잔량 취소됨
-                base_qty=event.filled_qty
+                base_qty=event.filled_qty,
+                entry_time=event.timestamp,
             )
 
             # Stop PLACE intent
