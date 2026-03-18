@@ -31,6 +31,7 @@ from domain.intent import ExitIntent
 # Phase 11b: Entry Flow imports
 from application.entry_allowed import check_entry_allowed, EntryDecision
 from application.signal_generator import generate_signal, calculate_grid_spacing, Signal
+from application.threshold_calibrator import ThresholdCalibrator, ThresholdConfig, DEFAULT_THRESHOLD_CONFIG
 from application.sizing import calculate_contracts, SizingResult
 from application.event_processor import match_pending_order, create_position_from_fill  # Phase 12a-4c: REST API fallback
 
@@ -169,6 +170,10 @@ class Orchestrator:
         self.current_signal_id: Optional[str] = None  # 현재 Signal ID
         self.last_halt_reason: Optional[str] = None
         self.grid_spacing: float = 0.0  # Grid spacing (ATR * 2.0)
+
+        # S6 ThresholdCalibrator: 동적 임계값 보정 (최초 1회)
+        self._threshold_calibrator = ThresholdCalibrator()
+        self._threshold_config: Optional[ThresholdConfig] = None
 
         # Session Risk Policy 설정 (Phase 9c)
         self.daily_loss_cap_pct = 5.0  # 5% equity
@@ -765,6 +770,19 @@ class Orchestrator:
         funding_rate = self.market_data.get_funding_rate()
         ma_slope_pct = self.market_data.get_ma_slope_pct()
 
+        # S6 ThresholdCalibrator: 최초 1회 임계값 보정
+        if self._threshold_config is None:
+            try:
+                klines = self.market_data.get_klines(500)
+                self._threshold_config = self._threshold_calibrator.calibrate(klines)
+                logger.info(
+                    f"[Calibrate] T_TREND={self._threshold_config.t_trend:.4f}% "
+                    f"T_RANGE={self._threshold_config.t_range_entry:.4f}%"
+                )
+            except Exception as e:
+                logger.warning(f"[Calibrate] kline 데이터 미준비, 안전 기본값 사용 (T_TREND=0.05%): {e}")
+                self._threshold_config = DEFAULT_THRESHOLD_CONFIG
+
         # Signal 생성 (Grid up/down, Regime-aware initial direction)
         signal: Optional[Signal] = generate_signal(
             current_price=current_price,
@@ -773,6 +791,7 @@ class Orchestrator:
             qty=0,  # Sizing에서 계산
             funding_rate=funding_rate,
             ma_slope_pct=ma_slope_pct,
+            threshold_config=self._threshold_config,
         )
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)

@@ -1,0 +1,166 @@
+{
+  "project": "cbgb_agentic_v1",
+  "scale": "L",
+  "created_at": "2026-03-18T14:05:20.197136+00:00",
+  "architecture_ref": "architecture.md",
+  "deploy_after": [
+    "S6"
+  ],
+  "waves": [
+    {
+      "wave_id": 1,
+      "note": "CRITICAL BUG FIX — 진입 신호 0건 즉시 해결 + Health 모니터링",
+      "tasks": [
+        {
+          "task_id": "T-S6",
+          "story_id": "S6",
+          "title": "ThresholdCalibrator — 동적 T_TREND 보정",
+          "files": [
+            "src/application/threshold_calibrator.py",
+            "src/application/signal_generator.py",
+            "src/application/orchestrator.py",
+            "tests/unit/test_threshold_calibrator.py"
+          ],
+          "layer": "application",
+          "complexity": "M",
+          "depends_on": [],
+          "critical": true,
+          "deploy_after": true
+        },
+        {
+          "task_id": "T-S8",
+          "story_id": "S8",
+          "title": "HealthScorecard — 봇 상태 A~F 등급화",
+          "files": [
+            "src/application/health_scorecard.py",
+            "tests/unit/test_health_scorecard.py"
+          ],
+          "layer": "application",
+          "complexity": "S",
+          "depends_on": []
+        }
+      ]
+    },
+    {
+      "wave_id": 2,
+      "note": "Reflection Loop — 트레이드 완료 시 자동 분석",
+      "tasks": [
+        {
+          "task_id": "T-S7",
+          "story_id": "S7",
+          "title": "ReflectionAgent — 트레이드 완료 시 자동 분석",
+          "files": [
+            "src/application/agents/__init__.py",
+            "src/application/agents/base_agent.py",
+            "src/application/agents/reflection_agent.py",
+            "tests/unit/test_reflection_agent.py"
+          ],
+          "layer": "application",
+          "complexity": "M",
+          "depends_on": [
+            "T-S6"
+          ]
+        }
+      ]
+    },
+    {
+      "wave_id": 3,
+      "note": "Daily Review + Telegram Approval (병렬 가능)",
+      "tasks": [
+        {
+          "task_id": "T-S9",
+          "story_id": "S9",
+          "title": "DailyReviewAgent — 자동 일일 분석 리포트",
+          "files": [
+            "src/application/agents/daily_review_agent.py",
+            "tests/unit/test_daily_review_agent.py"
+          ],
+          "layer": "application",
+          "complexity": "M",
+          "depends_on": [
+            "T-S7"
+          ]
+        },
+        {
+          "task_id": "T-S10",
+          "story_id": "S10",
+          "title": "ApprovalGateway — Telegram Human-in-the-Loop",
+          "files": [
+            "src/application/agents/approval_gateway.py",
+            "tests/unit/test_approval_gateway.py"
+          ],
+          "layer": "application",
+          "complexity": "M",
+          "depends_on": [
+            "T-S7"
+          ]
+        }
+      ]
+    },
+    {
+      "wave_id": 4,
+      "note": "Multi-Agent Orchestration — 역할 분리",
+      "tasks": [
+        {
+          "task_id": "T-S11",
+          "story_id": "S11",
+          "title": "Multi-Agent Orchestration — MarketAnalyst/Strategy/Risk/Reflection",
+          "files": [
+            "src/application/agents/market_analyst_agent.py",
+            "src/application/agents/strategy_agent.py",
+            "src/application/agents/risk_agent.py",
+            "src/application/orchestrator.py",
+            "tests/unit/test_multi_agent.py"
+          ],
+          "layer": "application",
+          "complexity": "L",
+          "depends_on": [
+            "T-S6",
+            "T-S7",
+            "T-S8"
+          ]
+        }
+      ]
+    },
+    {
+      "wave_id": 5,
+      "note": "Autonomous Loop — Hypothesis + Shadow (병렬 가능)",
+      "tasks": [
+        {
+          "task_id": "T-S12",
+          "story_id": "S12",
+          "title": "HypothesisLoop — Claude API 가설-실험-평가",
+          "files": [
+            "src/application/hypothesis_loop.py",
+            "tests/unit/test_hypothesis_loop.py"
+          ],
+          "layer": "application",
+          "complexity": "L",
+          "depends_on": [
+            "T-S9",
+            "T-S10",
+            "T-S11"
+          ]
+        },
+        {
+          "task_id": "T-S13",
+          "story_id": "S13",
+          "title": "ShadowTrader — Paper Trade 검증",
+          "files": [
+            "src/application/shadow_trader.py",
+            "tests/unit/test_shadow_trader.py"
+          ],
+          "layer": "application",
+          "complexity": "L",
+          "depends_on": [
+            "T-S11",
+            "T-S12"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_tasks": 8,
+  "total_waves": 5,
+  "estimated_loops": 25
+}

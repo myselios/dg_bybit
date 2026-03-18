@@ -335,3 +335,18 @@ class MarketDataInterface(Protocol):
             - Orchestrator startup (position recovery)
         """
         ...
+
+    def get_klines(self, limit: int = 500) -> List[Any]:
+        """
+        Kline (캔들스틱) 데이터 반환.
+
+        Args:
+            limit: 반환할 kline 수 (default: 500)
+
+        Returns:
+            List[Kline]: Kline 목록 (최신 순서 또는 시간 순서)
+
+        Used by:
+            - ThresholdCalibrator.calibrate() (S6 동적 임계값 보정)
+        """
+        ...

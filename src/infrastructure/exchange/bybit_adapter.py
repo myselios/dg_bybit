@@ -109,6 +109,7 @@ class BybitAdapter:
         self._index_price: float = 0.0
         self._ma_slope_pct: float = 0.0
         self._atr_percentile: float = 50.0
+        self._cached_klines: List[RegimeKline] = []
         self._exchange_server_time_offset_ms: float = 0.0
 
         logger.info(f"BybitAdapter initialized (testnet={testnet})")
@@ -243,6 +244,10 @@ class BybitAdapter:
         """거래소 서버 시간 오프셋 (ms)"""
         return self._exchange_server_time_offset_ms
 
+    def get_klines(self, limit: int = 500) -> List[RegimeKline]:
+        """캐시된 kline 데이터 반환 (ThresholdCalibrator 용)"""
+        return self._cached_klines[-limit:] if self._cached_klines else []
+
     # ========== Phase 12a-1: REST API Integration ==========
 
     def update_market_data(self):
@@ -358,6 +363,7 @@ class BybitAdapter:
 
                     if len(klines_regime) >= 21:
                         self._ma_slope_pct = self.market_regime_analyzer.calculate_ma_slope(klines_regime)
+                        self._cached_klines = klines_regime
 
                 self._last_kline_refresh_ts = now
 
