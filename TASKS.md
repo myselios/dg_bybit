@@ -69,12 +69,9 @@ Target: $1,000 USDT
   - blocked_by: P1 "10건+ 트레이드 분석" 완료
 - [ ] Dashboard PnL/승률 표시 검증
   - blocked_by: 트레이드 10건+
-- [ ] 핵심 모듈 테스트 추가
-  - emergency_checker, entry_coordinator 등 테스트 없는 모듈
-- [ ] Dashboard 하드코딩 값 정합성
-  - Stop Distance "3%", "LONG only", Fee Rate 등 Policy 연동
-- [ ] Docker healthcheck 구현
-  - /health 엔드포인트 or 상태 파일 기반
+- [x] 핵심 모듈 테스트 추가 (d9430f2, 2026-03-20) — emergency_checker 100%, entry_coordinator 100%
+- [x] Dashboard 하드코딩 값 정합성 (d9430f2, 2026-03-20) — ATR×0.7, LONG/SHORT, Fee 0.01%
+- [x] Docker healthcheck 구현 (d9430f2, 2026-03-20) — 로그 freshness 120s
 - [ ] Multi-position Grid 구현
   - blocked_by: P2 "전략 에지 검증" 완료
 - [ ] 2/12 구 스키마 6건 처리
