@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-20T10:10:14.318659+00:00",
+  "generated_at": "2026-03-20T10:16:24.890547+00:00",
   "analysis_type": "ensemble_signal_backtest_wave2b",
   "data_source": "logs/mainnet/trades_*.jsonl",
   "total_trades": 29,

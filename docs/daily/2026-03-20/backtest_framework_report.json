@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-03-20T11:39:37.038809+00:00",
+  "period": "7d",
+  "symbol": "BTCUSDT",
+  "interval": "1min",
+  "total_candles": 10080,
+  "results": {
+    "threshold_2": {
+      "trades": 1718,
+      "win_rate": 0.0984,
+      "net_pnl": -42.1368,
+      "max_dd": 42.1368,
+      "sharpe": -818.2325
+    },
+    "threshold_3": {
+      "trades": 656,
+      "win_rate": 0.1174,
+      "net_pnl": -19.0681,
+      "max_dd": 19.104,
+      "sharpe": -746.494
+    },
+    "threshold_4": {
+      "trades": 224,
+      "win_rate": 0.1205,
+      "net_pnl": -6.5118,
+      "max_dd": 6.6628,
+      "sharpe": -561.9562
+    }
+  },
+  "optimal_threshold": 4,
+  "recommendation": "threshold=4 권장: Sharpe=-561.96, win_rate=12.0%, net_pnl=$-6.51, max_dd=$6.66. 신호 선별적 — 기회 손실 주의. win_rate 개선 효과 있음."
+}

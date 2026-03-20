@@ -93,8 +93,9 @@ def calculate_ensemble_score(
     long_score = long_rsi + long_macd + long_bb + vol_score + long_slope
     short_score = short_rsi + short_macd + short_bb + vol_score + short_slope
 
-    # ── 진입 결정 (score >= 3) ────────────────────────────────
-    ENTRY_THRESHOLD = 3
+    # ── 진입 결정 (score >= 4) ────────────────────────────────
+    # 2026-03-20: backtest 결과 T=4 최적 (승률 12.05%, PnL -$6.51 vs T=3 -$19.07)
+    ENTRY_THRESHOLD = 4
 
     if long_score >= ENTRY_THRESHOLD and long_score >= short_score:
         # 동점이면 LONG 우선 (BTC 상승 바이어스)

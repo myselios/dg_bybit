@@ -117,9 +117,13 @@ def generate_signal(
     Grid 전략 기반 신호 생성 (Phase 13c: Regime-Aware)
 
     규칙:
-    - **첫 진입 (last_fill_price=None)**: Regime-aware 방향 결정
-      - Trend regime (abs(ma_slope) >= 0.5%): MA slope 방향 우선
-      - Range regime (abs(ma_slope) < 0.5%): Funding 극단값 참고
+    - **앙상블 모드 (last_fill_price=None AND prices >= 26개)**: 5지표 앙상블로 첫 진입 결정
+      - score >= 3 → 진입 (LONG/SHORT)
+      - score 1~2 → Near-miss (DEBUG 로그 기록), 진입 없음
+      - score 0 → 진입 없음
+    - **Legacy 모드 (last_fill_price=None, prices 미제공)**: Regime-aware 방향 결정
+      - Trend regime (abs(ma_slope) >= threshold_config.t_trend): MA slope 방향 우선
+      - Range regime: Funding 극단값 참고 → 약한 방향성 → 완전 무방향(보류)
       - 충돌 처리: Range에서만 보류, Trend에서는 진입
     - Grid up: current_price >= last_fill_price + grid_spacing → Sell
     - Grid down: current_price <= last_fill_price - grid_spacing → Buy
@@ -132,6 +136,9 @@ def generate_signal(
         qty: 거래 수량 (contracts, 기본 0)
         funding_rate: Funding rate (기본 0.0001 = 0.01%)
         ma_slope_pct: MA slope (% 단위, 기본 0.0)
+        threshold_config: 동적 임계값 설정 (None이면 모듈 상수 T_TREND/T_RANGE_ENTRY 사용)
+        prices: 앙상블용 종가 리스트 (26개 이상이면 앙상블 모드 활성화)
+        volumes: 앙상블용 거래량 리스트
 
     Returns:
         Optional[Signal]: 신호 (없으면 None)
@@ -168,6 +175,16 @@ def generate_signal(
                 qty=qty,
                 score=ensemble.score,
                 components=ensemble.components,
+            )
+        # Near-miss logging: score > 0 but < 3 → diagnose why no trade fires
+        if 0 < ensemble.score < 3:
+            long_score = sum(v for v in ensemble.components.values() if v > 0)
+            short_score = sum(abs(v) for v in ensemble.components.values() if v < 0)
+            side_attempt = "Buy" if long_score >= short_score else "Sell"
+            logger.debug(
+                f"[Ensemble] Near-miss: score={ensemble.score}/6, "
+                f"components={ensemble.components}, side_candidate={side_attempt}, "
+                f"ma_slope={ma_slope_pct:.4f}%"
             )
         return None
 

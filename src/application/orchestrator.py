@@ -892,6 +892,11 @@ class Orchestrator:
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)
         if signal is None:
+            logger.debug(
+                f"→ Entry blocked: no_signal "
+                f"(ma_slope={ma_slope_pct:.4f}%, "
+                f"t_trend={self._threshold_config.t_trend:.4f}%)"
+            )
             return {"blocked": True, "reason": "no_signal"}
 
         # Step 4: Entry gates 검증

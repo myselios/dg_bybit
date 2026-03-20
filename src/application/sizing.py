@@ -135,7 +135,7 @@ def calculate_contracts(
     # availableBalance can be significantly lower due to margin requirements
     # max_notional_usdt = available_usdt * leverage
     # qty_from_margin = max_notional_usdt / entry_price
-    available_usdt = params.available_usdt * 0.8  # Reduced from 0.8 to 0.5
+    available_usdt = params.available_usdt * 0.8  # 80% 사용 (20% 버퍼)
     max_notional_usdt = available_usdt * params.leverage
     qty_from_margin = max_notional_usdt / params.entry_price_usd
 
