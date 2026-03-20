@@ -149,6 +149,55 @@ class ShadowTrader:
 
         return round(total_pnl, 4), trade_count
 
+    def compare_score_thresholds(self, trades: list[dict]) -> dict:
+        """앙상블 score_threshold 변형(2/3/4) 별 성과 비교.
+
+        None-score 트레이드는 모든 임계값에 포함 (fallback keep all).
+
+        Args:
+            trades: list of dicts with "signal_score" (int | None) and "pnl_usd" (float)
+
+        Returns:
+            dict with keys 2, 3, 4 (int) and "optimal_threshold":
+            {
+                2: {"trades_kept": N, "win_rate": 0.xx, "net_pnl": X.XX},
+                3: {...},
+                4: {...},
+                "optimal_threshold": 3,
+            }
+        """
+        thresholds = [2, 3, 4]
+        results: dict = {}
+
+        for threshold in thresholds:
+            kept = [
+                t for t in trades
+                if t.get("signal_score") is None or t.get("signal_score", 0) >= threshold
+            ]
+            results[threshold] = self._threshold_stats(kept)
+
+        results["optimal_threshold"] = self._pick_optimal(results, thresholds)
+        return results
+
+    @staticmethod
+    def _threshold_stats(trades: list[dict]) -> dict:
+        count = len(trades)
+        if count == 0:
+            return {"trades_kept": 0, "win_rate": 0.0, "net_pnl": 0.0}
+        wins = sum(1 for t in trades if t.get("pnl_usd", 0.0) > 0)
+        net_pnl = sum(t.get("pnl_usd", 0.0) for t in trades)
+        return {
+            "trades_kept": count,
+            "win_rate": round(wins / count, 4),
+            "net_pnl": round(net_pnl, 4),
+        }
+
+    @staticmethod
+    def _pick_optimal(results: dict, thresholds: list[int]) -> int:
+        """net_pnl 기준 최적 임계값 선택."""
+        best = max(thresholds, key=lambda t: results[t]["net_pnl"])
+        return best
+
     def _recommend(
         self,
         baseline_pnl: float,

@@ -74,7 +74,8 @@ class ReflectionAgent:
         ma_slope_pct: float = trade_log_entry["ma_slope_pct"]
         trade_id: str = trade_log_entry["trade_id"]
         rsi: float | None = trade_log_entry.get("rsi")
-        score: int | None = trade_log_entry.get("score")
+        # Support both "signal_score" (TradeLogV1 field) and legacy "score"
+        score: int | None = trade_log_entry.get("signal_score") or trade_log_entry.get("score")
         direction: str = trade_log_entry.get("direction", "Buy")
 
         outcome = self._classify_outcome(pnl_usd)
@@ -204,6 +205,60 @@ class ReflectionAgent:
                 "Outcome may be luck-driven — reduce position size for low-score entries."
             )
         return "No hypothesis available."
+
+    def analyze_score_distribution(self, trades: list[dict]) -> dict:
+        """앙상블 signal_score 분포 분석.
+
+        Args:
+            trades: list of trade log dicts, each may have "signal_score" and "pnl_usd"
+
+        Returns:
+            dict keyed by bucket label ("0-1", "2", "3", "4", "5-6"), each value:
+            {"count": int, "win_rate": float, "avg_pnl": float}
+        """
+        buckets: dict[str, list[float]] = {
+            "0-1": [], "2": [], "3": [], "4": [], "5-6": []
+        }
+
+        for trade in trades:
+            score = trade.get("signal_score")
+            pnl = trade.get("pnl_usd", 0.0)
+            if score is None:
+                continue
+            bucket = self._score_to_bucket(score)
+            if bucket is not None:
+                buckets[bucket].append(pnl)
+
+        return {
+            label: self._bucket_stats(pnls)
+            for label, pnls in buckets.items()
+        }
+
+    @staticmethod
+    def _score_to_bucket(score: int) -> str | None:
+        if score <= 1:
+            return "0-1"
+        if score == 2:
+            return "2"
+        if score == 3:
+            return "3"
+        if score == 4:
+            return "4"
+        if score >= 5:
+            return "5-6"
+        return None
+
+    @staticmethod
+    def _bucket_stats(pnls: list[float]) -> dict:
+        count = len(pnls)
+        if count == 0:
+            return {"count": 0, "win_rate": 0.0, "avg_pnl": 0.0}
+        wins = sum(1 for p in pnls if p > 0)
+        return {
+            "count": count,
+            "win_rate": round(wins / count, 4),
+            "avg_pnl": round(sum(pnls) / count, 4),
+        }
 
     def _suggest_param_delta(self, pattern: str) -> dict:
         """파라미터 조정 제안. 연속 패턴 시 자동 score_threshold 조정."""

@@ -714,15 +714,15 @@ def main():
             with col_cfg2:
                 st.metric(
                     label="거래 방향",
-                    value="LONG",
-                    help="매수 전용 (하락장 거래 금지)"
+                    value="LONG/SHORT",
+                    help="앙상블 신호 기반 양방향 거래 (Trending Up=LONG, Trending Down=SHORT)"
                 )
 
             with col_cfg3:
                 st.metric(
                     label="레버리지",
                     value="3x",
-                    help="Stage 1/2: 3x, Stage 3: 2x (Equity 기준)"
+                    help="전 Stage 3x 통일 (v2.5, Isolated Margin)"
                 )
 
             # Row 2: Grid Strategy Parameters
@@ -732,8 +732,8 @@ def main():
             with col_grid1:
                 st.metric(
                     label="Stop Distance",
-                    value="3%",
-                    help="손절 거리 (Entry 대비)"
+                    value="ATR×0.7 (0.5%~2.0%)",
+                    help="손절 거리: ATR × 0.7, clamp(0.5%, 2.0%) — policy v2.5"
                 )
 
             with col_grid2:

@@ -368,6 +368,10 @@ class Orchestrator:
             else:
                 pnl_usd = (position.entry_price - exit_price) * qty_btc
 
+            _signal_score = None
+            if self.pending_order:
+                _signal_score = self.pending_order.get("signal_score")
+
             trade_data = {
                 "trade_id": f"T-{int(time.time())}",
                 "direction": position.direction.value,
@@ -377,6 +381,7 @@ class Orchestrator:
                 "hold_seconds": getattr(position, "entry_time", 0) and (time.time() - position.entry_time) or 0,
                 "ma_slope_pct": self.market_data.get_ma_slope_pct(),
                 "funding_rate": self.market_data.get_funding_rate(),
+                "signal_score": _signal_score,
             }
 
             result = self._reflection_agent.analyze(trade_data)

@@ -19,15 +19,21 @@ LABEL description="CBGB Trading Bot - Mainnet/Testnet Dry-Run"
 ENV PYTHONUNBUFFERED=1
 ENV BYBIT_TESTNET=true
 
-# Healthcheck (Bot 프로세스 확인)
-# Bot은 HTTP 서버가 아니므로 프로세스 존재 여부만 확인
-HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
-    CMD pgrep -f "run_.*_dry_run.py" || exit 1
+# Healthcheck (로그 파일 freshness 확인)
+# Bot은 HTTP 서버가 아니므로 mainnet.log 최종 수정 시각으로 활성 여부 판단
+# 120초 이상 무변화 → unhealthy
 
 # 소스코드 최신화 (베이스 이미지 코드 오버라이드)
 USER root
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
+
+# Healthcheck 스크립트 복사
+COPY docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /healthcheck.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD /healthcheck.sh
 
 # Entrypoint (docker-entrypoint.sh 사용)
 COPY docker/docker-entrypoint.sh /app/docker/docker-entrypoint.sh

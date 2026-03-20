@@ -100,10 +100,10 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     - Lot size: 1 contract (Bybit Linear BTCUSDT)
     - Contract size: 0.001 BTC per contract
 
-    Codex Review Fix #3:
-    - Stage 1 (< $300): max_loss_usd_cap=$10, loss_pct_cap=10%
-    - Stage 2 ($300~$700): max_loss_usd_cap=$20, loss_pct_cap=8%
-    - Stage 3 (>= $700): max_loss_usd_cap=$30, loss_pct_cap=6%
+    Stage 1 공격 설정 (2026-03-20 갱신):
+    - Stage 1 (< $300): max_loss_usd_cap=$15, loss_pct_cap=15%
+    - Stage 2 ($300~$700): max_loss_usd_cap=$30, loss_pct_cap=10%
+    - Stage 3 (>= $700): max_loss_usd_cap=$45, loss_pct_cap=8%
     """
     # Equity USDT (Linear USDT-Margined)
     equity_usdt = market_data.get_equity_usdt()

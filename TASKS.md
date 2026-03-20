@@ -2,23 +2,24 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-03-12 (KST)
-Bot Status: 운영 중 (3버그 수정 + 재배포 완료 2026-03-12)
-Equity: ~$139 USDT
+Last Updated: 2026-03-20 (KST)
+Bot Status: 운영 중 (Agentic v1 + 앙상블 신호 재배포 완료 2026-03-20)
+Equity: ~$110.61 USDT
 Target: $1,000 USDT
 
 ---
 
-## 현재 설정 (Quick Reference) — v2.5 전략
-- 레버리지: 3x (전 Stage 통일, 2026-03-07 변경)
+## 현재 설정 (Quick Reference) — Agentic v1 + 앙상블
+- 레버리지: 5x (Stage 1 공격 설정, 2026-03-20 변경)
 - SL: ATR * 0.7 기반, clamp(0.5%~2.0%)
 - TP: Trailing Stop (trail_price 대비 ATR*0.5 이탈 시 청산)
-- DCA: 비활성화 (손실최소 + Trailing 전략)
+- DCA: 비활성화
 - Grid Entry: ATR * 0.2 spacing
 - Order: GTC Limit (entry), Market (exit, reduce_only)
-- Max Trades/Day: 10
+- Max Trades/Day: 15 (Stage 1 공격)
 - Stage: 1 ($100-$300)
-- 목표 R:R: 3:1 이상
+- 신호: RSI+MACD+BB+Volume+MASlope 앙상블 (score 0-6, ≥3 진입)
+- Kelly 사이징: cap 25%, fallback loss_budget
 
 ---
 
@@ -38,12 +39,24 @@ Target: $1,000 USDT
   - Wave 2: orphan ENTRY/EXIT_PENDING 안전망
   - Wave 3: Grid 역추세 진입 차단 (ma_slope 필터)
 
-## P1: 단기 (코드 품질 + 데이터 축적)
+## P0: 완료 (2026-03-20)
 
-- [ ] 10건+ 트레이드 축적 후 analysis 파이프라인 실행
-  - blocked_by: 트레이드 축적 대기 (현재 9건)
+- [x] Wave 1: 앙상블 신호엔진 + Kelly사이징 + Dashboard v2 (ef242a9)
+- [x] Wave 2: orchestrator 앙상블 통합 + 백테스트 검증 (27cfe35)
+  - 검증 결과: 승률 34.5% → 47.4% 예상 (+12.9%p)
+  - ranging 레짐 SHORT이 주 손실 원인 (-$16.83), 앙상블로 차단 예상
+- [x] Wave 3: Docker 재배포 완료 (2026-03-20 19:15 KST)
+  - 봇 상태: healthy, Ensemble mode 활성
+
+## P1: 단기 (데이터 축적 + 검증)
+
+- [ ] 앙상블 모드 첫 10건 트레이드 축적 후 검증
+  - blocked_by: 트레이드 축적 대기
   - 명령어: `python scripts/analyze_trades.py`
-  - 검증: 승률, PnL 분포, R:R 실측, 최대 드로다운
+  - 검증: 앙상블 score 분포, 승률 개선 실측, ranging 레짐 차단율
+- [ ] Volume 지표 활성화 (현재 RegimeKline에 volume 없어 score=0)
+  - bybit_adapter.fetch_klines() 이미 구현됨
+  - orchestrator._get_price_volume_history()에 BybitAdapter 경로 추가 필요
 
 ## P2: 중기 (데이터 기반 튜닝)
 
