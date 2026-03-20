@@ -55,7 +55,8 @@ Target: $1,000 USDT
 - [x] 핵심 모듈 테스트: emergency_checker (100%), entry_coordinator (100%) (d9430f2)
 - [x] Dashboard 정합성: LONG→LONG/SHORT, 3%→ATR×0.7 (d9430f2)
 - [x] Docker healthcheck: 로그 freshness 기반 120s (d9430f2)
-- [ ] **Docker 재배포** (Volume 활성화 반영) — 사용자 승인 필요
+- [x] ENTRY_THRESHOLD 3→4 (backtest 결과: T=4 승률 12.05%, PnL -$6.51 최적) (4df6ab5, 2026-03-20)
+- [ ] **Docker 재배포** (Volume + T=4 반영) — 사용자 승인 필요
 - [ ] 앙상블 모드 10건 트레이드 축적 후 검증
   - blocked_by: 트레이드 축적 대기
   - 명령어: `python scripts/analyze_trades.py`
