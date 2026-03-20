@@ -48,15 +48,17 @@ Target: $1,000 USDT
 - [x] Wave 3: Docker 재배포 완료 (2026-03-20 19:15 KST)
   - 봇 상태: healthy, Ensemble mode 활성
 
-## P1: 단기 (데이터 축적 + 검증)
+## P1: 단기
 
-- [ ] 앙상블 모드 첫 10건 트레이드 축적 후 검증
+- [x] Volume 지표 활성화 (ac57f09, 2026-03-20) — Kline.volume 필드 추가, bybit_adapter → orchestrator 연결
+- [x] Wave 2: ReflectionAgent 앙상블 피드백 + ShadowTrader threshold 검증 (d9430f2, 2026-03-20)
+- [x] 핵심 모듈 테스트: emergency_checker (100%), entry_coordinator (100%) (d9430f2)
+- [x] Dashboard 정합성: LONG→LONG/SHORT, 3%→ATR×0.7 (d9430f2)
+- [x] Docker healthcheck: 로그 freshness 기반 120s (d9430f2)
+- [ ] **Docker 재배포** (Volume 활성화 반영) — 사용자 승인 필요
+- [ ] 앙상블 모드 10건 트레이드 축적 후 검증
   - blocked_by: 트레이드 축적 대기
   - 명령어: `python scripts/analyze_trades.py`
-  - 검증: 앙상블 score 분포, 승률 개선 실측, ranging 레짐 차단율
-- [ ] Volume 지표 활성화 (현재 RegimeKline에 volume 없어 score=0)
-  - bybit_adapter.fetch_klines() 이미 구현됨
-  - orchestrator._get_price_volume_history()에 BybitAdapter 경로 추가 필요
 
 ## P2: 중기 (데이터 기반 튜닝)
 
