@@ -205,6 +205,14 @@ def load_all_trades(log_dir: str) -> pd.DataFrame:
     if not all_rows:
         return pd.DataFrame()
 
+    # 구 스키마(2026-02-12 이전) 호환: 누락 필드에 기본값 적용
+    for row in all_rows:
+        row.setdefault("market_regime", "unknown")
+        row.setdefault("signal_reason", "")
+        row.setdefault("hold_seconds", None)
+        row.setdefault("fee_usd", 0.0)
+        row.setdefault("side", "Buy")
+
     df = pd.DataFrame(all_rows)
 
     # null 처리: entry_time, hold_seconds → NaN
@@ -214,9 +222,11 @@ def load_all_trades(log_dir: str) -> pd.DataFrame:
         else:
             df[col] = float("nan")
 
-    # realized_pnl_usd null → 0
+    # realized_pnl_usd null → 0; 누락 시 0.0 컬럼 생성
     if "realized_pnl_usd" in df.columns:
         df["realized_pnl_usd"] = pd.to_numeric(df["realized_pnl_usd"], errors="coerce").fillna(0.0)
+    else:
+        df["realized_pnl_usd"] = 0.0
 
     # exit_time 기준 정렬 (NaT 뒤로)
     df = df.sort_values("exit_time", na_position="last").reset_index(drop=True)
