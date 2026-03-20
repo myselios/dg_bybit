@@ -198,6 +198,10 @@ class Orchestrator:
         self.trail_price: Optional[float] = None  # 포지션 중 최고/최저 유리가격
         self.entry_atr: Optional[float] = None    # 진입 시점 ATR (Trailing 거리 계산용)
 
+        # Wave 2A: klines 캐시 (30초 갱신, API 호출 최소화)
+        self._klines_cache: Optional[Dict[str, Any]] = None  # {"prices": list, "volumes": list, "ts": float}
+        self._KLINES_CACHE_TTL = 30.0  # 30초
+
     def run_tick(self) -> TickResult:
         """
         Tick 실행 (Emergency → Events → Position → Entry)
@@ -324,6 +328,13 @@ class Orchestrator:
         if position is None:
             return
 
+        # Wave 2A: pending_order에서 앙상블 결과 추출
+        _signal_score = None
+        _signal_components = None
+        if self.pending_order:
+            _signal_score = self.pending_order.get("signal_score")
+            _signal_components = self.pending_order.get("signal_components")
+
         # 기본 로그 기록
         log_completed_trade(
             market_data=self.market_data,
@@ -335,6 +346,8 @@ class Orchestrator:
             pending_order_timestamp=self.pending_order_timestamp,
             event=event,
             t_trend=self._threshold_config.t_trend if self._threshold_config else None,
+            signal_score=_signal_score,
+            signal_components=_signal_components,
         )
 
         # ReflectionAgent: 트레이드 결과 분석
@@ -856,6 +869,9 @@ class Orchestrator:
                 logger.warning(f"[Calibrate] kline 데이터 미준비, 안전 기본값 사용 (T_TREND=0.05%): {e}")
                 self._threshold_config = DEFAULT_THRESHOLD_CONFIG
 
+        # Wave 2A: 앙상블용 klines (30초 캐시, None이면 MA slope 모드 fallback)
+        ens_prices, ens_volumes = self._get_price_volume_history()
+
         # Signal 생성 (Grid up/down, Regime-aware initial direction)
         signal: Optional[Signal] = generate_signal(
             current_price=current_price,
@@ -865,6 +881,8 @@ class Orchestrator:
             funding_rate=funding_rate,
             ma_slope_pct=ma_slope_pct,
             threshold_config=self._threshold_config,
+            prices=ens_prices,
+            volumes=ens_volumes,
         )
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)
@@ -984,9 +1002,42 @@ class Orchestrator:
             "price": signal.price,
             "signal_id": self.current_signal_id,
             "stop_distance_pct": stop_distance_pct,
+            # Wave 2A: 앙상블 결과 (MA slope 모드이면 None)
+            "signal_score": signal.score,
+            "signal_components": signal.components,
         }
 
         # Phase 12a-4c: Pending order 발주 시각 기록
         self.pending_order_timestamp = time.time()
 
         return {"blocked": False, "reason": None}
+
+    def _get_price_volume_history(self) -> tuple:
+        """
+        klines에서 prices/volumes 추출 (30초 캐시).
+
+        Returns:
+            (prices, volumes): close 가격 리스트, volume 리스트.
+            데이터 미준비 시 (None, None) 반환 → generate_signal은 MA slope 모드로 fallback.
+        """
+        now = time.time()
+        if (
+            self._klines_cache is not None
+            and now - self._klines_cache["ts"] < self._KLINES_CACHE_TTL
+        ):
+            return self._klines_cache["prices"], self._klines_cache["volumes"]
+
+        try:
+            klines = self.market_data.get_klines(200)
+            if not klines or len(klines) < 26:
+                return None, None
+
+            prices = [float(k.close) for k in klines]
+            # RegimeKline에 volume 필드 없음 → 빈 리스트 (volume 지표는 비활성)
+            volumes: list = []
+
+            self._klines_cache = {"prices": prices, "volumes": volumes, "ts": now}
+            return prices, volumes
+        except Exception as e:
+            logger.warning(f"[Ensemble] klines 조회 실패 (MA slope 모드 fallback): {e}")
+            return None, None

@@ -248,6 +248,31 @@ class BybitAdapter:
         """캐시된 kline 데이터 반환 (ThresholdCalibrator 용)"""
         return self._cached_klines[-limit:] if self._cached_klines else []
 
+    def fetch_klines(self, symbol: str = "BTCUSDT", interval: str = "1", limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Recent klines with close and volume via REST API.
+
+        Returns:
+            List of dicts with keys: close (float), volume (float)
+            Returns [] on error.
+        """
+        try:
+            response = self.rest_client.get_kline(
+                category="linear",
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+            )
+            raw_list = response.get("result", {}).get("list", [])
+            # Bybit returns newest-first; reverse for chronological order
+            return [
+                {"close": float(k[4]), "volume": float(k[5])}
+                for k in reversed(raw_list)
+            ]
+        except Exception as e:
+            logger.warning(f"fetch_klines failed: {e}")
+            return []
+
     # ========== Phase 12a-1: REST API Integration ==========
 
     def update_market_data(self):

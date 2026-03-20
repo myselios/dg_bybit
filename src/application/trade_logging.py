@@ -111,6 +111,8 @@ def log_completed_trade(
     reflection_pattern: Optional[str] = None,
     hypothesis: Optional[str] = None,
     param_delta: Optional[Dict[str, Any]] = None,
+    signal_score: Optional[int] = None,
+    signal_components: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     완료된 거래를 Trade Log v1.0으로 기록한다.
@@ -231,6 +233,8 @@ def log_completed_trade(
         reflection_pattern=reflection_pattern,
         hypothesis=hypothesis,
         param_delta=param_delta,
+        signal_score=signal_score,
+        signal_components=signal_components,
     )
 
     validate_trade_log_v1(trade_log)

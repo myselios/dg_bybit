@@ -38,11 +38,15 @@ class Signal:
         side: Buy 또는 Sell
         price: 신호 발생 시점 가격
         qty: 거래 수량 (contracts)
+        score: 앙상블 합산 점수 (0~6, None=MA slope 모드)
+        components: 지표별 점수 {"rsi":int, "macd":int, "bb":int, "volume":int, "ma_slope":int}
     """
 
     side: str  # "Buy" or "Sell"
     price: float
     qty: int = 0
+    score: Optional[int] = None
+    components: Optional[dict] = None
 
 
 def _determine_regime_with_threshold(ma_slope_pct: float, t_trend: float) -> Tuple[str, str]:
@@ -158,7 +162,13 @@ def generate_signal(
             f"components={ensemble.components}"
         )
         if ensemble.side is not None:
-            return Signal(side=ensemble.side, price=current_price, qty=qty)
+            return Signal(
+                side=ensemble.side,
+                price=current_price,
+                qty=qty,
+                score=ensemble.score,
+                components=ensemble.components,
+            )
         return None
 
     # 첫 진입: Regime-aware 방향 결정 (기존 legacy 모드)

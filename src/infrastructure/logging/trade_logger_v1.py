@@ -88,6 +88,10 @@ class TradeLogV1:
     hypothesis: Optional[str] = None            # ReflectionAgent 가설 텍스트
     param_delta: Optional[Dict[str, Any]] = None  # 자동 적용된 파라미터 변경
 
+    # 앙상블 신호 필드 (Wave 2A, Optional)
+    signal_score: Optional[int] = None
+    signal_components: Optional[Dict[str, Any]] = None
+
 
 def calculate_market_regime(ma_slope_pct: float, atr_percentile: float) -> str:
     """
