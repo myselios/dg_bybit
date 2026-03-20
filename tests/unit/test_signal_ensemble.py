@@ -221,8 +221,8 @@ class TestEnsembleTieBreaking:
 # ========== 컴포넌트 점수 구조 테스트 ==========
 
 class TestEnsembleComponents:
-    def test_components_dict_has_all_five_keys(self):
-        """components는 5개 키: rsi, macd, bb, volume, ma_slope"""
+    def test_components_dict_has_all_six_keys(self):
+        """components는 6개 키: rsi, macd, bb, volume, ma_slope, breakout"""
         from src.application.signal_ensemble import calculate_ensemble_score
 
         prices = [float(i) for i in range(1000, 1040)]
@@ -236,7 +236,7 @@ class TestEnsembleComponents:
         )
 
         assert result is not None
-        assert set(result.components.keys()) == {"rsi", "macd", "bb", "volume", "ma_slope"}
+        assert set(result.components.keys()) == {"rsi", "macd", "bb", "volume", "ma_slope", "breakout"}
 
     def test_components_values_are_non_negative_integers(self):
         """각 컴포넌트 점수는 0 이상 정수"""
@@ -274,8 +274,8 @@ class TestEnsembleComponents:
         assert result is not None
         assert result.score == sum(result.components.values())
 
-    def test_confidence_equals_score_over_6(self):
-        """confidence == score / 6.0"""
+    def test_confidence_equals_score_over_7(self):
+        """confidence == score / 7.0 (Wave 4 Stream C: max_score 6→7)"""
         from src.application.signal_ensemble import calculate_ensemble_score
 
         prices = [float(i) for i in range(1000, 1040)]
@@ -289,7 +289,7 @@ class TestEnsembleComponents:
         )
 
         assert result is not None
-        assert result.confidence == pytest.approx(result.score / 6.0)
+        assert result.confidence == pytest.approx(result.score / 7.0)
 
 
 # ========== 데이터 부족 처리 테스트 ==========
@@ -378,3 +378,227 @@ class TestGenerateSignalEnsembleIntegration:
 
         assert signal is not None
         assert signal.side == "Sell"
+
+
+# ========== Wave 4 Stream A: 조건 완화 테스트 ==========
+
+class TestRSIRelaxedConditions:
+    """RSI 임계값 완화: LONG < 35, SHORT > 65"""
+
+    def test_rsi_34_gives_long_score_2(self):
+        """RSI≈34 (30 < RSI < 35) → long rsi score=2 (완화 조건)"""
+        import math
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        # slope=-0.03: RSI≈34.24 (30~35 범위)
+        prices = [1000.0 + math.sin(i * 0.3) * 2.0 - i * 0.03 for i in range(40)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["rsi"] == 2
+
+    def test_rsi_66_gives_short_score_2(self):
+        """RSI≈66 (65 < RSI < 70) → short rsi score=2 (완화 조건)"""
+        import math
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        # slope=+0.19: RSI≈65.70 (65~70 범위)
+        prices = [1000.0 + math.sin(i * 0.3) * 2.0 + i * 0.19 for i in range(40)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["rsi"] == 2
+
+    def test_rsi_below_30_still_gives_score_2(self):
+        """RSI < 30도 여전히 +2 (기존 동작 유지)"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        prices = [1000.0 - i * 8 for i in range(30)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["rsi"] == 2
+
+    def test_rsi_above_70_still_gives_score_2(self):
+        """RSI > 70도 여전히 +2 (기존 동작 유지)"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        prices = [1000.0 + i * 8 for i in range(30)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["rsi"] == 2
+
+    def test_rsi_50_gives_score_0(self):
+        """RSI≈50 (중립) → rsi score=0"""
+        import math
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        # 중립 가격: 진동
+        prices = [1000.0 + math.sin(i * 0.5) * 10 for i in range(40)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["rsi"] == 0
+
+
+class TestMACDHistogramCondition:
+    """MACD 히스토그램 보완 조건: 3개 연속 같은 방향 → score=1"""
+
+    def test_macd_histogram_regression_no_crash(self):
+        """MACD 히스토그램 조건 추가 후 기존 동작 regression 없음"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        # 단조 상승: crossover 없지만 histogram 양수 연속
+        prices = [1000.0 + i * 0.5 for i in range(50)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["macd"] >= 0
+
+    def test_macd_histogram_descending_gives_short_score(self):
+        """단조 하락 → MACD histogram 음수 연속 → short macd=1"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        prices = [1000.0 - i * 0.5 for i in range(50)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["macd"] >= 0
+
+    def test_macd_oscillating_gives_zero(self):
+        """진동 가격 → MACD histogram 방향 혼재 → macd=0"""
+        import math
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        prices = [1000.0 + math.sin(i * 1.0) * 20 for i in range(50)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["macd"] == 0
+
+
+class TestBBRelaxedConditions:
+    """BB 조건 완화: lower_band * 1.003 / upper_band * 0.997"""
+
+    def test_price_just_inside_bb_lower_gives_long_score(self):
+        """price = lower_band * 1.002 → BB LONG score=1"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+        from src.application.indicators.bollinger import calculate_bollinger
+
+        prices_base = [1000.0 + (i % 5 - 2) * 3 for i in range(25)]
+        bb = calculate_bollinger(prices_base, period=20)
+        assert bb is not None
+
+        lower = bb["lower"]
+        target_price = lower * 1.002
+        prices = prices_base[:-1] + [target_price]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["bb"] == 1
+
+    def test_price_just_inside_bb_upper_gives_short_score(self):
+        """price = upper_band * 0.998 → BB SHORT score=1"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+        from src.application.indicators.bollinger import calculate_bollinger
+
+        prices_base = [1000.0 + (i % 5 - 2) * 3 for i in range(25)]
+        bb = calculate_bollinger(prices_base, period=20)
+        assert bb is not None
+
+        upper = bb["upper"]
+        target_price = upper * 0.998
+        prices = prices_base[:-1] + [target_price]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["bb"] == 1
+
+    def test_price_far_inside_bb_gives_zero(self):
+        """price가 BB 중간 → bb score=0"""
+        from src.application.signal_ensemble import calculate_ensemble_score
+
+        # 넓은 밴드 중간 가격: lower≈972, upper≈1028, price=1020
+        prices = [1000.0 + (i % 5 - 2) * 10 for i in range(25)]
+        volumes = [100.0] * len(prices)
+
+        result = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes,
+            ma_slope_pct=0.0,
+            t_trend=0.05,
+        )
+
+        assert result is not None
+        assert result.components["bb"] == 0

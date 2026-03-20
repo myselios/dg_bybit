@@ -204,30 +204,30 @@ def test_sizing_sell_signal_returns_short():
 
 
 def test_sizing_atr_based_stop_distance():
-    """ATR=1000, price=50000 → raw=0.014, clamped=0.014."""
+    """ATR=500, price=50000 → raw=(500*0.8)/50000=0.008, within [0.004, 0.015] → 0.008."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
-    params = build_sizing_params(signal, md, atr=1000.0)
-    # raw = (1000 * 0.7) / 50000 = 0.014, within [0.005, 0.02]
-    assert params.stop_distance_pct == pytest.approx(0.014)
+    params = build_sizing_params(signal, md, atr=500.0)
+    # raw = (500 * 0.8) / 50000 = 0.008, within [0.004, 0.015]
+    assert params.stop_distance_pct == pytest.approx(0.008)
 
 
 def test_sizing_atr_stop_clamp_min():
-    """ATR very small → clamp to 0.5% min."""
+    """ATR very small → clamp to 0.4% min (변경: 0.5% → 0.4%)."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=100.0)
-    # raw = (100 * 0.7) / 50000 = 0.0014, clamped to 0.005
-    assert params.stop_distance_pct == pytest.approx(0.005)
+    # raw = (100 * 0.8) / 50000 = 0.0016, clamped to 0.004
+    assert params.stop_distance_pct == pytest.approx(0.004)
 
 
 def test_sizing_atr_stop_clamp_max():
-    """ATR very large → clamp to 2.0% max."""
+    """ATR very large → clamp to 1.5% max (변경: 2.0% → 1.5%)."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=5000.0)
-    # raw = (5000 * 0.7) / 50000 = 0.07, clamped to 0.02
-    assert params.stop_distance_pct == pytest.approx(0.02)
+    # raw = (5000 * 0.8) / 50000 = 0.08, clamped to 0.015
+    assert params.stop_distance_pct == pytest.approx(0.015)
 
 
 def test_sizing_atr_zero_uses_fallback():
@@ -366,3 +366,85 @@ def test_generate_signal_id_is_reasonable_timestamp():
     now = int(time.time())
     # 1초 이내 차이
     assert abs(ts - now) <= 1
+
+
+# ============================================================
+# build_sizing_params() — SL 범위 조정 (ATR * 0.8, clamp 0.4%~1.5%)
+# ============================================================
+
+
+def test_sizing_atr_based_stop_distance_new_multiplier():
+    """ATR=1000, price=50000 → raw = (1000*0.8)/50000 = 0.016, clamped to max 0.015."""
+    signal = _make_signal(price=50000.0, qty=3)
+    md = _make_market_data()
+    params = build_sizing_params(signal, md, atr=1000.0)
+    # raw = (1000 * 0.8) / 50000 = 0.016, clamped to 0.015
+    assert params.stop_distance_pct == pytest.approx(0.015)
+
+
+def test_sizing_atr_stop_new_clamp_min():
+    """ATR very small → clamp to 0.4% min (변경 전 0.5%)."""
+    signal = _make_signal(price=50000.0, qty=3)
+    md = _make_market_data()
+    params = build_sizing_params(signal, md, atr=100.0)
+    # raw = (100 * 0.8) / 50000 = 0.0016, clamped to 0.004
+    assert params.stop_distance_pct == pytest.approx(0.004)
+
+
+def test_sizing_atr_stop_new_clamp_max():
+    """ATR very large → clamp to 1.5% max (변경 전 2.0%)."""
+    signal = _make_signal(price=50000.0, qty=3)
+    md = _make_market_data()
+    params = build_sizing_params(signal, md, atr=5000.0)
+    # raw = (5000 * 0.8) / 50000 = 0.08, clamped to 0.015
+    assert params.stop_distance_pct == pytest.approx(0.015)
+
+
+def test_sizing_atr_within_new_range():
+    """ATR=500, price=50000 → raw = (500*0.8)/50000 = 0.008, within [0.004, 0.015]."""
+    signal = _make_signal(price=50000.0, qty=3)
+    md = _make_market_data()
+    params = build_sizing_params(signal, md, atr=500.0)
+    # raw = (500 * 0.8) / 50000 = 0.008, unclamped
+    assert params.stop_distance_pct == pytest.approx(0.008)
+
+
+# ============================================================
+# build_signal_context_with_rr_gate() — R:R 게이트 (min_rr_ratio >= 1.5)
+# ============================================================
+
+
+def test_rr_gate_passes_when_ratio_above_threshold():
+    """R:R >= 1.5이면 build_signal_context_with_rr_gate 정상 반환."""
+    from application.entry_coordinator import build_signal_context_with_rr_gate
+    signal = _make_signal(price=50000.0, qty=3)
+    # grid_spacing=200 (expected profit), stop_loss_usd=100 → R:R=2.0 >= 1.5
+    ctx = build_signal_context_with_rr_gate(signal, grid_spacing=200.0, stop_loss_usd=100.0)
+    assert ctx is not None
+    assert ctx.expected_profit_usd == pytest.approx(200.0)
+
+
+def test_rr_gate_blocks_when_ratio_below_threshold():
+    """R:R < 1.5이면 None 반환 (진입 차단)."""
+    from application.entry_coordinator import build_signal_context_with_rr_gate
+    signal = _make_signal(price=50000.0, qty=3)
+    # grid_spacing=100 (expected profit), stop_loss_usd=100 → R:R=1.0 < 1.5
+    ctx = build_signal_context_with_rr_gate(signal, grid_spacing=100.0, stop_loss_usd=100.0)
+    assert ctx is None
+
+
+def test_rr_gate_passes_at_exactly_threshold():
+    """R:R = 1.5이면 통과 (경계값)."""
+    from application.entry_coordinator import build_signal_context_with_rr_gate
+    signal = _make_signal(price=50000.0, qty=3)
+    # grid_spacing=150, stop_loss_usd=100 → R:R=1.5 (정확히 경계)
+    ctx = build_signal_context_with_rr_gate(signal, grid_spacing=150.0, stop_loss_usd=100.0)
+    assert ctx is not None
+
+
+def test_rr_gate_blocks_zero_stop_loss():
+    """stop_loss_usd=0이면 None 반환 (ZeroDivision 방지)."""
+    from application.entry_coordinator import build_signal_context_with_rr_gate
+    signal = _make_signal(price=50000.0, qty=3)
+    ctx = build_signal_context_with_rr_gate(signal, grid_spacing=200.0, stop_loss_usd=0.0)
+    assert ctx is None

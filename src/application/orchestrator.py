@@ -63,6 +63,41 @@ from infrastructure.safety.killswitch import KillSwitch
 from application.agents.reflection_agent import ReflectionAgent
 
 
+def _compute_adaptive_trail_distance(
+    trail_atr: float,
+    entry_price: float,
+    trail_price: float,
+    direction: "Direction",
+) -> float:
+    """
+    수익 수준에 따른 adaptive trailing stop 거리 계산 (Wave4 R:R 개선)
+
+    Args:
+        trail_atr: 진입 시점 ATR
+        entry_price: 진입가
+        trail_price: 현재 최고/최저 유리가격
+        direction: 포지션 방향 (LONG/SHORT)
+
+    Returns:
+        trail_distance: trailing stop 거리 (USD)
+
+    Policy:
+    - 기본: ATR * 0.5
+    - 수익 >= ATR * 1.0: ATR * 0.3 (수익 보호 강화)
+    - 수익 >= ATR * 2.0: ATR * 0.2 (최대 수익 보호)
+    """
+    if direction == Direction.LONG:
+        unrealized_profit = trail_price - entry_price
+    else:
+        unrealized_profit = entry_price - trail_price
+
+    if unrealized_profit >= trail_atr * 2.0:
+        return trail_atr * 0.2
+    if unrealized_profit >= trail_atr * 1.0:
+        return trail_atr * 0.3
+    return trail_atr * 0.5
+
+
 @dataclass
 class TickResult:
     """Tick 실행 결과"""
@@ -627,11 +662,19 @@ class Orchestrator:
             should_exit = True
             exit_reason = "stop_loss_hit"
 
-        # 2) Trailing Stop 체크 (2026-03-07: 고정 TP 대체)
-        # trail_distance = entry_atr * 0.5 (없으면 trail_price * 1.5% fallback)
+        # 2) Trailing Stop 체크 (Wave4: adaptive trail - 수익 수준별 trail 좁힘)
+        # 기본: ATR*0.5 / 수익>=ATR*1: ATR*0.3 / 수익>=ATR*2: ATR*0.2 / fallback: trail*1.5%
         if not should_exit:
             trail_atr = self.entry_atr or 0.0
-            trail_distance = trail_atr * 0.5 if trail_atr > 0 else self.trail_price * 0.015
+            if trail_atr > 0:
+                trail_distance = _compute_adaptive_trail_distance(
+                    trail_atr=trail_atr,
+                    entry_price=self.position.entry_price,
+                    trail_price=self.trail_price,
+                    direction=self.position.direction,
+                )
+            else:
+                trail_distance = self.trail_price * 0.015  # fallback 1.5%
             if self.position.direction == Direction.LONG:
                 if current_price < self.trail_price - trail_distance:
                     should_exit = True
@@ -874,8 +917,9 @@ class Orchestrator:
                 logger.warning(f"[Calibrate] kline 데이터 미준비, 안전 기본값 사용 (T_TREND=0.05%): {e}")
                 self._threshold_config = DEFAULT_THRESHOLD_CONFIG
 
-        # Wave 2A: 앙상블용 klines (30초 캐시, None이면 MA slope 모드 fallback)
-        ens_prices, ens_volumes = self._get_price_volume_history()
+        # Wave 2A+4: 앙상블용 klines (30초 캐시, None이면 MA slope 모드 fallback)
+        # Wave 4 Stream C: highs/lows 추가 → Breakout 지표 활성화
+        ens_prices, ens_volumes, ens_highs, ens_lows = self._get_price_volume_history()
 
         # Signal 생성 (Grid up/down, Regime-aware initial direction)
         signal: Optional[Signal] = generate_signal(
@@ -888,6 +932,8 @@ class Orchestrator:
             threshold_config=self._threshold_config,
             prices=ens_prices,
             volumes=ens_volumes,
+            highs=ens_highs,
+            lows=ens_lows,
         )
 
         # Signal이 없으면 차단 (Grid spacing 범위 밖)
@@ -997,9 +1043,9 @@ class Orchestrator:
         self.trail_price = signal.price
         self.entry_atr = atr
 
-        # Stop distance (ATR 기반, sizing_params와 동일 계산)
+        # Stop distance (ATR 기반, sizing_params와 동일 계산, Wave4: ATR*0.8 clamp 0.4%~1.5%)
         if atr > 0 and signal.price > 0:
-            stop_distance_pct = max(0.005, min(0.02, (atr * 1.5) / signal.price))
+            stop_distance_pct = max(0.004, min(0.015, (atr * 0.8) / signal.price))
         else:
             stop_distance_pct = 0.01
 
@@ -1024,29 +1070,50 @@ class Orchestrator:
 
     def _get_price_volume_history(self) -> tuple:
         """
-        klines에서 prices/volumes 추출 (30초 캐시).
+        klines에서 prices/volumes/highs/lows 추출 (30초 캐시).
 
         Returns:
-            (prices, volumes): close 가격 리스트, volume 리스트.
-            데이터 미준비 시 (None, None) 반환 → generate_signal은 MA slope 모드로 fallback.
+            (prices, volumes, highs, lows): 각 리스트.
+            데이터 미준비 시 (None, None, None, None) 반환 → generate_signal은 MA slope 모드로 fallback.
         """
         now = time.time()
         if (
             self._klines_cache is not None
             and now - self._klines_cache["ts"] < self._KLINES_CACHE_TTL
         ):
-            return self._klines_cache["prices"], self._klines_cache["volumes"]
+            return (
+                self._klines_cache["prices"],
+                self._klines_cache["volumes"],
+                self._klines_cache.get("highs"),
+                self._klines_cache.get("lows"),
+            )
 
         try:
             klines = self.market_data.get_klines(200)
             if not klines or len(klines) < 26:
-                return None, None
+                return None, None, None, None
 
             prices = [float(k.close) for k in klines]
             volumes = [float(k.volume) for k in klines]
+            highs_raw = [float(k.high) for k in klines if hasattr(k, "high") and k.high is not None]
+            lows_raw = [float(k.low) for k in klines if hasattr(k, "low") and k.low is not None]
 
-            self._klines_cache = {"prices": prices, "volumes": volumes, "ts": now}
-            return prices, volumes
+            # highs/lows 길이 불일치 시 graceful fallback
+            if len(highs_raw) == len(prices) and len(lows_raw) == len(prices):
+                highs = highs_raw
+                lows = lows_raw
+            else:
+                highs = None
+                lows = None
+
+            self._klines_cache = {
+                "prices": prices,
+                "volumes": volumes,
+                "highs": highs,
+                "lows": lows,
+                "ts": now,
+            }
+            return prices, volumes, highs, lows
         except Exception as e:
             logger.warning(f"[Ensemble] klines 조회 실패 (MA slope 모드 fallback): {e}")
-            return None, None
+            return None, None, None, None

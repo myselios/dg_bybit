@@ -1143,6 +1143,157 @@ class TestTrailingStopDistance:
         )
 
 
+# ===== S2: Adaptive Trailing Stop (수익 수준별 trail 좁힘) =====
+
+
+class TestAdaptiveTrailingStop:
+    """수익 >= ATR*1.0 시 trail을 ATR*0.3으로, >= ATR*2.0 시 ATR*0.2로 좁힘
+
+    정책:
+    - 기본: trail_distance = ATR * 0.5
+    - 수익 >= ATR*1.0: trail_distance = ATR * 0.3 (수익 보호 강화)
+    - 수익 >= ATR*2.0: trail_distance = ATR * 0.2 (최대 수익 보호)
+    """
+
+    def test_long_tight_trail_at_atr1_profit(self):
+        """LONG: 수익 >= ATR*1.0 → trail_distance = ATR*0.3 (좁아짐)
+
+        설정: entry=70000, ATR=500, trail_price=70600 (수익=600 >= ATR*1.0=500)
+        - ATR*0.3 = 150 → threshold = 70600 - 150 = 70450
+        - ATR*0.5 = 250 → threshold = 70600 - 250 = 70350 (기본값)
+        - price = 70400 → ATR*0.3 기준 청산(O), ATR*0.5 기준 홀드(X)
+        """
+        fake_data = FakeMarketData(current_price=70400.0, equity_usdt=150.0)
+        fake_data.inject_atr(500.0)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=70000.0,
+            direction=Direction.LONG,
+            signal_id="adaptive_trail_long_atr1",
+            stop_price=69000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 70600.0
+        orchestrator.entry_atr = 500.0
+
+        result = orchestrator.run_tick()
+
+        # 수익=600 >= ATR*1.0=500 → trail_distance=ATR*0.3=150
+        # price=70400 < trail=70600 - 150=70450 → 청산
+        assert orchestrator.state == State.EXIT_PENDING, (
+            f"Adaptive trail (profit>=ATR*1): trail_distance should narrow to ATR*0.3=150, "
+            f"price=70400 < 70450 → EXIT_PENDING, got {orchestrator.state}"
+        )
+
+    def test_long_tight_trail_at_atr2_profit(self):
+        """LONG: 수익 >= ATR*2.0 → trail_distance = ATR*0.2 (최대 좁힘)
+
+        설정: entry=70000, ATR=500, trail_price=71100 (수익=1100 >= ATR*2.0=1000)
+        - ATR*0.2 = 100 → threshold = 71100 - 100 = 71000
+        - price = 71050 → ATR*0.2 기준: 71050 > 71000 → 홀드
+        """
+        fake_data = FakeMarketData(current_price=71050.0, equity_usdt=150.0)
+        fake_data.inject_atr(500.0)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=70000.0,
+            direction=Direction.LONG,
+            signal_id="adaptive_trail_long_atr2",
+            stop_price=69000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 71100.0
+        orchestrator.entry_atr = 500.0
+
+        result = orchestrator.run_tick()
+
+        # 수익=1100 >= ATR*2.0=1000 → trail_distance=ATR*0.2=100
+        # price=71050 > trail=71100-100=71000 → 홀드
+        assert orchestrator.state == State.IN_POSITION, (
+            f"At ATR*2 profit, trail_distance=ATR*0.2=100, "
+            f"price=71050 > trail=71100-100=71000 → HOLD (IN_POSITION), "
+            f"got {orchestrator.state}"
+        )
+
+    def test_short_tight_trail_at_atr1_profit(self):
+        """SHORT: 수익 >= ATR*1.0 → trail_distance = ATR*0.3, 임계 미도달 시 홀드
+
+        설정: entry=70000, ATR=500, trail_price=69400 (수익=600 >= ATR*1.0=500)
+        - ATR*0.3 = 150 → threshold = 69400 + 150 = 69550
+        - price = 69500 → ATR*0.3 기준: 69500 < 69550 → 홀드
+        """
+        fake_data = FakeMarketData(current_price=69500.0, equity_usdt=150.0)
+        fake_data.inject_atr(500.0)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=70000.0,
+            direction=Direction.SHORT,
+            signal_id="adaptive_trail_short_atr1",
+            stop_price=71000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 69400.0
+        orchestrator.entry_atr = 500.0
+
+        result = orchestrator.run_tick()
+
+        # 수익=600 >= ATR*1.0=500 → trail_distance=ATR*0.3=150
+        # price=69500 < threshold=69550 → 홀드
+        assert orchestrator.state == State.IN_POSITION, (
+            f"Short adaptive trail: price=69500 < threshold=69550 → HOLD, "
+            f"got {orchestrator.state}"
+        )
+
+    def test_long_basic_trail_below_atr1_profit(self):
+        """LONG: 수익 < ATR*1.0 → trail_distance = ATR*0.5 (기본값 유지)
+
+        설정: entry=70000, ATR=500, trail_price=70400 (수익=400 < ATR*1.0=500)
+        - ATR*0.5 = 250 → threshold = 70400 - 250 = 70150
+        - price = 70200 → ATR*0.5 기준: 70200 > 70150 → 홀드
+        """
+        fake_data = FakeMarketData(current_price=70200.0, equity_usdt=150.0)
+        fake_data.inject_atr(500.0)
+        mock_client = MockRestClient()
+        mock_client.inject_position_size(0.004)
+
+        orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_client)
+        orchestrator.state = State.IN_POSITION
+        orchestrator.position = Position(
+            qty=4,
+            entry_price=70000.0,
+            direction=Direction.LONG,
+            signal_id="basic_trail_long",
+            stop_price=69000.0,
+            stop_status=StopStatus.ACTIVE,
+        )
+        orchestrator.trail_price = 70400.0
+        orchestrator.entry_atr = 500.0
+
+        result = orchestrator.run_tick()
+
+        # 수익=400 < ATR*1.0=500 → trail_distance=ATR*0.5=250 (기본)
+        # price=70200 > trail=70400-250=70150 → 홀드
+        assert orchestrator.state == State.IN_POSITION, (
+            f"Basic trail (profit<ATR*1): ATR*0.5=250, "
+            f"price=70200 > threshold=70150 → HOLD, got {orchestrator.state}"
+        )
+
+
 # ===== S3: exchange_position_not_flat 자동 복구 =====
 
 

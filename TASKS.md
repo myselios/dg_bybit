@@ -2,7 +2,7 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-03-20 (KST)
+Last Updated: 2026-03-20 (KST) — Wave 4 Stream C
 Bot Status: 운영 중 (Agentic v1 + 앙상블 신호 재배포 완료 2026-03-20)
 Equity: ~$110.61 USDT
 Target: $1,000 USDT
@@ -18,7 +18,7 @@ Target: $1,000 USDT
 - Order: GTC Limit (entry), Market (exit, reduce_only)
 - Max Trades/Day: 15 (Stage 1 공격)
 - Stage: 1 ($100-$300)
-- 신호: RSI+MACD+BB+Volume+MASlope 앙상블 (score 0-6, ≥3 진입)
+- 신호: RSI+MACD+BB+Volume+MASlope+Breakout 앙상블 (score 0-7, ≥4 진입)
 - Kelly 사이징: cap 25%, fallback loss_budget
 
 ---
@@ -56,36 +56,27 @@ Target: $1,000 USDT
 - [x] Dashboard 정합성: LONG→LONG/SHORT, 3%→ATR×0.7 (d9430f2)
 - [x] Docker healthcheck: 로그 freshness 기반 120s (d9430f2)
 - [x] ENTRY_THRESHOLD 3→4 (backtest 결과: T=4 승률 12.05%, PnL -$6.51 최적) (4df6ab5, 2026-03-20)
-- [ ] **Docker 재배포** (Volume + T=4 반영) — 사용자 승인 필요
+- [ ] **Docker 재배포** (Volume + T=4 + Breakout 반영) — 사용자 승인 필요
 - [ ] 앙상블 모드 10건 트레이드 축적 후 검증
-  - blocked_by: 트레이드 축적 대기
   - 명령어: `python scripts/analyze_trades.py`
+- [x] Wave 4 Stream C: Breakout 신호 추가 (breakout.py, 최대점수 6→7) (2026-03-20)
 
 ## P2: 중기 (데이터 기반 튜닝)
 
 - [ ] 파라미터 2차 튜닝 (TP/SL/Grid multiplier)
-  - blocked_by: P1 "10건+ 트레이드 분석" 완료
 - [ ] 전략 에지 검증 (승률/Sharpe/DD)
-  - blocked_by: P1 "10건+ 트레이드 분석" 완료
 - [ ] Dashboard PnL/승률 표시 검증
-  - blocked_by: 트레이드 10건+
 - [x] 핵심 모듈 테스트 추가 (d9430f2, 2026-03-20) — emergency_checker 100%, entry_coordinator 100%
 - [x] Dashboard 하드코딩 값 정합성 (d9430f2, 2026-03-20) — ATR×0.7, LONG/SHORT, Fee 0.01%
 - [x] Docker healthcheck 구현 (d9430f2, 2026-03-20) — 로그 freshness 120s
 - [ ] Multi-position Grid 구현
-  - blocked_by: P2 "전략 에지 검증" 완료
-- [ ] 2/12 구 스키마 6건 처리
-  - 분석 파이프라인에서 제외 또는 partial 처리
+- [ ] 2/12 구 스키마 6건 처리 (분석 파이프라인에서 제외 또는 partial 처리)
 
 ## P3: 장기 ($1,000 스케일업)
 
-- [ ] Stage 2 전환 ($200 달성 시)
-  - blocked_by: Equity $200+
-  - Leverage 3x, max_loss $20, loss_pct 8%
+- [ ] Stage 2 전환 ($200 달성 시) — Leverage 3x, max_loss $20, loss_pct 8%
 - [ ] Drawdown Recovery 로직
-  - blocked_by: P2 "전략 에지 검증" 완료
-- [ ] Backtest 프레임워크 구축
-  - Bybit Historical Kline API 활용
+- [ ] Backtest 프레임워크 구축 (Bybit Historical Kline API 활용)
 
 ---
 

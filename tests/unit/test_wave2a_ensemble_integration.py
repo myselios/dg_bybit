@@ -158,7 +158,7 @@ class TestOrchestratorKlinesCache:
         """klines >= 26개 → prices 리스트 반환"""
         orch = self._make_orchestrator(klines_len=50)
 
-        prices, volumes = orch._get_price_volume_history()
+        prices, volumes, highs, lows = orch._get_price_volume_history()
 
         assert prices is not None
         assert len(prices) == 50
@@ -166,10 +166,10 @@ class TestOrchestratorKlinesCache:
         assert len(volumes) == 50  # Kline.volume 필드에서 추출
 
     def test_get_price_volume_returns_none_when_insufficient(self):
-        """klines < 26개 → None, None 반환"""
+        """klines < 26개 → None 4개 반환"""
         orch = self._make_orchestrator(klines_len=10)
 
-        prices, volumes = orch._get_price_volume_history()
+        prices, volumes, highs, lows = orch._get_price_volume_history()
 
         assert prices is None
         assert volumes is None
@@ -178,8 +178,8 @@ class TestOrchestratorKlinesCache:
         """TTL 내에 재호출 → 캐시된 동일 객체 반환"""
         orch = self._make_orchestrator(klines_len=50)
 
-        prices1, _ = orch._get_price_volume_history()
-        prices2, _ = orch._get_price_volume_history()
+        prices1, _, _, _ = orch._get_price_volume_history()
+        prices2, _, _, _ = orch._get_price_volume_history()
 
         assert prices1 is prices2  # 동일 객체 (캐시 히트)
 
@@ -188,9 +188,9 @@ class TestOrchestratorKlinesCache:
         orch = self._make_orchestrator(klines_len=50)
         orch._KLINES_CACHE_TTL = 0.01  # 10ms로 단축
 
-        prices1, _ = orch._get_price_volume_history()
+        prices1, _, _, _ = orch._get_price_volume_history()
         time.sleep(0.05)
-        prices2, _ = orch._get_price_volume_history()
+        prices2, _, _, _ = orch._get_price_volume_history()
 
         assert prices1 is not prices2  # 다른 객체 (캐시 갱신)
 
@@ -281,7 +281,7 @@ class TestVolumeActivation:
 
         from application.orchestrator import Orchestrator
         orch = Orchestrator(market_data=mock_md)
-        prices, volumes = orch._get_price_volume_history()
+        prices, volumes, highs, lows = orch._get_price_volume_history()
 
         assert prices is not None
         assert volumes is not None

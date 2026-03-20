@@ -102,7 +102,7 @@ def calculate_grid_spacing(atr: float, multiplier: float = 2.0) -> float:
     return atr * multiplier
 
 
-def generate_signal(
+def generate_signal(  # noqa: PLR0913
     current_price: float,
     last_fill_price: Optional[float],
     grid_spacing: float,
@@ -112,6 +112,8 @@ def generate_signal(
     threshold_config: Optional["ThresholdConfig"] = None,
     prices: Optional[list] = None,
     volumes: Optional[list] = None,
+    highs: Optional[list] = None,
+    lows: Optional[list] = None,
 ) -> Optional[Signal]:
     """
     Grid 전략 기반 신호 생성 (Phase 13c: Regime-Aware)
@@ -163,6 +165,8 @@ def generate_signal(
             volumes=volumes if volumes is not None else [],
             ma_slope_pct=ma_slope_pct,
             t_trend=t_trend,
+            highs=highs,
+            lows=lows,
         )
         logger.debug(
             f"Ensemble mode: side={ensemble.side}, score={ensemble.score}, "

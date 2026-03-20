@@ -426,22 +426,19 @@ def test_grid_buy_allowed_in_neutral_or_up_trend():
 
 
 class TestSizingParamsStopDistance:
-    """S4: build_sizing_params의 stop_distance_pct가 ATR*0.7 기반인지 검증
+    """S4: build_sizing_params의 stop_distance_pct가 ATR*0.8 기반인지 검증
 
-    현재 버그: entry_coordinator.py:138 에서 atr * 1.5 사용 중
-    수정 목표: atr * 0.7 사용
+    Wave4 변경: ATR*0.7→ATR*0.8, clamp(0.5%~2.0%)→(0.4%~1.5%)
     """
 
-    def test_build_sizing_params_uses_atr07(self):
-        """build_sizing_params stop_distance_pct가 ATR*0.7 기반인지 검증
+    def test_build_sizing_params_uses_atr08(self):
+        """build_sizing_params stop_distance_pct가 ATR*0.8 기반인지 검증
 
         atr=1000, price=70000
-        기대: ATR*0.7/price = 700/70000 = 0.01 (1%) → clamp(0.5%,2.0%) → 0.01
-        현재 버그: ATR*1.5/price = 1500/70000 = 0.0214 → clamp → 0.02
-        이 테스트는 현재 코드에서 FAIL해야 함 (RED)
+        기대: ATR*0.8/price = 800/70000 ≈ 0.01143 → clamp(0.4%,1.5%) → 0.01143
         """
-        from src.application.entry_coordinator import build_sizing_params
-        from src.application.signal_generator import Signal
+        from application.entry_coordinator import build_sizing_params
+        from application.signal_generator import Signal
         from unittest.mock import MagicMock
 
         # Arrange
@@ -454,18 +451,18 @@ class TestSizingParamsStopDistance:
         # Act
         params = build_sizing_params(signal, market_data, atr=atr)
 
-        # Assert: ATR*0.7 기반 → 700/70000 = 0.01
+        # Assert: ATR*0.8 기반 → 800/70000 ≈ 0.01143, within [0.004, 0.015]
         import pytest
-        assert params.stop_distance_pct == pytest.approx(0.01, abs=1e-6)
+        assert params.stop_distance_pct == pytest.approx(800.0 / 70000.0, abs=1e-6)
 
     def test_build_sizing_params_stop_distance_clamped(self):
-        """극단값에서도 clamp(0.5%~2.0%) 적용
+        """극단값에서도 clamp(0.4%~1.5%) 적용
 
         atr=100 (매우 작음), price=70000
-        ATR*0.7/price = 70/70000 = 0.001 → clamp 하한 → 0.005 (0.5%)
+        ATR*0.8/price = 80/70000 ≈ 0.00114 → clamp 하한 → 0.004 (0.4%)
         """
-        from src.application.entry_coordinator import build_sizing_params
-        from src.application.signal_generator import Signal
+        from application.entry_coordinator import build_sizing_params
+        from application.signal_generator import Signal
         from unittest.mock import MagicMock
 
         # Arrange
@@ -478,5 +475,5 @@ class TestSizingParamsStopDistance:
         # Act
         params = build_sizing_params(signal, market_data, atr=atr)
 
-        # Assert: ATR*0.7/price = 70/70000 = 0.001 → clamp → 0.005
-        assert params.stop_distance_pct == 0.005
+        # Assert: ATR*0.8/price = 80/70000 ≈ 0.00114 → clamp → 0.004
+        assert params.stop_distance_pct == pytest.approx(0.004)

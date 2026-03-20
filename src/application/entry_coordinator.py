@@ -18,6 +18,8 @@ Design:
 - Return typed dataclasses (StageParams, SignalContext, SizingParams)
 """
 
+from typing import Optional
+
 from application.entry_allowed import StageParams, SignalContext
 from application.signal_generator import Signal
 from application.sizing import SizingParams
@@ -80,6 +82,38 @@ def build_signal_context(signal: Signal, grid_spacing: float) -> SignalContext:
     )
 
 
+def build_signal_context_with_rr_gate(
+    signal: Signal,
+    grid_spacing: float,
+    stop_loss_usd: float,
+    min_rr_ratio: float = 1.5,
+) -> Optional[SignalContext]:
+    """
+    R:R 게이트 포함 Signal context 생성 (Wave4 EV gate 강화)
+
+    Args:
+        signal: Signal 객체
+        grid_spacing: Grid spacing (USD, 예상 수익)
+        stop_loss_usd: 예상 손실 USD
+        min_rr_ratio: 최소 R:R 비율 (기본 1.5)
+
+    Returns:
+        SignalContext if R:R >= min_rr_ratio, else None (진입 차단)
+
+    Policy:
+    - R:R = expected_profit / stop_loss_usd >= 1.5 이어야 진입 허용
+    - stop_loss_usd=0이면 ZeroDivision 방지를 위해 차단
+    """
+    if stop_loss_usd <= 0:
+        return None
+
+    rr_ratio = grid_spacing / stop_loss_usd
+    if rr_ratio < min_rr_ratio:
+        return None
+
+    return build_signal_context(signal, grid_spacing)
+
+
 def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: float = 0.0) -> SizingParams:
     """
     Sizing 파라미터 생성 (Linear USDT)
@@ -132,11 +166,11 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     # Direction (Buy → LONG, Sell → SHORT)
     direction = "LONG" if signal.side == "Buy" else "SHORT"
 
-    # Stop distance (ATR 기반, clamp 0.5%~2.0%)
-    # 2026-03-07: 고정 2.2% → ATR * 0.7 기반 (policy v2.5)
+    # Stop distance (ATR 기반, clamp 0.4%~1.5%)
+    # 2026-03-20: ATR*0.7→ATR*0.8, clamp(0.5%~2.0%)→(0.4%~1.5%) (Wave4 R:R 개선)
     if atr > 0 and signal.price > 0:
-        raw_stop_pct = (atr * 0.7) / signal.price
-        stop_distance_pct = max(0.005, min(0.02, raw_stop_pct))
+        raw_stop_pct = (atr * 0.8) / signal.price
+        stop_distance_pct = max(0.004, min(0.015, raw_stop_pct))
     else:
         stop_distance_pct = 0.01  # fallback 1.0%
 
