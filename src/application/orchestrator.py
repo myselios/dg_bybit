@@ -1033,8 +1033,7 @@ class Orchestrator:
                 return None, None
 
             prices = [float(k.close) for k in klines]
-            # RegimeKline에 volume 필드 없음 → 빈 리스트 (volume 지표는 비활성)
-            volumes: list = []
+            volumes = [float(k.volume) for k in klines]
 
             self._klines_cache = {"prices": prices, "volumes": volumes, "ts": now}
             return prices, volumes

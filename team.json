@@ -10,7 +10,7 @@
     "status": "active",
     "goal": "BTC 100→1000 USDT: 수익 최우선. 다중지표 앙상블(RSI+MACD+BB+Volume) + 공격적 포지션 사이징 + 자동 파라미터 조절 + 종합 대시보드. 청산=실패 원칙 유지, 공격적 수익 추구.",
     "profit_first": true,
-    "current_equity_usdt": 112.95,
+    "current_equity_usdt": 110.61,
     "target_equity_usdt": 1000.0,
     "baseline_performance": {
       "total_trades": 33,
@@ -21,15 +21,15 @@
     }
   },
   "waves": {
-    "current": 1,
+    "current": 2,
     "wave1": {
       "name": "신호엔진 + 조절엔진 + 대시보드 병렬 구축",
-      "status": "in_progress",
+      "status": "completed",
       "streams": {
         "A": {
           "name": "Signal Intelligence",
           "goal": "RSI+MACD+BB+Volume 앙상블 신호 (점수 0-5, ≥3 진입). LONG/SHORT 양방향.",
-          "status": "pending",
+          "status": "completed",
           "new_files": [
             "src/application/indicators/__init__.py",
             "src/application/indicators/rsi.py",
@@ -47,7 +47,7 @@
         "B": {
           "name": "Adaptive Engine",
           "goal": "Kelly 분수 사이징 + ReflectionAgent 다중지표 인식 + Stage1 공격 설정(5x, 15trades/day)",
-          "status": "pending",
+          "status": "completed",
           "new_files": [
             "src/application/kelly_sizer.py",
             "tests/unit/test_kelly_sizer.py"
@@ -61,7 +61,7 @@
         "C": {
           "name": "Dashboard v2",
           "goal": "PnL 커브 + 승률/레짐별 분석 + 드로다운 차트 + 실시간 신호 상태판",
-          "status": "pending",
+          "status": "completed",
           "modify_files": [
             "src/dashboard/app.py",
             "src/dashboard/metrics_calculator.py",
@@ -69,11 +69,12 @@
             "src/dashboard/ui_components.py"
           ]
         }
-      }
+      },
+      "completed_at": "2026-03-20"
     },
     "wave2": {
       "name": "통합: 앙상블 신호 ↔ ReflectionAgent 피드백 루프 + ShadowTrader 검증",
-      "status": "blocked_by_wave1"
+      "status": "in_progress"
     },
     "wave3": {
       "name": "Mainnet 배포 (사용자 결재 필수, 자동실행 절대 금지)",
@@ -113,13 +114,16 @@
           "long_condition": "macd_line crosses above signal_line",
           "short_condition": "macd_line crosses below signal_line",
           "score": 1,
-          "fast": 12, "slow": 26, "signal": 9
+          "fast": 12,
+          "slow": 26,
+          "signal": 9
         },
         "bollinger": {
           "long_condition": "price <= lower_band",
           "short_condition": "price >= upper_band",
           "score": 1,
-          "period": 20, "std_dev": 2.0
+          "period": 20,
+          "std_dev": 2.0
         },
         "volume": {
           "condition": "current_volume > avg_volume_20",

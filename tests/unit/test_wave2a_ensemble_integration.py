@@ -163,7 +163,7 @@ class TestOrchestratorKlinesCache:
         assert prices is not None
         assert len(prices) == 50
         assert isinstance(prices[0], float)
-        assert volumes == []  # RegimeKline에 volume 없음
+        assert len(volumes) == 50  # Kline.volume 필드에서 추출
 
     def test_get_price_volume_returns_none_when_insufficient(self):
         """klines < 26개 → None, None 반환"""
@@ -248,3 +248,42 @@ class TestTradeLogV1EnsembleFields:
 
         assert log.signal_score is None
         assert log.signal_components is None
+
+
+# ─── 6. Volume 지표 활성화 (P1) ──────────────────────────────────────────────
+
+
+class TestVolumeActivation:
+    def test_kline_has_volume_field(self):
+        """Kline 데이터클래스에 volume 필드 존재"""
+        from application.market_regime import Kline
+
+        k = Kline(close=70000.0, high=70500.0, low=69500.0, volume=1234.5)
+        assert k.volume == 1234.5
+
+    def test_kline_volume_default_zero(self):
+        """Kline volume 기본값 0.0 (하위 호환)"""
+        from application.market_regime import Kline
+
+        k = Kline(close=70000.0)
+        assert k.volume == 0.0
+
+    def test_price_volume_history_returns_volumes_when_kline_has_volume(self):
+        """_get_price_volume_history()가 volume > 0인 klines에서 volumes 리스트 반환"""
+        from application.market_regime import Kline
+        from unittest.mock import MagicMock
+
+        mock_md = MagicMock()
+        klines = [Kline(close=float(50000 + i * 10), high=float(50010 + i * 10),
+                        low=float(49990 + i * 10), volume=float(100 + i))
+                  for i in range(30)]
+        mock_md.get_klines.return_value = klines
+
+        from application.orchestrator import Orchestrator
+        orch = Orchestrator(market_data=mock_md)
+        prices, volumes = orch._get_price_volume_history()
+
+        assert prices is not None
+        assert volumes is not None
+        assert len(volumes) == 30
+        assert volumes[0] == 100.0

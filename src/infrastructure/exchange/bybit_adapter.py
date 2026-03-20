@@ -372,7 +372,8 @@ class BybitAdapter:
                         low = float(kline_data[3])
                         close = float(kline_data[4])
                         klines_atr.append(ATRKline(high=high, low=low, close=close))
-                        klines_regime.append(RegimeKline(close=close, high=high, low=low))
+                        volume = float(kline_data[5]) if len(kline_data) > 5 else 0.0
+                        klines_regime.append(RegimeKline(close=close, high=high, low=low, volume=volume))
 
                     if len(klines_atr) >= 15:
                         self._atr = self.atr_calculator.calculate_atr(klines_atr)
