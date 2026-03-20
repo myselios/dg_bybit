@@ -175,10 +175,19 @@ def create_position_from_fill(
     else:  # SHORT
         stop_price = entry_price * (1 + stop_distance_pct)
 
+    # entry_time: ExecutionEvent.timestamp 또는 dict execTime (ms → sec)
+    import time as _time
+    if hasattr(event, 'timestamp'):
+        entry_time = event.timestamp
+    else:
+        exec_time_ms = event.get("execTime")
+        entry_time = float(exec_time_ms) / 1000.0 if exec_time_ms else _time.time()
+
     return Position(
         qty=qty,
         entry_price=entry_price,
         direction=direction,
         signal_id=signal_id,
         stop_price=stop_price,
+        entry_time=entry_time,
     )
