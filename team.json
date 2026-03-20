@@ -1,0 +1,176 @@
+{
+  "team_name": "cbgb-247",
+  "created_at": "2026-03-20T18:30:00+09:00",
+  "project": {
+    "id": "cbgb",
+    "name": "cbgb_agentic_v1 — 247 종합매매 시스템",
+    "path": "/home/selios/dg_bybit",
+    "type": "development",
+    "priority": "P0",
+    "status": "active",
+    "goal": "BTC 100→1000 USDT: 수익 최우선. 다중지표 앙상블(RSI+MACD+BB+Volume) + 공격적 포지션 사이징 + 자동 파라미터 조절 + 종합 대시보드. 청산=실패 원칙 유지, 공격적 수익 추구.",
+    "profit_first": true,
+    "current_equity_usdt": 112.95,
+    "target_equity_usdt": 1000.0,
+    "baseline_performance": {
+      "total_trades": 33,
+      "win_rate_pct": 30.3,
+      "total_pnl_usd": -11.31,
+      "avg_win_usd": 1.98,
+      "diagnosis": "MA slope 단일 지표, LONG만 진입, 역추세 차단 과도 → 신호 품질 불량"
+    }
+  },
+  "waves": {
+    "current": 1,
+    "wave1": {
+      "name": "신호엔진 + 조절엔진 + 대시보드 병렬 구축",
+      "status": "in_progress",
+      "streams": {
+        "A": {
+          "name": "Signal Intelligence",
+          "goal": "RSI+MACD+BB+Volume 앙상블 신호 (점수 0-5, ≥3 진입). LONG/SHORT 양방향.",
+          "status": "pending",
+          "new_files": [
+            "src/application/indicators/__init__.py",
+            "src/application/indicators/rsi.py",
+            "src/application/indicators/macd.py",
+            "src/application/indicators/bollinger.py",
+            "src/application/indicators/volume.py",
+            "src/application/signal_ensemble.py",
+            "tests/unit/test_indicators.py",
+            "tests/unit/test_signal_ensemble.py"
+          ],
+          "modify_files": [
+            "src/application/signal_generator.py"
+          ]
+        },
+        "B": {
+          "name": "Adaptive Engine",
+          "goal": "Kelly 분수 사이징 + ReflectionAgent 다중지표 인식 + Stage1 공격 설정(5x, 15trades/day)",
+          "status": "pending",
+          "new_files": [
+            "src/application/kelly_sizer.py",
+            "tests/unit/test_kelly_sizer.py"
+          ],
+          "modify_files": [
+            "src/application/sizing.py",
+            "src/application/agents/reflection_agent.py",
+            "src/application/entry_coordinator.py"
+          ]
+        },
+        "C": {
+          "name": "Dashboard v2",
+          "goal": "PnL 커브 + 승률/레짐별 분석 + 드로다운 차트 + 실시간 신호 상태판",
+          "status": "pending",
+          "modify_files": [
+            "src/dashboard/app.py",
+            "src/dashboard/metrics_calculator.py",
+            "src/dashboard/data_pipeline.py",
+            "src/dashboard/ui_components.py"
+          ]
+        }
+      }
+    },
+    "wave2": {
+      "name": "통합: 앙상블 신호 ↔ ReflectionAgent 피드백 루프 + ShadowTrader 검증",
+      "status": "blocked_by_wave1"
+    },
+    "wave3": {
+      "name": "Mainnet 배포 (사용자 결재 필수, 자동실행 절대 금지)",
+      "status": "blocked_by_wave2"
+    }
+  },
+  "quality_gates": {
+    "wave1_exit": {
+      "new_code_coverage_pct": 80,
+      "existing_tests_regression_count": 0,
+      "lint_errors": 0,
+      "type_errors": 0,
+      "max_function_lines": 50,
+      "max_file_lines": 800
+    },
+    "wave2_exit": {
+      "backtest_win_rate_vs_baseline": "gt_30pct",
+      "all_tests_pass": true,
+      "shadow_trade_min_hours": 24
+    },
+    "wave3_deploy": {
+      "user_approval_required": true,
+      "auto_deploy_forbidden": true
+    }
+  },
+  "design_spec": {
+    "ensemble_signal": {
+      "description": "다중 지표 합산 점수 기반 진입 결정. LONG/SHORT 양방향.",
+      "components": {
+        "rsi": {
+          "long_condition": "rsi < 30",
+          "short_condition": "rsi > 70",
+          "score": 2,
+          "period": 14
+        },
+        "macd": {
+          "long_condition": "macd_line crosses above signal_line",
+          "short_condition": "macd_line crosses below signal_line",
+          "score": 1,
+          "fast": 12, "slow": 26, "signal": 9
+        },
+        "bollinger": {
+          "long_condition": "price <= lower_band",
+          "short_condition": "price >= upper_band",
+          "score": 1,
+          "period": 20, "std_dev": 2.0
+        },
+        "volume": {
+          "condition": "current_volume > avg_volume_20",
+          "score": 1,
+          "description": "거래량 확인으로 신호 강도 증폭"
+        },
+        "ma_slope": {
+          "existing": true,
+          "description": "기존 T_TREND 동적 보정 유지",
+          "score": 1
+        }
+      },
+      "entry_threshold": 3,
+      "max_score": 6
+    },
+    "kelly_sizing": {
+      "description": "Kelly 분수로 공격적 포지션 사이징 (최대 25% 켈리)",
+      "formula": "f = (win_rate * avg_win - loss_rate * avg_loss) / avg_win",
+      "cap": 0.25,
+      "fallback": "기존 loss_budget 방식 (win_rate 데이터 부족 시)"
+    },
+    "stage1_profit_config": {
+      "leverage": 5,
+      "max_trades_per_day": 15,
+      "max_loss_usd_cap": 15.0,
+      "loss_pct_cap": 0.15,
+      "rationale": "100→1000 공격 단계. 청산거리 5x=20%로 ATR SL 0.5~2% 범위에서 안전."
+    }
+  },
+  "approval_required": [
+    "mainnet_redeploy",
+    "parameter_change_over_50pct",
+    "new_external_dependency",
+    "flow_md_modification",
+    "schema_definition_change"
+  ],
+  "schedule": {
+    "dev_session": "0 9,14,19 * * *",
+    "daily_review": "0 22 * * *",
+    "weekly_retro": "0 17 * * 5",
+    "health_check": "0 */6 * * *"
+  },
+  "session_instructions": {
+    "on_start": [
+      "Read TASKS.md for current wave status",
+      "Check docker logs cbgb-bot --tail 20",
+      "Read latest docs/daily/YYYY-MM-DD/execution-dev.md",
+      "Never auto-deploy to mainnet without user approval"
+    ],
+    "on_wave1_complete": "Report to user: Wave 1 complete. Show test results + performance comparison. Ask for Wave 2 approval.",
+    "on_wave2_complete": "Report to user: Show backtest results vs baseline (30.3% win rate). Ask for mainnet deploy approval.",
+    "profit_mandate": "Signal quality > quantity. Both LONG and SHORT. Reject signals scoring < 3/6."
+  }
+}

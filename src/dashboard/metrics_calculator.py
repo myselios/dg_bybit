@@ -11,7 +11,7 @@ DoD:
 - Latency Stats (평균, p95, p99)
 """
 
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, List
 import pandas as pd
 from datetime import datetime
 
@@ -243,3 +243,202 @@ def calculate_latency_stats(df: pd.DataFrame) -> Dict[str, float]:
         "p95_latency_ms": float(p95_latency),
         "p99_latency_ms": float(p99_latency),
     }
+
+
+def calculate_cumulative_pnl(df: pd.DataFrame) -> pd.Series:
+    """
+    누적 PnL 시계열 계산 (exit_time 기준 정렬)
+
+    exit_time이 없거나 null인 경우에도 안전하게 처리한다.
+    entry_time null 대응: exit_time으로만 정렬.
+
+    Args:
+        df: 거래 DataFrame (realized_pnl_usd, exit_time 컬럼 필요)
+
+    Returns:
+        pd.Series: 누적 PnL (인덱스: exit_time datetime)
+                   빈 DataFrame이면 빈 Series 반환
+    """
+    if df.empty:
+        return pd.Series(dtype=float)
+
+    work = df.copy()
+
+    # exit_time → datetime 변환 (Unix timestamp float 또는 NaN)
+    if "exit_time" in work.columns:
+        work["exit_dt"] = pd.to_datetime(
+            work["exit_time"], unit="s", utc=True, errors="coerce"
+        )
+    else:
+        work["exit_dt"] = pd.NaT
+
+    # PnL 컬럼 결정: realized_pnl_usd 우선, 없으면 pnl
+    pnl_col = "realized_pnl_usd" if "realized_pnl_usd" in work.columns else "pnl"
+    if pnl_col not in work.columns:
+        return pd.Series(dtype=float)
+
+    # exit_time 기준 정렬 (NaT는 뒤로)
+    work = work.sort_values("exit_dt", na_position="last")
+    cumulative = work[pnl_col].fillna(0).cumsum()
+    cumulative.index = work["exit_dt"]
+
+    return cumulative
+
+
+def calculate_win_rate_by_regime(df: pd.DataFrame) -> Dict[str, float]:
+    """
+    Market regime별 승률 계산
+
+    Args:
+        df: 거래 DataFrame (market_regime, realized_pnl_usd/pnl 컬럼 필요)
+
+    Returns:
+        Dict[str, float]: regime → 승률 (0.0~1.0)
+        예: {"trending_up": 0.6, "trending_down": 0.4, "ranging": 0.35, "high_vol": 0.5}
+        빈 DataFrame이면 빈 dict 반환
+    """
+    if df.empty or "market_regime" not in df.columns:
+        return {}
+
+    pnl_col = "realized_pnl_usd" if "realized_pnl_usd" in df.columns else "pnl"
+    if pnl_col not in df.columns:
+        return {}
+
+    result: Dict[str, float] = {}
+    for regime, group in df.groupby("market_regime"):
+        total = len(group)
+        wins = int((group[pnl_col] > 0).sum())
+        result[str(regime)] = wins / total if total > 0 else 0.0
+
+    return result
+
+
+def calculate_max_drawdown(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    최대 드로다운 계산
+
+    Args:
+        df: 거래 DataFrame (realized_pnl_usd/pnl, exit_time 컬럼 필요)
+
+    Returns:
+        Dict with:
+            - max_drawdown_usd: 최대 드로다운 금액 (음수, 0 이하)
+            - max_drawdown_pct: 최대 드로다운 비율 (0~1, 고점 대비)
+            - drawdown_series: pd.Series (누적 PnL 기준 드로다운)
+        빈 DataFrame이면 {"max_drawdown_usd": 0.0, "max_drawdown_pct": 0.0, "drawdown_series": empty}
+    """
+    empty_result: Dict[str, Any] = {
+        "max_drawdown_usd": 0.0,
+        "max_drawdown_pct": 0.0,
+        "drawdown_series": pd.Series(dtype=float),
+    }
+
+    if df.empty:
+        return empty_result
+
+    cum_pnl = calculate_cumulative_pnl(df)
+    if cum_pnl.empty:
+        return empty_result
+
+    # 고점 대비 드로다운
+    running_max = cum_pnl.cummax()
+    drawdown = cum_pnl - running_max  # 항상 0 이하
+
+    max_dd_usd = float(drawdown.min())
+
+    # 비율: 고점이 0 이하이면 계산 불가 → 0.0
+    peak_at_max_dd_idx = drawdown.idxmin()
+    peak_value = float(running_max.loc[peak_at_max_dd_idx]) if peak_at_max_dd_idx is not None else 0.0
+    if peak_value > 0:
+        max_dd_pct = abs(max_dd_usd) / peak_value
+    else:
+        max_dd_pct = 0.0
+
+    return {
+        "max_drawdown_usd": max_dd_usd,
+        "max_drawdown_pct": max_dd_pct,
+        "drawdown_series": drawdown,
+    }
+
+
+def calculate_hold_time_stats(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    포지션 보유 시간 통계
+
+    hold_seconds가 있는 트레이드만 분석.
+    entry_time null인 경우 graceful skip (hold_seconds 기준만 사용).
+
+    Args:
+        df: 거래 DataFrame (hold_seconds 컬럼 필요)
+
+    Returns:
+        Dict with:
+            - mean_seconds: 평균 보유 시간 (초)
+            - median_seconds: 중앙값 보유 시간 (초)
+            - hist_data: list[float] (히스토그램용 raw 데이터)
+            - valid_count: 유효 레코드 수
+        빈 데이터이면 모두 0/빈 리스트 반환
+    """
+    empty_result: Dict[str, Any] = {
+        "mean_seconds": 0.0,
+        "median_seconds": 0.0,
+        "hist_data": [],
+        "valid_count": 0,
+    }
+
+    if df.empty or "hold_seconds" not in df.columns:
+        return empty_result
+
+    valid = df["hold_seconds"].dropna()
+    valid = valid[valid > 0]  # 0 이하 제외
+
+    if valid.empty:
+        return empty_result
+
+    return {
+        "mean_seconds": float(valid.mean()),
+        "median_seconds": float(valid.median()),
+        "hist_data": valid.tolist(),
+        "valid_count": int(len(valid)),
+    }
+
+
+def calculate_daily_pnl(df: pd.DataFrame) -> pd.Series:
+    """
+    날짜별 PnL 합산 (bar chart용)
+
+    exit_time을 기준으로 날짜를 추출한다.
+    exit_time null인 레코드는 제외.
+
+    Args:
+        df: 거래 DataFrame (realized_pnl_usd/pnl, exit_time 컬럼 필요)
+
+    Returns:
+        pd.Series: 날짜(date) → PnL 합산
+                   빈 DataFrame이면 빈 Series 반환
+    """
+    if df.empty:
+        return pd.Series(dtype=float)
+
+    work = df.copy()
+
+    # exit_time → date 변환
+    if "exit_time" not in work.columns:
+        return pd.Series(dtype=float)
+
+    work["exit_date"] = pd.to_datetime(
+        work["exit_time"], unit="s", utc=True, errors="coerce"
+    ).dt.date
+
+    work = work.dropna(subset=["exit_date"])
+    if work.empty:
+        return pd.Series(dtype=float)
+
+    pnl_col = "realized_pnl_usd" if "realized_pnl_usd" in work.columns else "pnl"
+    if pnl_col not in work.columns:
+        return pd.Series(dtype=float)
+
+    daily = work.groupby("exit_date")[pnl_col].sum()
+    daily.index = pd.to_datetime(daily.index)
+
+    return daily

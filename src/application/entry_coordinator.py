@@ -34,13 +34,13 @@ def get_stage_params() -> StageParams:
     현재는 Stage 1 고정 (추후 동적 변경)
 
     Policy:
-    - max_trades_per_day: 10 (Stage 1)
+    - max_trades_per_day: 15 (Stage 1, 2026-03-20: 10→15 공격 파라미터 복원)
     - atr_pct_24h_min: 2% (ATR gate)
     - ev_fee_multiple_k: 2.0 (EV gate)
     - maker_only_default: True (Maker-only 전략)
     """
     return StageParams(
-        max_trades_per_day=10,
+        max_trades_per_day=15,
         atr_pct_24h_min=0.02,  # 2%
         ev_fee_multiple_k=2.0,
         maker_only_default=True,
@@ -94,7 +94,7 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     Policy (Linear USDT):
     - Max loss budget: Stage별 (max_loss_usd_cap, loss_pct_cap 중 작은 값)
     - Stop distance: 3%
-    - Leverage: Stage별 (Stage 1: 3x, Stage 2: 3x, Stage 3: 2x)
+    - Leverage: Stage별 (Stage 1/2: 5x, Stage 3: 3x)
     - Fee rate: 0.01% (Maker)
     - Tick size: 0.5 (Bybit BTCUSDT)
     - Lot size: 1 contract (Bybit Linear BTCUSDT)
@@ -113,17 +113,17 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
         # Stage 1: Expansion ($100 → $300)
         max_loss_usd_cap = 15.0
         loss_pct_cap = 0.15
-        leverage = 3.0  # 2026-03-07: 5x→3x (DCA 제거 + Trailing Stop 전략 전환)
+        leverage = 5.0  # 2026-03-20: 3x→5x 복원 (청산거리 20% >> SL 최대 2%, 안전마진 충분)
     elif equity_usdt < 700:
         # Stage 2: Acceleration ($300 → $700)
         max_loss_usd_cap = 30.0
         loss_pct_cap = 0.10
-        leverage = 3.0  # 2026-03-07: 5x→3x
+        leverage = 5.0  # 2026-03-20: 3x→5x 복원
     else:
         # Stage 3: Preservation ($700 → $1,000)
         max_loss_usd_cap = 45.0
         loss_pct_cap = 0.08
-        leverage = 3.0  # 2026-03-07: 5x→3x
+        leverage = 3.0  # Stage 3: 보존 전략, 3x 유지
 
     # Max loss USDT: min(usd_cap, equity * pct_cap)
     # Codex Review Fix #3: 고정 cap과 % cap 중 작은 값 사용
@@ -140,7 +140,7 @@ def build_sizing_params(signal: Signal, market_data: MarketDataInterface, atr: f
     else:
         stop_distance_pct = 0.01  # fallback 1.0%
 
-    # Leverage는 위에서 Stage별로 설정됨 (Stage 1/2: 3x, Stage 3: 2x)
+    # Leverage는 위에서 Stage별로 설정됨 (Stage 1/2: 5x, Stage 3: 3x)
 
     # Fee rate (Maker: 0.01%)
     fee_rate = 0.0001

@@ -6,8 +6,13 @@
     "language": "python",
     "framework": null,
     "database": null,
-    "infrastructure": ["docker"],
-    "external_apis": ["anthropic", "telegram"]
+    "infrastructure": [
+      "docker"
+    ],
+    "external_apis": [
+      "anthropic",
+      "telegram"
+    ]
   },
   "context": {
     "existing_patterns": "Clean Architecture (domain/application/infrastructure). TDD with pytest. 422 tests passing. Mainnet 운영 중 (Bybit BTCUSDT Linear Futures). 로그: logs/mainnet/trades_*.jsonl.",
@@ -58,7 +63,9 @@
       "completed_at": "2026-03-12",
       "description": "entry_coordinator raw_stop_pct ATR 배수 통일",
       "priority": 2,
-      "dependencies": ["S2"]
+      "dependencies": [
+        "S2"
+      ]
     },
     {
       "id": "S5",
@@ -105,7 +112,9 @@
         "비동기 실행 (봇 메인 루프 블로킹 없음)"
       ],
       "priority": 2,
-      "dependencies": ["S6"]
+      "dependencies": [
+        "S6"
+      ]
     },
     {
       "id": "S8",
@@ -139,7 +148,9 @@
         "빈 트레이드 날에도 에러 없이 '거래 없음' 리포트 생성"
       ],
       "priority": 3,
-      "dependencies": ["S7"]
+      "dependencies": [
+        "S7"
+      ]
     },
     {
       "id": "S10",
@@ -157,7 +168,9 @@
         "test_approval_gateway_rejects_on_timeout 통과"
       ],
       "priority": 3,
-      "dependencies": ["S7"]
+      "dependencies": [
+        "S7"
+      ]
     },
     {
       "id": "S11",
@@ -176,7 +189,11 @@
         "각 에이전트 단위 테스트 커버리지 80%+"
       ],
       "priority": 4,
-      "dependencies": ["S6", "S7", "S8"]
+      "dependencies": [
+        "S6",
+        "S7",
+        "S8"
+      ]
     },
     {
       "id": "S12",
@@ -195,7 +212,11 @@
         "test_hypothesis_loop_api_failure_keeps_current_params 통과"
       ],
       "priority": 4,
-      "dependencies": ["S9", "S10", "S11"]
+      "dependencies": [
+        "S9",
+        "S10",
+        "S11"
+      ]
     },
     {
       "id": "S13",
@@ -214,7 +235,127 @@
         "test_shadow_trader_rejects_on_drawdown_increase 통과"
       ],
       "priority": 5,
-      "dependencies": ["S11", "S12"]
+      "dependencies": [
+        "S11",
+        "S12"
+      ]
+    },
+    {
+      "id": "S14",
+      "title": "RSI 지표 모듈 — 과매수/과매도 신호 (score +2)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [],
+      "description": "RSI(14) 계산. <30=LONG +2점, >70=SHORT +2점. src/application/indicators/rsi.py. TDD 필수.",
+      "stream": "A",
+      "wave": 1
+    },
+    {
+      "id": "S15",
+      "title": "MACD 모멘텀 크로스오버 신호 (score +1)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [
+        "S14"
+      ],
+      "description": "MACD(12,26,9). bullish cross=LONG +1, bearish cross=SHORT +1. src/application/indicators/macd.py.",
+      "stream": "A",
+      "wave": 1
+    },
+    {
+      "id": "S16",
+      "title": "볼린저 밴드 이탈 신호 (score +1)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [
+        "S14"
+      ],
+      "description": "BB(20, 2σ). price<=lower=LONG +1, price>=upper=SHORT +1. src/application/indicators/bollinger.py.",
+      "stream": "A",
+      "wave": 1
+    },
+    {
+      "id": "S17",
+      "title": "거래량 확인 신호 (score +1)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [],
+      "description": "현재 거래량 > 20기간 평균 시 +1 (신호 강도 확인). src/application/indicators/volume.py.",
+      "stream": "A",
+      "wave": 1
+    },
+    {
+      "id": "S18",
+      "title": "앙상블 신호 엔진 — 다중지표 점수 합산 (≥3/6 진입)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [
+        "S14",
+        "S15",
+        "S16",
+        "S17"
+      ],
+      "description": "점수 합산 엔진. LONG/SHORT 양방향. ≥3점 진입. signal_generator.py에 통합. src/application/signal_ensemble.py.",
+      "stream": "A",
+      "wave": 1
+    },
+    {
+      "id": "S19",
+      "title": "Kelly 분수 포지션 사이징 (공격적 수익 최대화)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [],
+      "description": "Kelly f*=(p*b-q)/b. 최대 25% 캡. 히스토리 부족 시 기존 loss_budget fallback. src/application/kelly_sizer.py.",
+      "stream": "B",
+      "wave": 1
+    },
+    {
+      "id": "S20",
+      "title": "ReflectionAgent 고도화 + Stage1 공격 파라미터 (5x, 15trades)",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [
+        "S19"
+      ],
+      "description": "ReflectionAgent: 다중지표 패턴 인식. entry_coordinator: Stage1 leverage=5x, max_trades=15/day. 청산거리 확인 필수.",
+      "stream": "B",
+      "wave": 1
+    },
+    {
+      "id": "S21",
+      "title": "대시보드 v2 — PnL 커브 + 승률/레짐 분석 + 드로다운 차트",
+      "status": "todo",
+      "priority": 1,
+      "dependencies": [],
+      "description": "Streamlit 대시보드 강화. PnL curve, win_rate by regime, MDD chart, hold_time histogram, signal score breakdown. entry_time 수정 반영.",
+      "stream": "C",
+      "wave": 1
+    },
+    {
+      "id": "S22",
+      "title": "Wave 2: 앙상블 ↔ ReflectionAgent 피드백 루프 통합",
+      "status": "todo",
+      "priority": 2,
+      "dependencies": [
+        "S18",
+        "S20",
+        "S21"
+      ],
+      "description": "앙상블 신호 점수를 ReflectionAgent에 전달. 패턴 학습 루프 완성. ShadowTrader 24h 검증.",
+      "stream": "integration",
+      "wave": 2
+    },
+    {
+      "id": "S23",
+      "title": "Wave 3: Mainnet 배포 (사용자 결재 후)",
+      "status": "todo",
+      "priority": 3,
+      "dependencies": [
+        "S22"
+      ],
+      "description": "Wave 2 QG 통과 + 백테스트 승률 > 30.3% 확인 후 사용자 결재. Docker rebuild + 재배포.",
+      "stream": "deploy",
+      "wave": 3
     }
   ],
   "non_functional": {

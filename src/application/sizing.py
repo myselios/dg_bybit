@@ -71,7 +71,10 @@ class SizingResult:
 # HOTFIX 2026-03-06: Limit max contracts to prevent margin issues
 MAX_CONTRACTS_HARD_CAP = 3  # Safety limit: prevent 110007 ab not enough (2026-03-19: 5→3, 4계약 시 잔고부족 반복)
 
-def calculate_contracts(params: SizingParams) -> SizingResult:
+def calculate_contracts(
+    params: SizingParams,
+    kelly_fraction: float | None = None,
+) -> SizingResult:
     """
     Position sizing (loss budget + margin 제약) — Linear USDT
 
@@ -87,19 +90,22 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
             - qty_step: Lot size (예: 1)
             - tick_size: Tick size (예: 0.5)
             - contract_size: Contract size in BTC (기본: 0.001)
+        kelly_fraction: Kelly 분수 (Optional). 제공 시 Kelly 기반
+            position budget(equity * fraction)과 loss_budget 중 min 선택.
 
     Returns:
         SizingResult: contracts + reject_reason
 
     Steps:
         1. Loss budget 기준 qty 계산 (Linear 공식)
+        1a. [Optional] Kelly budget 계산 → loss_budget과 min()
         2. Margin 기준 qty 계산
         3. min(loss_based, margin_based)
         4. Qty → Contracts 변환 (contract_size 기준)
         5. Tick/Lot size 보정
         6. 보정 후 재검증 (margin feasibility)
         7. 최소 수량 검증
-        8. HOTFIX: Max contracts hard cap (5)
+        8. HOTFIX: Max contracts hard cap
 
     Linear Formula:
         loss_usdt_at_stop = qty * entry_price * stop_distance_pct
@@ -113,6 +119,15 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
     qty_from_loss = params.max_loss_usdt / (
         params.entry_price_usd * params.stop_distance_pct
     )
+
+    # Step 1a: Kelly budget override (optional, 보수적 선택)
+    if kelly_fraction is not None and kelly_fraction > 0:
+        kelly_budget_usdt = params.equity_usdt * kelly_fraction
+        # Kelly budget → qty 환산 (loss budget과 동일 공식 역산)
+        qty_from_kelly = kelly_budget_usdt / (
+            params.entry_price_usd * params.stop_distance_pct
+        )
+        qty_from_loss = min(qty_from_loss, qty_from_kelly)
 
     # Step 2: Margin 기준 qty 계산
     # available_usdt = equity_usdt * 0.5 (50%만 사용, buffer)

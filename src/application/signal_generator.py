@@ -106,6 +106,8 @@ def generate_signal(
     funding_rate: float = 0.0001,
     ma_slope_pct: float = 0.0,
     threshold_config: Optional["ThresholdConfig"] = None,
+    prices: Optional[list] = None,
+    volumes: Optional[list] = None,
 ) -> Optional[Signal]:
     """
     Grid 전략 기반 신호 생성 (Phase 13c: Regime-Aware)
@@ -136,7 +138,30 @@ def generate_signal(
     t_trend = threshold_config.t_trend if threshold_config is not None else T_TREND
     t_range_entry = threshold_config.t_range_entry if threshold_config is not None else T_RANGE_ENTRY
 
-    # 첫 진입: Regime-aware 방향 결정
+    # 앙상블 모드: prices >= 26개 제공 시 5지표 앙상블 신호로 첫 진입 결정
+    _ENSEMBLE_MIN_PRICES = 26
+    if (
+        last_fill_price is None
+        and prices is not None
+        and len(prices) >= _ENSEMBLE_MIN_PRICES
+    ):
+        from application.signal_ensemble import calculate_ensemble_score
+
+        ensemble = calculate_ensemble_score(
+            prices=prices,
+            volumes=volumes if volumes is not None else [],
+            ma_slope_pct=ma_slope_pct,
+            t_trend=t_trend,
+        )
+        logger.debug(
+            f"Ensemble mode: side={ensemble.side}, score={ensemble.score}, "
+            f"components={ensemble.components}"
+        )
+        if ensemble.side is not None:
+            return Signal(side=ensemble.side, price=current_price, qty=qty)
+        return None
+
+    # 첫 진입: Regime-aware 방향 결정 (기존 legacy 모드)
     if last_fill_price is None:
         regime, direction = _determine_regime_with_threshold(ma_slope_pct, t_trend)
 

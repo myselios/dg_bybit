@@ -235,3 +235,152 @@ def test_invalid_json_handling():
         assert logs[1].order_id == "order_valid_2"
     finally:
         log_file.unlink()
+
+
+# ============================================================================
+# Stream C: load_all_trades / get_summary_stats 테스트
+# ============================================================================
+
+def _make_trade_jsonl_line(**overrides) -> dict:
+    """테스트용 JSONL 레코드 생성"""
+    base = {
+        "order_id": "test_order",
+        "fills": [{"price": 50000.0, "qty": 0.001, "fee": 0.01,
+                   "timestamp": "2026-03-01T10:00:00"}],
+        "slippage_usd": 0.1,
+        "latency_rest_ms": 10.0,
+        "latency_ws_ms": 5.0,
+        "latency_total_ms": 15.0,
+        "funding_rate": 0.0001,
+        "mark_price": 50000.0,
+        "index_price": 50000.0,
+        "orderbook_snapshot": {},
+        "market_regime": "ranging",
+        "side": "Sell",
+        "direction": "LONG",
+        "qty_btc": 0.001,
+        "entry_price": 49000.0,
+        "exit_price": 50000.0,
+        "realized_pnl_usd": 1.0,
+        "fee_usd": 0.02,
+        "schema_version": "1.0",
+        "config_hash": "abc",
+        "git_commit": "def",
+        "exchange_server_time_offset_ms": 0,
+        "entry_time": None,
+        "exit_time": 1_740_826_800.0,
+        "hold_seconds": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_load_all_trades_basic():
+    """
+    load_all_trades: 여러 trades_*.jsonl 파일 로드 → 통합 DataFrame 반환
+
+    Given: 2개 trades_*.jsonl 파일 (각 2행)
+    When: load_all_trades() 호출
+    Then: 4행 DataFrame 반환, exit_time 컬럼 존재
+    """
+    from src.dashboard.data_pipeline import load_all_trades
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_dir = Path(tmpdir)
+        r1 = _make_trade_jsonl_line(order_id="o1", exit_time=1_740_826_800.0)
+        r2 = _make_trade_jsonl_line(order_id="o2", exit_time=1_740_826_900.0)
+        r3 = _make_trade_jsonl_line(order_id="o3", exit_time=1_740_913_200.0)
+        r4 = _make_trade_jsonl_line(order_id="o4", exit_time=1_740_913_300.0)
+
+        with open(log_dir / "trades_2026-03-01.jsonl", "w") as f:
+            f.write(json.dumps(r1) + "\n")
+            f.write(json.dumps(r2) + "\n")
+        with open(log_dir / "trades_2026-03-02.jsonl", "w") as f:
+            f.write(json.dumps(r3) + "\n")
+            f.write(json.dumps(r4) + "\n")
+
+        df = load_all_trades(str(log_dir))
+
+        assert len(df) == 4
+        assert "exit_time" in df.columns
+        assert "entry_time" in df.columns
+        assert "hold_seconds" in df.columns
+
+
+def test_load_all_trades_null_entry_time():
+    """
+    entry_time null → NaN (crash 없음)
+    """
+    from src.dashboard.data_pipeline import load_all_trades
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_dir = Path(tmpdir)
+        r1 = _make_trade_jsonl_line(order_id="o1", entry_time=None)
+        with open(log_dir / "trades_2026-03-01.jsonl", "w") as f:
+            f.write(json.dumps(r1) + "\n")
+
+        df = load_all_trades(str(log_dir))
+
+        assert len(df) == 1
+        import math
+        assert math.isnan(df.iloc[0]["entry_time"])
+
+
+def test_load_all_trades_empty_dir():
+    """
+    trades_*.jsonl 파일 없는 디렉토리 → 빈 DataFrame, crash 없음
+    """
+    from src.dashboard.data_pipeline import load_all_trades
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        df = load_all_trades(tmpdir)
+
+        assert df.empty
+
+
+def test_load_all_trades_nonexistent_dir():
+    """
+    존재하지 않는 디렉토리 → 빈 DataFrame 반환 (예외 아님)
+    """
+    from src.dashboard.data_pipeline import load_all_trades
+
+    df = load_all_trades("/nonexistent/path/that/does/not/exist")
+
+    assert df.empty
+
+
+def test_get_summary_stats_basic():
+    """
+    get_summary_stats: 기본 통계 계산
+
+    Given: realized_pnl_usd 컬럼이 있는 DataFrame
+    When: get_summary_stats() 호출
+    Then: total_trades, win_rate, total_pnl, avg_win, avg_loss, rr_ratio, max_drawdown 반환
+    """
+    from src.dashboard.data_pipeline import get_summary_stats
+
+    df = pd.DataFrame([
+        {"realized_pnl_usd": 10.0},
+        {"realized_pnl_usd": -5.0},
+        {"realized_pnl_usd": 8.0},
+        {"realized_pnl_usd": -3.0},
+    ])
+    result = get_summary_stats(df)
+
+    assert result["total_trades"] == 4
+    assert result["win_rate"] == pytest.approx(0.5, rel=1e-6)
+    assert result["total_pnl"] == pytest.approx(10.0, rel=1e-6)
+    assert result["avg_win"] == pytest.approx(9.0, rel=1e-6)   # (10+8)/2
+    assert result["avg_loss"] == pytest.approx(-4.0, rel=1e-6)  # (-5-3)/2
+    assert result["rr_ratio"] == pytest.approx(9.0 / 4.0, rel=1e-6)
+
+
+def test_get_summary_stats_empty():
+    """빈 DataFrame → 모두 0 반환, crash 없음"""
+    from src.dashboard.data_pipeline import get_summary_stats
+
+    result = get_summary_stats(pd.DataFrame())
+
+    assert result["total_trades"] == 0
+    assert result["win_rate"] == 0.0
+    assert result["total_pnl"] == 0.0
