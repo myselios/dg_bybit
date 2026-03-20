@@ -69,7 +69,7 @@ class SizingResult:
 
 
 # HOTFIX 2026-03-06: Limit max contracts to prevent margin issues
-MAX_CONTRACTS_HARD_CAP = 5  # Safety limit: prevent 110007 ab not enough
+MAX_CONTRACTS_HARD_CAP = 3  # Safety limit: prevent 110007 ab not enough (2026-03-19: 5→3, 4계약 시 잔고부족 반복)
 
 def calculate_contracts(params: SizingParams) -> SizingResult:
     """

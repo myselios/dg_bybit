@@ -63,7 +63,7 @@ class BybitAdapter:
         self.atr_calculator = ATRCalculator(period=14, default_multiplier=0.5)
         self.session_risk_tracker = SessionRiskTracker()
         self.market_regime_analyzer = MarketRegimeAnalyzer(
-            ma_period=20,
+            ma_period=10,  # 2026-03-19: 20→10, slope 민감도 2배 향상
             trend_threshold_pct=0.2,
             high_vol_threshold_percentile=70.0
         )

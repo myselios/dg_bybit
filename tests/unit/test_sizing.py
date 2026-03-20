@@ -118,10 +118,11 @@ def test_tick_lot_size_correction():
     Tick/Lot size 보정 (qty_step)
 
     Example:
-        qty_step = 5 contracts
-        계산 결과 = 33 contracts
-        보정 후 = 30 contracts (floor(33 / 5) * 5 = 30)
+        qty_step = 1 (BTCUSDT 실제 값)
+        계산 결과 = MAX_CONTRACTS_HARD_CAP = 3
+        보정 후 = 3 (1의 배수)
     """
+    from src.application.sizing import MAX_CONTRACTS_HARD_CAP
     params = SizingParams(
         max_loss_usdt=100.0,
         entry_price_usd=100000.0,
@@ -131,15 +132,16 @@ def test_tick_lot_size_correction():
         available_usdt=10000.0,
         fee_rate=0.0001,
         direction="LONG",
-        qty_step=5,  # 5 contracts씩만 거래 가능
+        qty_step=1,  # BTCUSDT 실제 qty_step
         tick_size=0.5,
         contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # Lot size 보정 검증
-    assert result.contracts % params.qty_step == 0  # 5의 배수
+    # Hard cap 및 Lot size 보정 검증
+    assert result.contracts <= MAX_CONTRACTS_HARD_CAP
+    assert result.contracts % params.qty_step == 0
     assert result.reject_reason is None
 
 
@@ -246,16 +248,12 @@ def test_tick_lot_size_revalidation_after_rounding():
     """
     보정 후 재검증 (margin feasibility 재확인)
 
-    보정 전 contracts가 margin을 통과해도,
-    보정 후 contracts가 margin을 초과하면 REJECT
-
-    Example:
-        보정 전 = 24.8 contracts → floor(24) = 24 (margin 통과)
-        Lot size 보정 = 20 contracts (qty_step=5)
-        재검증 → 통과
+    Hard cap(3) 적용 후 margin 재검증 통과 확인
+    qty_step=1 (BTCUSDT 실제 값)
     """
+    from src.application.sizing import MAX_CONTRACTS_HARD_CAP
     params = SizingParams(
-        max_loss_usdt=75.0,  # 약 25 contracts
+        max_loss_usdt=75.0,
         entry_price_usd=100000.0,
         stop_distance_pct=0.03,
         leverage=3.0,
@@ -263,16 +261,17 @@ def test_tick_lot_size_revalidation_after_rounding():
         available_usdt=1000.0,
         fee_rate=0.0001,
         direction="LONG",
-        qty_step=5,  # Lot size 보정
+        qty_step=1,  # BTCUSDT 실제 qty_step
         tick_size=0.5,
         contract_size=0.001,
     )
 
     result = calculate_contracts(params)
 
-    # 보정 후에도 margin 통과 검증
-    assert result.contracts % params.qty_step == 0  # Lot size 준수
-    assert result.reject_reason is None  # 재검증 통과
+    # Hard cap 적용 후 margin 재검증 통과
+    assert result.contracts <= MAX_CONTRACTS_HARD_CAP
+    assert result.contracts % params.qty_step == 0
+    assert result.reject_reason is None
 
 
 def test_contract_size_conversion():
