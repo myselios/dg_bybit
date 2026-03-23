@@ -19,6 +19,7 @@ Exports:
 
 import logging
 import time
+import datetime
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 from domain.state import State, Position, Direction, StopStatus
@@ -37,6 +38,7 @@ from application.event_processor import match_pending_order, create_position_fro
 
 # Phase 11b: Refactored modules (God Object mitigation)
 from application.emergency_checker import check_emergency_status
+from application.drawdown_recovery import check_drawdown_recovery, DrawdownState  # Wave 5 Stream C
 from application.entry_coordinator import (
     get_stage_params,
     build_signal_context,
@@ -70,7 +72,7 @@ def _compute_adaptive_trail_distance(
     direction: "Direction",
 ) -> float:
     """
-    수익 수준에 따른 adaptive trailing stop 거리 계산 (Wave4 R:R 개선)
+    수익 수준에 따른 adaptive trailing stop 거리 계산 (Wave5 Stream B: 조기 청산 방지)
 
     Args:
         trail_atr: 진입 시점 ATR
@@ -82,14 +84,20 @@ def _compute_adaptive_trail_distance(
         trail_distance: trailing stop 거리 (USD)
 
     Policy:
-    - 기본: ATR * 0.5
-    - 수익 >= ATR * 1.0: ATR * 0.3 (수익 보호 강화)
-    - 수익 >= ATR * 2.0: ATR * 0.2 (최대 수익 보호)
+    - 수익 < ATR*0.8: trailing 비활성화 (trail_price보다 큰 값 반환 → 미발동)
+    - 수익 >= ATR*0.8: trailing 활성화 (기본 ATR*0.5)
+    - 수익 >= ATR*1.0: ATR*0.3 (수익 보호 강화)
+    - 수익 >= ATR*2.0: ATR*0.2 (최대 수익 보호)
     """
     if direction == Direction.LONG:
         unrealized_profit = trail_price - entry_price
     else:
         unrealized_profit = entry_price - trail_price
+
+    # Wave5 Stream B: ATR*0.8 미만이면 trailing 비활성화
+    # trail_price보다 큰 값 반환 → 가격이 trail_price - trail_distance 아래로 내려가지 않음
+    if unrealized_profit < trail_atr * 0.8:
+        return trail_price + 1.0  # 사실상 무한대 → trailing 미발동
 
     if unrealized_profit >= trail_atr * 2.0:
         return trail_atr * 0.2
@@ -237,6 +245,14 @@ class Orchestrator:
         self._klines_cache: Optional[Dict[str, Any]] = None  # {"prices": list, "volumes": list, "ts": float}
         self._KLINES_CACHE_TTL = 30.0  # 30초
 
+        # Wave 5A: Entry signal 정보 보존 (EXIT pending_order로 덮어써져도 유지)
+        self._entry_signal_score: Optional[int] = None
+        self._entry_signal_components: Optional[Dict[str, Any]] = None
+
+        # Wave 5 Stream C: DrawdownRecovery 상태 추적
+        self._drawdown_last_reset_date: str = ""  # 마지막 날짜 초기화 기준 (YYYY-MM-DD)
+        self._drawdown_state: Optional[DrawdownState] = None  # 최신 DrawdownState 캐시
+
     def run_tick(self) -> TickResult:
         """
         Tick 실행 (Emergency → Events → Position → Entry)
@@ -363,10 +379,11 @@ class Orchestrator:
         if position is None:
             return
 
-        # Wave 2A: pending_order에서 앙상블 결과 추출
-        _signal_score = None
-        _signal_components = None
-        if self.pending_order:
+        # Wave 5A: _entry_signal_score 우선 사용 (EXIT pending_order로 덮어써져도 유지)
+        # pending_order는 EXIT 시점에 exit order 정보로 교체되어 signal_score가 없음
+        _signal_score = self._entry_signal_score
+        _signal_components = self._entry_signal_components
+        if _signal_score is None and self.pending_order:
             _signal_score = self.pending_order.get("signal_score")
             _signal_components = self.pending_order.get("signal_components")
 
@@ -566,6 +583,9 @@ class Orchestrator:
                     self._last_entry_fill_price = None  # exit 후 Grid 초기화 (역추세 재진입 방지)
                     self.pending_order = None
                     self.pending_order_timestamp = None
+                    # Wave 5A: 트레이드 완료 후 entry signal 정보 초기화
+                    self._entry_signal_score = None
+                    self._entry_signal_components = None
 
             except Exception as e:
                 logger.error(f"Exception in _process_events: {type(e).__name__}: {e}")
@@ -890,8 +910,8 @@ class Orchestrator:
         if atr is None:
             return {"blocked": True, "reason": "atr_unavailable"}
 
-        # Grid spacing 계산 (ATR * 0.2 → 재진입 빈도 증가, 더 좁은 그리드, 50% more aggressive)
-        self.grid_spacing = calculate_grid_spacing(atr=atr, multiplier=0.2)
+        # Grid spacing 계산 (ATR * 0.3 → Wave5 Stream B: 건당 수익 기대값 50% 증가)
+        self.grid_spacing = calculate_grid_spacing(atr=atr, multiplier=0.3)
 
         # 현재 가격
         current_price = self.market_data.get_current_price()
@@ -945,6 +965,24 @@ class Orchestrator:
             )
             return {"blocked": True, "reason": "no_signal"}
 
+        # Wave 5A: Regime 방향 필터 (trending 레짐에서 역방향 진입 차단)
+        # trending_down → LONG(Buy) 차단, trending_up → SHORT(Sell) 차단
+        # ranging / high_vol은 양방향 허용
+        atr_percentile = self.market_data.get_atr_percentile()
+        current_regime = self._classify_regime(ma_slope_pct=ma_slope_pct, atr_percentile=atr_percentile)
+        if current_regime == "trending_down" and signal.side == "Buy":
+            logger.info(
+                f"→ Entry blocked: regime_direction_filter "
+                f"(regime=trending_down, signal_side=Buy, ma_slope={ma_slope_pct:.4f}%)"
+            )
+            return {"blocked": True, "reason": "regime_direction_filter"}
+        if current_regime == "trending_up" and signal.side == "Sell":
+            logger.info(
+                f"→ Entry blocked: regime_direction_filter "
+                f"(regime=trending_up, signal_side=Sell, ma_slope={ma_slope_pct:.4f}%)"
+            )
+            return {"blocked": True, "reason": "regime_direction_filter"}
+
         # Step 4: Entry gates 검증
         stage = get_stage_params()
         trades_today = self.market_data.get_trades_today()
@@ -961,8 +999,33 @@ class Orchestrator:
         if sizing_result.contracts == 0:
             return {"blocked": True, "reason": sizing_result.reject_reason}
 
-        # Signal에 qty 업데이트
-        signal.qty = sizing_result.contracts
+        # Wave 5 Stream C: DrawdownRecovery 체크 (sizing 후, entry 전)
+        _today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        _daily_loss_raw = self.market_data.get_daily_realized_pnl_usd()
+        _daily_loss = abs(_daily_loss_raw) if (_daily_loss_raw is not None and _daily_loss_raw < 0) else 0.0
+        _drawdown_state = check_drawdown_recovery(
+            daily_loss_usd=_daily_loss,
+            max_loss_usd=sizing_params.max_loss_usdt,
+            last_reset_date=self._drawdown_last_reset_date or _today,
+            today=_today,
+        )
+        if _drawdown_state.reset_occurred:
+            self._drawdown_last_reset_date = _today
+        self._drawdown_state = _drawdown_state
+
+        if _drawdown_state.status == "HALT":
+            logger.warning(f"🛑 DrawdownRecovery HALT: {_drawdown_state.halt_reason}")
+            return {"blocked": True, "reason": f"drawdown_halt: {_drawdown_state.halt_reason}"}
+
+        if _drawdown_state.status == "REDUCE":
+            logger.info(f"⚠️ DrawdownRecovery REDUCE (×{_drawdown_state.size_multiplier}): {_drawdown_state.halt_reason}")
+
+        # Signal에 qty 업데이트 (DrawdownRecovery size_multiplier 적용)
+        _effective_contracts = int(sizing_result.contracts * _drawdown_state.size_multiplier)
+        if _effective_contracts == 0 and _drawdown_state.status == "REDUCE":
+            logger.info("⚠️ DrawdownRecovery: size_multiplier 적용 후 contracts=0 → blocked")
+            return {"blocked": True, "reason": "drawdown_reduce_contracts_zero"}
+        signal.qty = sizing_result.contracts if _drawdown_state.status == "NORMAL" else _effective_contracts
 
         # Signal context 생성 (EV gate용)
         signal_context = build_signal_context(signal=signal, grid_spacing=self.grid_spacing)
@@ -1013,6 +1076,7 @@ class Orchestrator:
                 time_in_force="GTC",
                 order_link_id=order_link_id_entry,
                 category="linear",
+                is_post_only=True,  # Wave5 Stream B: Maker fee 보장 (0.01% vs Taker 0.06%)
             )
 
             # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
@@ -1063,10 +1127,41 @@ class Orchestrator:
             "signal_components": signal.components,
         }
 
+        # Wave 5A: entry signal 정보 보존 (EXIT pending_order 교체 후에도 참조 가능)
+        self._entry_signal_score = signal.score
+        self._entry_signal_components = signal.components
+
         # Phase 12a-4c: Pending order 발주 시각 기록
         self.pending_order_timestamp = time.time()
 
         return {"blocked": False, "reason": None}
+
+    @staticmethod
+    def _classify_regime(ma_slope_pct: float, atr_percentile: float) -> str:
+        """
+        Wave 5A: 현재 시장 레짐 분류.
+
+        규칙:
+        - atr_percentile >= 80 → "high_vol" (우선)
+        - atr_percentile < 50 and ma_slope_pct > 0.1 → "trending_up"
+        - atr_percentile < 50 and ma_slope_pct < -0.1 → "trending_down"
+        - 그 외 → "ranging"
+
+        Args:
+            ma_slope_pct: MA slope (%)
+            atr_percentile: ATR percentile (0-100)
+
+        Returns:
+            str: "trending_up" | "trending_down" | "ranging" | "high_vol"
+        """
+        if atr_percentile >= 80:
+            return "high_vol"
+        if atr_percentile < 50:
+            if ma_slope_pct > 0.1:
+                return "trending_up"
+            if ma_slope_pct < -0.1:
+                return "trending_down"
+        return "ranging"
 
     def _get_price_volume_history(self) -> tuple:
         """

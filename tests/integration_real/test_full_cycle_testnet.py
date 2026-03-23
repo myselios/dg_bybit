@@ -56,6 +56,7 @@ class MockRestClient:
         price: str = None,
         category: str = "linear",
         reduce_only: bool = False,
+        is_post_only: bool = False,
     ):
         """Mock place_order method (matches bybit_rest_client.py signature)"""
         if self.should_fail:

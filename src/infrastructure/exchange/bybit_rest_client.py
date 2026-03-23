@@ -297,6 +297,7 @@ class BybitRestClient:
         category: str = "linear",
         reduce_only: bool = False,
         position_idx: int = 0,
+        is_post_only: bool = False,
     ) -> Dict[str, Any]:
         """
         주문 발주
@@ -349,6 +350,10 @@ class BybitRestClient:
         # reduceOnly (Exit 주문에서 반대 포지션 오픈 방지)
         if reduce_only:
             params["reduceOnly"] = True
+
+        # Post-Only (Wave5 Stream B: Maker fee 보장, entry 주문)
+        if is_post_only:
+            params["isPostOnly"] = True
 
         return self._make_request("POST", "/v5/order/create", params)
 

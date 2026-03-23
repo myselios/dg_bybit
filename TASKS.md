@@ -2,9 +2,9 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-03-20 (KST) — Wave 4 Stream C
-Bot Status: 운영 중 (Agentic v1 + 앙상블 신호 재배포 완료 2026-03-20)
-Equity: ~$110.61 USDT
+Last Updated: 2026-03-23 (KST) — Wave 5 Stream C
+Bot Status: 운영 중 (Agentic v1 + 앙상블 신호 배포 중)
+Equity: ~$107 USDT
 Target: $1,000 USDT
 
 ---
@@ -61,6 +61,19 @@ Target: $1,000 USDT
   - 명령어: `python scripts/analyze_trades.py`
 - [x] Wave 4 Stream C: Breakout 신호 추가 (breakout.py, 최대점수 6→7) (2026-03-20)
 
+## P1: Wave 5 (2026-03-23)
+
+- [x] Wave 5 Stream C: Drawdown Recovery 구현 (2026-03-23)
+  - `src/application/drawdown_recovery.py` 신규 (pure function, frozen dataclass)
+  - `tests/unit/test_drawdown_recovery.py` 14 테스트 통과
+  - orchestrator.py 통합: sizing 후 size_multiplier 적용 (REDUCE×0.7, HALT×0.0)
+  - 날짜 기반 자동 복구 (UTC 0시)
+- [x] Backtest 분석 — T=3 vs T=4 (2026-03-23)
+  - T=4 유지 결정: 승률 12.56%, 손실 -$6.60 (T=3: 11.18%, -$19.73)
+  - `scripts/run_backtest.py` _score() 버그 수정 (sharpe×win_rate→net_pnl 기반)
+- [ ] Wave 5: Docker 재배포 (DrawdownRecovery 반영) — 사용자 승인 필요
+- [ ] 실거래 10건 이상 후 앙상블 score 기반 트레이드 검증
+
 ## P2: 중기 (데이터 기반 튜닝)
 
 - [ ] 파라미터 2차 튜닝 (TP/SL/Grid multiplier)
@@ -75,8 +88,8 @@ Target: $1,000 USDT
 ## P3: 장기 ($1,000 스케일업)
 
 - [ ] Stage 2 전환 ($200 달성 시) — Leverage 3x, max_loss $20, loss_pct 8%
-- [ ] Drawdown Recovery 로직
-- [ ] Backtest 프레임워크 구축 (Bybit Historical Kline API 활용)
+- [x] Drawdown Recovery 로직 (2026-03-23, Wave 5 Stream C)
+- [x] Backtest 프레임워크 구축 (Bybit Historical Kline API 활용) (2026-03-20)
 
 ---
 

@@ -55,6 +55,7 @@ class MockRestClient:
         order_link_id: str,
         category: str = "linear",
         reduce_only: bool = False,
+        is_post_only: bool = False,
     ):
         """Mock place_order method"""
         if self.should_fail:

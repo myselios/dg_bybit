@@ -434,11 +434,13 @@ def main() -> None:
             f"sharpe={metrics['sharpe']:.2f}"
         )
 
-    # Optimal: highest sharpe * win_rate − max_dd penalty
+    # Optimal: net_pnl 최대 + max_dd 최소 (두 지표 모두 음수인 경우 올바른 비교)
+    # sharpe * win_rate 조합은 모두 음수일 때 왜곡됨 → net_pnl 기반으로 전환
     def _score(m: dict) -> float:
         if m["trades"] == 0:
             return -999.0
-        return m["sharpe"] * m["win_rate"] - m["max_dd"] * 0.1
+        # net_pnl이 클수록(음수면 절대값 작을수록), max_dd가 작을수록 좋음
+        return m["net_pnl"] - m["max_dd"] * 0.5
 
     optimal_t = max([2, 3, 4], key=lambda t: _score(results[f"threshold_{t}"]))
     opt_metrics = results[f"threshold_{optimal_t}"]

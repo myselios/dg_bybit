@@ -10,7 +10,7 @@
     "status": "active",
     "goal": "BTC 100→1000 USDT: 수익 최우선. 다중지표 앙상블(RSI+MACD+BB+Volume) + 공격적 포지션 사이징 + 자동 파라미터 조절 + 종합 대시보드. 청산=실패 원칙 유지, 공격적 수익 추구.",
     "profit_first": true,
-    "current_equity_usdt": 110.61,
+    "current_equity_usdt": 107.0,
     "target_equity_usdt": 1000.0,
     "baseline_performance": {
       "total_trades": 33,
@@ -21,10 +21,11 @@
     }
   },
   "waves": {
-    "current": 2,
+    "current": 5,
     "wave1": {
       "name": "신호엔진 + 조절엔진 + 대시보드 병렬 구축",
       "status": "completed",
+      "completed_at": "2026-03-20",
       "streams": {
         "A": {
           "name": "Signal Intelligence",
@@ -69,16 +70,70 @@
             "src/dashboard/ui_components.py"
           ]
         }
-      },
-      "completed_at": "2026-03-20"
+      }
     },
     "wave2": {
       "name": "통합: 앙상블 신호 ↔ ReflectionAgent 피드백 루프 + ShadowTrader 검증",
-      "status": "in_progress"
+      "status": "completed",
+      "completed_at": "2026-03-20"
     },
     "wave3": {
       "name": "Mainnet 배포 (사용자 결재 필수, 자동실행 절대 금지)",
-      "status": "blocked_by_wave2"
+      "status": "completed",
+      "completed_at": "2026-03-20",
+      "note": "Docker 재배포 완료, Ensemble mode 활성"
+    },
+    "wave4": {
+      "name": "Breakout 신호 + Volume 활성화 + ENTRY_THRESHOLD=4 + is_post_only Maker 최적화",
+      "status": "completed",
+      "completed_at": "2026-03-20",
+      "streams": {
+        "A": "앙상블 score 완화 + RSI threshold 35/65",
+        "B": "is_post_only Maker fee 보장 + Breakout 신호",
+        "C": "Breakout 신호 추가 (최대점수 6→7)"
+      },
+      "key_changes": [
+        "ENTRY_THRESHOLD=4 (backtest: T=4 승률 12.56% 최적)",
+        "is_post_only=True (Maker fee 0.01% vs Taker 0.06%)",
+        "Breakout 신호 (period=20, vol_multiplier=1.5)",
+        "Volume 지표 활성화 (Kline.volume 필드 추가)"
+      ]
+    },
+    "wave5": {
+      "name": "Drawdown Recovery + ENTRY_THRESHOLD 분석 + 실거래 검증",
+      "status": "in_progress",
+      "started_at": "2026-03-23",
+      "streams": {
+        "C": {
+          "name": "Drawdown Recovery + Backtest Score Fix",
+          "status": "completed",
+          "completed_at": "2026-03-23",
+          "new_files": [
+            "src/application/drawdown_recovery.py",
+            "tests/unit/test_drawdown_recovery.py"
+          ],
+          "modify_files": [
+            "src/application/orchestrator.py",
+            "scripts/run_backtest.py",
+            "team.json",
+            "TASKS.md"
+          ],
+          "key_changes": [
+            "DrawdownRecovery: 일일손실 50%→REDUCE(×0.7), 80%→HALT",
+            "orchestrator 통합: sizing 후 size_multiplier 적용",
+            "backtest _score() 수정: sharpe×win_rate → net_pnl - max_dd×0.5",
+            "ENTRY_THRESHOLD=4 유지 (T=4: 승률 12.56%, 손실 -$6.60 최소)",
+            "14/14 신규 테스트 통과"
+          ]
+        }
+      },
+      "backtest_analysis_2026_03_23": {
+        "data_period": "2026-03-16 ~ 2026-03-23 (7일, 1분봉 10,080개)",
+        "threshold_2": {"trades": 1747, "win_rate_pct": 10.19, "net_pnl": -43.05},
+        "threshold_3": {"trades": 662, "win_rate_pct": 11.18, "net_pnl": -19.73},
+        "threshold_4": {"trades": 223, "win_rate_pct": 12.56, "net_pnl": -6.60},
+        "decision": "T=4 유지 — 최소 손실, 최고 승률, 신호 품질 우선"
+      }
     }
   },
   "quality_gates": {
@@ -105,22 +160,22 @@
       "description": "다중 지표 합산 점수 기반 진입 결정. LONG/SHORT 양방향.",
       "components": {
         "rsi": {
-          "long_condition": "rsi < 30",
-          "short_condition": "rsi > 70",
+          "long_condition": "rsi < 35",
+          "short_condition": "rsi > 65",
           "score": 2,
           "period": 14
         },
         "macd": {
-          "long_condition": "macd_line crosses above signal_line",
-          "short_condition": "macd_line crosses below signal_line",
+          "long_condition": "macd bullish cross or hist 3연속 양수",
+          "short_condition": "macd bearish cross or hist 3연속 음수",
           "score": 1,
           "fast": 12,
           "slow": 26,
           "signal": 9
         },
         "bollinger": {
-          "long_condition": "price <= lower_band",
-          "short_condition": "price >= upper_band",
+          "long_condition": "price <= bb_lower * 1.003",
+          "short_condition": "price >= bb_upper * 0.997",
           "score": 1,
           "period": 20,
           "std_dev": 2.0
@@ -134,16 +189,32 @@
           "existing": true,
           "description": "기존 T_TREND 동적 보정 유지",
           "score": 1
+        },
+        "breakout": {
+          "long_condition": "price > 20캔들 최고가 + volume_multiplier",
+          "short_condition": "price < 20캔들 최저가 + volume_multiplier",
+          "score": 1,
+          "period": 20,
+          "vol_multiplier": 1.5
         }
       },
-      "entry_threshold": 3,
-      "max_score": 6
+      "entry_threshold": 4,
+      "max_score": 7
     },
     "kelly_sizing": {
       "description": "Kelly 분수로 공격적 포지션 사이징 (최대 25% 켈리)",
       "formula": "f = (win_rate * avg_win - loss_rate * avg_loss) / avg_win",
       "cap": 0.25,
       "fallback": "기존 loss_budget 방식 (win_rate 데이터 부족 시)"
+    },
+    "drawdown_recovery": {
+      "description": "일일 손실 비율 기반 포지션 크기 조정 (Wave 5 Stream C)",
+      "thresholds": {
+        "normal": "loss < 50% of max_loss → size_multiplier=1.0",
+        "reduce": "loss >= 50% → size_multiplier=0.7 (30% 축소)",
+        "halt": "loss >= 80% → size_multiplier=0.0 (당일 거래 중단)"
+      },
+      "reset": "다음 날 0시 UTC 자동 복구"
     },
     "stage1_profit_config": {
       "leverage": 5,
@@ -175,6 +246,6 @@
     ],
     "on_wave1_complete": "Report to user: Wave 1 complete. Show test results + performance comparison. Ask for Wave 2 approval.",
     "on_wave2_complete": "Report to user: Show backtest results vs baseline (30.3% win rate). Ask for mainnet deploy approval.",
-    "profit_mandate": "Signal quality > quantity. Both LONG and SHORT. Reject signals scoring < 3/6."
+    "profit_mandate": "Signal quality > quantity. Both LONG and SHORT. Reject signals scoring < 4/7."
   }
 }

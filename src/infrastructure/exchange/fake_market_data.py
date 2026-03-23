@@ -90,6 +90,9 @@ class FakeMarketData:
         self._atr_pct_24h: float = 0.03  # Default 3% (ATR gate 통과)
         self._winrate: float = 0.6  # Default 60% (winrate gate 통과)
         self._position_mode: str = "MergedSingle"  # Default one-way mode
+        # Wave 5A: Regime 필터 테스트 지원
+        self._ma_slope_pct: float = 0.05  # Default: trending_up 아님 (기존 동작 유지)
+        self._atr_percentile: float = 40.0  # Default: ranging
 
     # ========== MarketDataInterface Implementation ==========
 
@@ -506,12 +509,20 @@ class FakeMarketData:
         return self._mark_price
 
     def get_ma_slope_pct(self) -> float:
-        """MA slope (%) - market_regime 계산용 (기본값: 0.05 = 5%)."""
-        return 0.05
+        """MA slope (%) - market_regime 계산용."""
+        return self._ma_slope_pct
 
     def get_atr_percentile(self) -> float:
-        """ATR percentile (0-100) - market_regime 계산용 (기본값: 40.0)."""
-        return 40.0
+        """ATR percentile (0-100) - market_regime 계산용."""
+        return self._atr_percentile
+
+    def inject_ma_slope_pct(self, value: float) -> None:
+        """MA slope (%) 주입 (regime 필터 테스트용)."""
+        self._ma_slope_pct = value
+
+    def inject_atr_percentile(self, value: float) -> None:
+        """ATR percentile 주입 (regime 필터 테스트용)."""
+        self._atr_percentile = value
 
     def get_exchange_server_time_offset_ms(self) -> float:
         """거래소 서버 시간 오프셋 (ms) - 기본값: 10.0ms."""
