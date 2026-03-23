@@ -180,13 +180,13 @@ def generate_signal(  # noqa: PLR0913
                 score=ensemble.score,
                 components=ensemble.components,
             )
-        # Near-miss logging: score > 0 but < 3 → diagnose why no trade fires
-        if 0 < ensemble.score < 3:
+        # Near-miss logging: score > 0 but < ENTRY_THRESHOLD → diagnose why no trade fires
+        if 0 < ensemble.score < 4:
             long_score = sum(v for v in ensemble.components.values() if v > 0)
             short_score = sum(abs(v) for v in ensemble.components.values() if v < 0)
             side_attempt = "Buy" if long_score >= short_score else "Sell"
             logger.debug(
-                f"[Ensemble] Near-miss: score={ensemble.score}/6, "
+                f"[Ensemble] Near-miss: score={ensemble.score}/7, "
                 f"components={ensemble.components}, side_candidate={side_attempt}, "
                 f"ma_slope={ma_slope_pct:.4f}%"
             )

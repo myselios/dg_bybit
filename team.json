@@ -100,10 +100,34 @@
       ]
     },
     "wave5": {
-      "name": "Drawdown Recovery + ENTRY_THRESHOLD 분석 + 실거래 검증",
-      "status": "in_progress",
+      "name": "signal_score fix + regime filter + Post-Only + DrawdownRecovery + Grid×0.3",
+      "status": "completed",
       "started_at": "2026-03-23",
+      "completed_at": "2026-03-23",
+      "commit": "cf0703a",
       "streams": {
+        "A": {
+          "name": "signal_score 보존 버그 수정 + 레짐 방향 필터",
+          "status": "completed",
+          "completed_at": "2026-03-23",
+          "key_changes": [
+            "_entry_signal_score/_entry_signal_components 인스턴스 변수로 EXIT 덮어쓰기 방지",
+            "_classify_regime() static method 추가",
+            "trending_down→Buy 차단, trending_up→Sell 차단",
+            "17 신규 테스트 통과"
+          ]
+        },
+        "B": {
+          "name": "Post-Only + Trailing 임계값 + Grid spacing 개선",
+          "status": "completed",
+          "completed_at": "2026-03-23",
+          "key_changes": [
+            "bybit_rest_client.place_order(is_post_only=True) — Maker fee 0.01%",
+            "Trailing ATR*0.8 활성화 임계값 (조기 trailing 방지)",
+            "Grid spacing 0.2→0.3 (R:R 개선)",
+            "13 신규 테스트 통과"
+          ]
+        },
         "C": {
           "name": "Drawdown Recovery + Backtest Score Fix",
           "status": "completed",
