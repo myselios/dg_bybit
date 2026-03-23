@@ -2,8 +2,8 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-03-23 (KST) — Wave 5 Stream C
-Bot Status: 운영 중 (Agentic v1 + 앙상블 신호 배포 중)
+Last Updated: 2026-03-23 (KST) — Wave 5 완료 + Docker 재배포
+Bot Status: 운영 중 (Wave 5 배포됨 — regime filter + Post-Only + DrawdownRecovery)
 Equity: ~$107 USDT
 Target: $1,000 USDT
 
@@ -14,7 +14,7 @@ Target: $1,000 USDT
 - SL: ATR * 0.7 기반, clamp(0.5%~2.0%)
 - TP: Trailing Stop (trail_price 대비 ATR*0.5 이탈 시 청산)
 - DCA: 비활성화
-- Grid Entry: ATR * 0.2 spacing
+- Grid Entry: ATR * 0.3 spacing (Wave 5 개선)
 - Order: GTC Limit (entry), Market (exit, reduce_only)
 - Max Trades/Day: 15 (Stage 1 공격)
 - Stage: 1 ($100-$300)
@@ -56,7 +56,7 @@ Target: $1,000 USDT
 - [x] Dashboard 정합성: LONG→LONG/SHORT, 3%→ATR×0.7 (d9430f2)
 - [x] Docker healthcheck: 로그 freshness 기반 120s (d9430f2)
 - [x] ENTRY_THRESHOLD 3→4 (backtest 결과: T=4 승률 12.05%, PnL -$6.51 최적) (4df6ab5, 2026-03-20)
-- [ ] **Docker 재배포** (Volume + T=4 + Breakout 반영) — 사용자 승인 필요
+- [x] **Docker 재배포** (Wave 5 전체 반영: regime filter + Post-Only + DrawdownRecovery) (2026-03-23, cf0703a)
 - [ ] 앙상블 모드 10건 트레이드 축적 후 검증
   - 명령어: `python scripts/analyze_trades.py`
 - [x] Wave 4 Stream C: Breakout 신호 추가 (breakout.py, 최대점수 6→7) (2026-03-20)
@@ -71,7 +71,9 @@ Target: $1,000 USDT
 - [x] Backtest 분석 — T=3 vs T=4 (2026-03-23)
   - T=4 유지 결정: 승률 12.56%, 손실 -$6.60 (T=3: 11.18%, -$19.73)
   - `scripts/run_backtest.py` _score() 버그 수정 (sharpe×win_rate→net_pnl 기반)
-- [ ] Wave 5: Docker 재배포 (DrawdownRecovery 반영) — 사용자 승인 필요
+- [x] Wave 5 Stream A: signal_score 보존 버그 수정 + 레짐 방향 필터 (2026-03-23, cf0703a)
+- [x] Wave 5 Stream B: Post-Only + Trailing ATR*0.8 임계값 + Grid×0.3 (2026-03-23, cf0703a)
+- [x] Wave 5: Docker 재배포 완료 (2026-03-23 09:26 KST)
 - [ ] 실거래 10건 이상 후 앙상블 score 기반 트레이드 검증
 
 ## P2: 중기 (데이터 기반 튜닝)
