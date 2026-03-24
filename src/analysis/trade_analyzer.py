@@ -74,7 +74,7 @@ class PerformanceMetrics:
 class TradeAnalyzer:
     """Trade log 분석 도구"""
 
-    def __init__(self, log_dir: str = "logs/mainnet_dry_run"):
+    def __init__(self, log_dir: str = "logs/mainnet"):
         """
         Args:
             log_dir: Trade log 디렉토리 경로

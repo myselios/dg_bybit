@@ -97,8 +97,8 @@ Examples:
     # Input arguments
     parser.add_argument(
         '--log-dir',
-        default='logs/mainnet_dry_run',
-        help='Trade log directory (default: logs/mainnet_dry_run)'
+        default='logs/mainnet',
+        help='Trade log directory (default: logs/mainnet)'
     )
 
     args = parser.parse_args()
