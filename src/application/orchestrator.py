@@ -983,6 +983,15 @@ class Orchestrator:
             )
             return {"blocked": True, "reason": "regime_direction_filter"}
 
+        # Wave 6 Stream B: ranging 레짐 진입 threshold 강화
+        # ranging + score=4 → 차단 (score < 5), ranging + score=None(MA slope 모드) → 허용
+        if not self._is_ranging_score_sufficient(regime=current_regime, score=signal.score):
+            logger.info(
+                f"→ Entry blocked: ranging_score_below_threshold "
+                f"(regime={current_regime}, score={signal.score}, required>=5)"
+            )
+            return {"blocked": True, "reason": "ranging_score_below_threshold"}
+
         # Step 4: Entry gates 검증
         stage = get_stage_params()
         trades_today = self.market_data.get_trades_today()
@@ -1162,6 +1171,33 @@ class Orchestrator:
             if ma_slope_pct < -0.1:
                 return "trending_down"
         return "ranging"
+
+    @staticmethod
+    def _is_ranging_score_sufficient(regime: str, score: Optional[int]) -> bool:
+        """
+        Wave 6 Stream B: ranging 레짐에서 앙상블 score 충분성 검증.
+
+        ranging 레짐은 명확한 방향성이 없어 수수료 후 순손실 발생 가능.
+        score >= 5를 요구하여 신호 품질을 높인다.
+
+        규칙:
+        - regime != "ranging" → 항상 True (ranging 규칙 미적용)
+        - score is None (MA slope 모드) → True (체크 스킵)
+        - ranging + score >= 5 → True (허용)
+        - ranging + score < 5 → False (차단)
+
+        Args:
+            regime: 현재 레짐 ("ranging" | "trending_up" | "trending_down" | "high_vol")
+            score: 앙상블 score (None = MA slope 모드)
+
+        Returns:
+            bool: True = 진입 허용, False = 차단
+        """
+        if regime != "ranging":
+            return True
+        if score is None:
+            return True
+        return score >= 5
 
     def _get_price_volume_history(self) -> tuple:
         """
