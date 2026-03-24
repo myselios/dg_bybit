@@ -8,15 +8,19 @@
 
 ---
 
-## 봇 상태
+## 봇 상태 (22:00 KST 기준)
 
 | 항목 | 값 |
 |------|-----|
-| 상태 | healthy |
+| 상태 | healthy (Up 13시간) |
 | 현재 score | 1/7 (MACD hist만) |
-| BTC 현재가 | $70,724 |
-| ma_slope | -0.094% (약보합) |
+| BTC 현재가 | $70,556 |
+| ma_slope | +0.0097% (중립) |
+| Tick | 40,416+ |
+| 오늘 트레이드 | 0/10 |
 | Wave 6 배포 | 완료 (09:22 KST) |
+
+**오늘 트레이드 없음**: score=1/7로 ENTRY_THRESHOLD=4 미달 — 신호 없음 정상.
 
 ---
 
@@ -68,9 +72,15 @@ Equity: $107 → **~$112** USDT (+$5.036)
 
 ---
 
+## 오늘 트레이드 요약
+
+트레이드 없음 — score=1/7 (MACD hist 단독) 지속. Wave 6 ranging threshold=5 적용 중. 시장 관망.
+
+---
+
 ## 다음 세션 추천
 
-1. Wave 6 코드 기반 ranging 트레이드 모니터링
+1. Wave 6 코드 기반 첫 실거래 대기 (score≥4 달성 시)
 2. Post-Only fee 실측 검증 ($0.108 → $0.02 예상)
-3. Wave 5 코드 기반 첫 트레이드 대기 (signal_score 정상 기록 확인)
-4. `python scripts/analyze_trades.py --period 2026-03-24:2026-03-24` (오늘 결과)
+3. `python scripts/analyze_trades.py --period 2026-03-25:2026-03-25` (내일 결과)
+4. 10건+ 축적 후 regime별 A/B 효과 검증
