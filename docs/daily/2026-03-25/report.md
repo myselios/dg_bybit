@@ -8,16 +8,18 @@
 
 ---
 
-## 봇 상태
+## 봇 상태 (22:00 KST 기준)
 
 | 항목 | 값 |
 |------|-----|
-| 상태 | healthy (Up 24시간) |
-| 현재 score | 1/7 (MACD hist만) |
-| BTC 현재가 | $70,606 |
-| ma_slope | +0.112% (중립) |
-| Tick | 74,417 |
-| 오늘 트레이드 | 1/10 (어제 count 이월) |
+| 상태 | healthy (Up 13시간) |
+| 현재 score | 2/7 (RSI=2) |
+| BTC 현재가 | $71,625 (+1.4% 상승) |
+| ma_slope | +0.138% (약 상승) |
+| Tick | 40,388 |
+| 오늘 트레이드 | 0/10 |
+
+**오늘 트레이드 없음**: BTC $71.6k 상승 중, RSI 과매수권 접근 (RSI=2점), score=2/7로 미달.
 
 ---
 
@@ -70,9 +72,15 @@ timestamp = exec_time_raw / 1000.0 if exec_time_raw > 1e12 else exec_time_raw
 
 ---
 
+## 오늘 트레이드 요약
+
+트레이드 없음 — score=2/7 (RSI 과매수권 접근). BTC $71.6k 상승 중.
+
+---
+
 ## 다음 세션 추천
 
-1. Post-Only fee 실측 검증 — 다음 Wave 5 코드 트레이드에서 entry fee $0.02 확인
-2. 실거래 10건 축적 후 `analyze_trades.py` regime별 A/B 검증
-3. Dashboard PnL/승률 표시 정합성 확인
-4. 신호 품질 개선 검토 (score=1/7 → score≥4 달성률 분석)
+1. BTC $71.6k 상승 → RSI+BB+MACD 조건 달성 시 Wave 7 코드 첫 트레이드 기대
+2. Post-Only fee 실측 검증 — 다음 entry fee $0.02 목표 확인
+3. 실거래 10건 축적 후 `analyze_trades.py` regime별 A/B 검증
+4. `python scripts/analyze_trades.py --period 2026-03-25:2026-03-25`
