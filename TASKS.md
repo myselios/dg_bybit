@@ -2,9 +2,9 @@
 # 이 파일은 세션 간 작업 연속성을 위한 SSOT이다.
 # Claude Code는 매 세션 시작 시 이 파일을 읽고 이어서 작업한다.
 
-Last Updated: 2026-03-24 (KST) — Wave 5 실거래 대기 중 (BTC 레짐 필터 차단)
-Bot Status: 운영 중 (Wave 5 배포됨 — regime filter + Post-Only + DrawdownRecovery)
-Equity: ~$112 USDT (2026-03-23 +$5.036 반영)
+Last Updated: 2026-03-25 (KST) — Wave 6 완료, Wave 7 진행 중
+Bot Status: 운영 중 (Wave 6 배포됨 — ranging threshold=5 + analyze default fix)
+Equity: ~$113.5 USDT (2026-03-24 +$1.52 반영)
 Target: $1,000 USDT
 
 ---
@@ -87,17 +87,23 @@ Target: $1,000 USDT
 - [ ] Multi-position Grid 구현
 - [ ] 2/12 구 스키마 6건 처리 (분석 파이프라인에서 제외 또는 partial 처리)
 
-## P2: Wave 6 계획 (2026-03-24 추가)
+## P2: Wave 6 (2026-03-24 완료)
 
-- [ ] Wave 6 Stream A: ranging threshold 상향 (score≥4→5)
+- [x] Wave 6 Stream A: ranging threshold 상향 (score≥4→5) (b6b0c98, 2026-03-24)
   - ranging 레짐에서 false positive 줄이기 위해 임계값 5로 상향
-  - blocked_by: Wave 5 실거래 10건 이상 데이터 축적 후
-- [ ] Wave 6 Stream B: analyze_trades.py default 필드 수정
+- [x] Wave 6 Stream B: analyze_trades.py default 필드 수정 (121a4ee, 2026-03-24)
   - signal_score=null 트레이드 (2건 확인) partial 처리
   - signal_components=null 처리 로직 추가
 - [ ] Wave 6 Stream C: Post-Only fee 검증 ($0.02 이하 확인)
   - blocked_by: Wave 5 트레이드 첫 건 발생 후
   - 명령어: `cat logs/mainnet/trades_*.jsonl | python3 -c "..."` fee_usd 집계
+
+## P1: Wave 7 (2026-03-25)
+
+- [ ] Wave 7 Stream A: hold_seconds 음수 버그 수정 (bybit_adapter.py ms→s)
+- [ ] Wave 7 Stream B: .env GIT_COMMIT 업데이트 + 트레이드 분석
+- [x] Wave 7 Stream C: TASKS.md 정리 + 작업일지 생성 (2026-03-25)
+- [ ] 어제 Wave 5 코드 첫 실거래 Post-Only fee 검증 (fee=$0.115 분석)
 
 ## P3: 장기 ($1,000 스케일업)
 
