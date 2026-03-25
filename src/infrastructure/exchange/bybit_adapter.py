@@ -31,6 +31,16 @@ from application.market_regime import MarketRegimeAnalyzer, Kline as RegimeKline
 logger = logging.getLogger(__name__)
 
 
+def _ms_to_seconds(ts: float) -> float:
+    """Bybit execTime (ms) → seconds 변환.
+
+    Bybit API는 execTime을 밀리초(ms) 단위로 반환한다.
+    ExecutionEvent.timestamp는 초(seconds) 단위를 사용한다.
+    1e12 기준: 2001-09-09 이후의 ms 타임스탬프 판별.
+    """
+    return ts / 1000.0 if ts > 1e12 else ts
+
+
 class BybitAdapter:
     """
     Bybit Adapter — MarketDataInterface 완전 구현
@@ -448,7 +458,7 @@ class BybitAdapter:
                     order_link_id=raw_event.get("orderLinkId", ""),
                     filled_qty=filled_qty_contracts,
                     order_qty=order_qty_contracts,
-                    timestamp=float(raw_event.get("execTime", 0)),
+                    timestamp=_ms_to_seconds(float(raw_event.get("execTime", 0))),
                     exec_price=float(raw_event.get("execPrice", 0.0)),  # ✅ executed_price → exec_price
                     fee_paid=float(raw_event.get("execFee", 0.0)),  # ✅ fee → fee_paid
                 )
