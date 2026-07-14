@@ -268,12 +268,21 @@ class TradeAnalyzer:
 
         return 0.0
 
-    def _calculate_max_drawdown(self, pnls: List[float]) -> float:
+    def _calculate_max_drawdown(
+        self,
+        pnls: List[float],
+        starting_capital: float = 100.0
+    ) -> float:
         """
         최대 낙폭 계산 (%)
 
+        시작자본 기준 equity curve(equity = starting_capital + 누적 PnL)로 계산한다.
+        누적 실현 PnL만으로 계산하면 분모가 0에 근접할 때 값이 발산하므로
+        (실데이터에서 1707% 재현) equity를 분모로 사용한다.
+
         Args:
-            pnls: PnL 목록
+            pnls: PnL 목록 (거래 순서대로)
+            starting_capital: 시작 자본 (USDT)
 
         Returns:
             float: 최대 낙폭 (%)
@@ -281,20 +290,15 @@ class TradeAnalyzer:
         if not pnls:
             return 0.0
 
-        cumulative = []
-        total = 0.0
-        for pnl in pnls:
-            total += pnl
-            cumulative.append(total)
-
-        # Running maximum
-        peak = cumulative[0]
+        equity = starting_capital
+        peak = starting_capital
         max_dd = 0.0
 
-        for value in cumulative:
-            if value > peak:
-                peak = value
-            dd = (peak - value) / abs(peak) * 100 if peak != 0 else 0.0
+        for pnl in pnls:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            dd = (peak - equity) / peak * 100 if peak != 0 else 0.0
             max_dd = max(max_dd, dd)
 
         return max_dd
@@ -382,8 +386,23 @@ class TradeAnalyzer:
 
         Returns:
             float: 평균 보유 시간 (초)
+
+        Note:
+            실제 로그 필드는 `hold_seconds`이며 legacy 필드는 `holding_time_seconds`.
+            `hold_seconds`를 우선 사용하고, 음수(과거 ms 단위 버그 데이터)와
+            None/필드 부재는 평균에서 제외한다.
         """
-        holding_times = [t.get('holding_time_seconds', 0.0) for t in trades]
+        holding_times = []
+        for t in trades:
+            value = t.get('hold_seconds')
+            if value is None:
+                value = t.get('holding_time_seconds')
+            if value is None:
+                continue
+            value = float(value)
+            if value < 0:
+                continue
+            holding_times.append(value)
         return statistics.mean(holding_times) if holding_times else 0.0
 
     def _calculate_consecutive_streaks(self, pnls: List[float]) -> tuple:
