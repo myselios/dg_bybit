@@ -190,18 +190,13 @@ def run_dry_run(target_trades: int = 30, max_duration_hours: int = 72):
     )
 
     # Git commit hash + Config hash 계산
-    import subprocess
+    # git_commit 은 이미지에 구워진 BUILD_COMMIT 파일을 우선 읽는다.
+    # (낡은 .env 값이 로그를 오염시키지 못하도록 — src/infrastructure/version.py 참고)
     import hashlib
-    git_commit = os.getenv("GIT_COMMIT", "").strip()
-    if not git_commit or git_commit == "unknown":
-        try:
-            git_commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                cwd=Path(__file__).parent.parent,
-                stderr=subprocess.DEVNULL,
-            ).decode().strip()[:12]
-        except Exception:
-            git_commit = "unknown"
+
+    from infrastructure.version import resolve_git_commit
+
+    git_commit = resolve_git_commit()
 
     config_path = Path(__file__).parent.parent / "config" / "safety_limits.yaml"
     if config_path.exists():

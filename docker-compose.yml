@@ -14,6 +14,9 @@ services:
       dockerfile: docker/Dockerfile.bot
       args:
         BASE_IMAGE: cbgb:production
+        # 빌드 시점 커밋을 이미지(/app/BUILD_COMMIT)에 굽는다.
+        # docker_rebuild.sh 가 GIT_COMMIT=$(git rev-parse --short HEAD) 를 export 한다.
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     image: cbgb-bot:latest
     container_name: cbgb-bot
     restart: unless-stopped
@@ -23,10 +26,12 @@ services:
       - .env  # 로컬 개발용 (.gitignore에 포함)
 
     # 환경변수 (override 가능)
+    # 주의: GIT_COMMIT 은 여기서 주입하지 않는다.
+    # 런타임 코드는 이미지에 구워진 /app/BUILD_COMMIT 파일을 읽으므로
+    # 낡은 .env / 런타임 env 로 덮어쓰면 안 된다. (배포 신뢰성)
     environment:
       - BYBIT_TESTNET=${BYBIT_TESTNET:-true}  # 기본값: Testnet
       - PYTHONUNBUFFERED=1
-      - GIT_COMMIT=${GIT_COMMIT:-unknown}  # Trade log 코드 버전 추적
 
     # Volume 마운트
     volumes:
