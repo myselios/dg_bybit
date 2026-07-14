@@ -426,16 +426,17 @@ def test_grid_buy_allowed_in_neutral_or_up_trend():
 
 
 class TestSizingParamsStopDistance:
-    """S4: build_sizing_params의 stop_distance_pct가 ATR*0.8 기반인지 검증
+    """S4: build_sizing_params의 stop_distance_pct가 ATR*0.7 기반인지 검증
 
-    Wave4 변경: ATR*0.7→ATR*0.8, clamp(0.5%~2.0%)→(0.4%~1.5%)
+    정책 단일화(Policy Sec 10.1.1): ATR*0.7, clamp(0.5%~2.0%).
+    stop_manager.calculate_stop_distance_pct와 동일 소스.
     """
 
-    def test_build_sizing_params_uses_atr08(self):
-        """build_sizing_params stop_distance_pct가 ATR*0.8 기반인지 검증
+    def test_build_sizing_params_uses_atr07(self):
+        """build_sizing_params stop_distance_pct가 ATR*0.7 기반인지 검증
 
         atr=1000, price=70000
-        기대: ATR*0.8/price = 800/70000 ≈ 0.01143 → clamp(0.4%,1.5%) → 0.01143
+        기대: ATR*0.7/price = 700/70000 = 0.01 → clamp(0.5%,2.0%) → 0.01
         """
         from application.entry_coordinator import build_sizing_params
         from application.signal_generator import Signal
@@ -451,15 +452,15 @@ class TestSizingParamsStopDistance:
         # Act
         params = build_sizing_params(signal, market_data, atr=atr)
 
-        # Assert: ATR*0.8 기반 → 800/70000 ≈ 0.01143, within [0.004, 0.015]
+        # Assert: ATR*0.7 기반 → 700/70000 = 0.01, within [0.005, 0.020]
         import pytest
-        assert params.stop_distance_pct == pytest.approx(800.0 / 70000.0, abs=1e-6)
+        assert params.stop_distance_pct == pytest.approx(700.0 / 70000.0, abs=1e-6)
 
     def test_build_sizing_params_stop_distance_clamped(self):
-        """극단값에서도 clamp(0.4%~1.5%) 적용
+        """극단값에서도 clamp(0.5%~2.0%) 적용
 
         atr=100 (매우 작음), price=70000
-        ATR*0.8/price = 80/70000 ≈ 0.00114 → clamp 하한 → 0.004 (0.4%)
+        ATR*0.7/price = 70/70000 = 0.001 → clamp 하한 → 0.005 (0.5%)
         """
         from application.entry_coordinator import build_sizing_params
         from application.signal_generator import Signal
@@ -475,5 +476,5 @@ class TestSizingParamsStopDistance:
         # Act
         params = build_sizing_params(signal, market_data, atr=atr)
 
-        # Assert: ATR*0.8/price = 80/70000 ≈ 0.00114 → clamp → 0.004
-        assert params.stop_distance_pct == pytest.approx(0.004)
+        # Assert: ATR*0.7/price = 70/70000 = 0.001 → clamp → 0.005
+        assert params.stop_distance_pct == pytest.approx(0.005)

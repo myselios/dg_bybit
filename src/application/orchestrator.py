@@ -41,10 +41,13 @@ from application.emergency_checker import check_emergency_status
 from application.drawdown_recovery import check_drawdown_recovery, DrawdownState  # Wave 5 Stream C
 from application.entry_coordinator import (
     get_stage_params,
+    get_stage_id,
+    get_stage_leverage,
     build_signal_context,
     build_sizing_params,
     generate_signal_id,
 )
+from application.liquidation_gate import check_liquidation_gate, LiquidationParams
 from application.event_processor import (
     verify_state_consistency,
     match_pending_order,
@@ -56,7 +59,7 @@ from infrastructure.storage.log_storage import LogStorage
 from application.trade_logging import log_estimated_trade, log_completed_trade
 
 # Stop Manager Integration (Codex Review Fix #1)
-from application.stop_manager import should_update_stop, determine_stop_action, execute_stop_update
+from application.stop_manager import should_update_stop, determine_stop_action, execute_stop_update, calculate_stop_price, calculate_stop_distance_pct
 
 # KillSwitch Integration (Codex Review Fix #2)
 from infrastructure.safety.killswitch import KillSwitch
@@ -210,6 +213,13 @@ class Orchestrator:
                 self.state = State.FLAT
                 self.position = None
 
+        # Phase 2 Safety: 거래소 레버리지 설정 (기동 시)
+        # rest_client 없거나 set_leverage 미지원(테스트 mock)이면 기본 통과(True).
+        # 설정 실패 시 False → _decide_entry에서 진입 차단(안전 기본값).
+        self.leverage_configured: bool = True
+        if rest_client is not None and hasattr(rest_client, "set_leverage"):
+            self.leverage_configured = self._configure_leverage()
+
         # Phase 11b: Entry Flow tracking
         self.pending_order: Optional[dict] = None  # Pending order 정보 (FILL event 매칭용)
         self.pending_order_timestamp: Optional[float] = None  # Phase 12a-4c: Pending order 발주 시각 (timeout 체크용)
@@ -252,6 +262,42 @@ class Orchestrator:
         # Wave 5 Stream C: DrawdownRecovery 상태 추적
         self._drawdown_last_reset_date: str = ""  # 마지막 날짜 초기화 기준 (YYYY-MM-DD)
         self._drawdown_state: Optional[DrawdownState] = None  # 최신 DrawdownState 캐시
+
+    def _configure_leverage(self) -> bool:
+        """기동 시 거래소 레버리지 설정 (Stage 레버리지 기준).
+
+        Returns:
+            True: 설정 성공(또는 110043 이미 설정됨). 진입 허용.
+            False: 설정 실패. 진입 차단(안전 기본값).
+        """
+        try:
+            equity = self.market_data.get_equity_usdt() if self.market_data else 0.0
+        except Exception as e:
+            logger.warning(f"레버리지 설정용 equity 조회 실패: {e} → equity=0 가정")
+            equity = 0.0
+
+        leverage = get_stage_leverage(equity)
+        try:
+            resp = self.rest_client.set_leverage(
+                symbol="BTCUSDT",
+                buy_leverage=str(int(leverage)),
+                sell_leverage=str(int(leverage)),
+                category="linear",
+            )
+        except Exception as e:
+            logger.error(f"❌ set_leverage 호출 실패: {e} → 진입 차단")
+            return False
+
+        ret_code = resp.get("retCode", -1)
+        # 110043 = "leverage not modified" → 이미 목표 레버리지로 설정됨 (성공 처리)
+        if ret_code in (0, 110043):
+            logger.info(f"✅ Leverage 설정 {int(leverage)}x (retCode={ret_code})")
+            return True
+
+        logger.error(
+            f"❌ set_leverage 실패 retCode={ret_code}, msg={resp.get('retMsg')} → 진입 차단"
+        )
+        return False
 
     def run_tick(self) -> TickResult:
         """
@@ -867,6 +913,10 @@ class Orchestrator:
         if self.state != State.FLAT:
             return {"blocked": True, "reason": "state_not_flat"}
 
+        # Phase 2 Safety: 거래소 레버리지 미설정 시 진입 차단 (실 레버리지 미검증 → 나체 리스크)
+        if not self.leverage_configured:
+            return {"blocked": True, "reason": "leverage_not_configured"}
+
         # 거래소 실포지션 재확인 (고스트 진입 방지)
         if self.rest_client is not None:
             try:
@@ -1061,8 +1111,31 @@ class Orchestrator:
         if not entry_decision.allowed:
             return {"blocked": True, "reason": entry_decision.reject_reason}
 
-        # Step 5: Position sizing (이미 Step 4에서 계산 완료)
-        contracts = sizing_result.contracts
+        # Step 5: Position sizing (Step 4 계산 + DrawdownRecovery 배율 반영분)
+        contracts = signal.qty
+
+        # Phase 2 Safety: Liquidation distance gate (사이징 확정 후, 주문 제출 전)
+        # liq 거리 < stage 최소치면 진입 스킵. Fallback haircut 시 contracts 축소.
+        liq_params = LiquidationParams(
+            entry_price_usd=signal.price,
+            contracts=contracts,
+            leverage=sizing_params.leverage,
+            direction=sizing_params.direction,
+            equity_usdt=sizing_params.equity_usdt,
+            stop_distance_pct=sizing_params.stop_distance_pct,
+            stage_id=get_stage_id(sizing_params.equity_usdt),
+        )
+        liq_result = check_liquidation_gate(liq_params)
+        if not liq_result.allowed:
+            logger.info(f"→ Entry blocked: liquidation_gate ({liq_result.reject_reason})")
+            return {"blocked": True, "reason": liq_result.reject_reason}
+        if liq_result.haircut_applied and liq_result.adjusted_contracts is not None:
+            logger.info(
+                f"⚠️ Liquidation gate haircut: {contracts} → {liq_result.adjusted_contracts} contracts"
+            )
+            contracts = liq_result.adjusted_contracts
+            if contracts < 1:
+                return {"blocked": True, "reason": "liquidation_haircut_zero"}
 
         # Step 6: Order placement
         if self.rest_client is None:
@@ -1075,7 +1148,19 @@ class Orchestrator:
 
             entry_qty_btc = round(contracts * 0.001, 3)  # BTC 단위 (contracts * 0.001)
             order_link_id_entry = f"entry_{self.current_signal_id}_{int(time.time())}"
-            logger.info(f"📤 Entry order: {signal.side} {contracts} contracts ({entry_qty_btc} BTC) @ ${signal.price:,.2f}")
+
+            # Phase 2 Safety: 진입 주문에 Stop Loss 첨부 (체결~첫 stop 사이 보호 공백 제거)
+            # 지정가 진입 → SL 기준가는 주문가(signal.price) 기준. stop_manager와 동일 단일 소스.
+            entry_direction = Direction.LONG if signal.side == "Buy" else Direction.SHORT
+            entry_sl_price = calculate_stop_price(
+                entry_price=signal.price, direction=entry_direction, atr=atr
+            )
+            entry_sl_str = str(round(entry_sl_price, 2))
+
+            logger.info(
+                f"📤 Entry order: {signal.side} {contracts} contracts ({entry_qty_btc} BTC) "
+                f"@ ${signal.price:,.2f}, SL=${entry_sl_str}"
+            )
             order_result = self.rest_client.place_order(
                 symbol="BTCUSDT",
                 side=signal.side,
@@ -1086,6 +1171,8 @@ class Orchestrator:
                 order_link_id=order_link_id_entry,
                 category="linear",
                 is_post_only=True,  # Wave5 Stream B: Maker fee 보장 (0.01% vs Taker 0.06%)
+                stop_loss=entry_sl_str,  # Phase 2 Safety: 체결 시 자동 SL 설정
+                sl_trigger_by="MarkPrice",
             )
 
             # Bybit V5 API response structure: {"result": {"orderId": "...", "orderLinkId": "..."}}
@@ -1116,11 +1203,8 @@ class Orchestrator:
         self.trail_price = signal.price
         self.entry_atr = atr
 
-        # Stop distance (ATR 기반, sizing_params와 동일 계산, Wave4: ATR*0.8 clamp 0.4%~1.5%)
-        if atr > 0 and signal.price > 0:
-            stop_distance_pct = max(0.004, min(0.015, (atr * 0.8) / signal.price))
-        else:
-            stop_distance_pct = 0.01
+        # Stop distance — stop_manager/sizing과 동일 단일 소스 (Policy Sec 10.1.1: ATR*0.7, clamp 0.5%~2.0%)
+        stop_distance_pct = calculate_stop_distance_pct(signal.price, atr if atr > 0 else None)
 
         # Pending order 저장 (FILL event 매칭용)
         self.pending_order = {

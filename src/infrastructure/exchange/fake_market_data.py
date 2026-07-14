@@ -366,6 +366,10 @@ class FakeMarketData:
         """BTC Mark Price (USD 기준)."""
         return self._mark_price
 
+    def inject_daily_realized_pnl(self, value: float):
+        """당일 realized PnL 주입 (DrawdownRecovery 테스트용)."""
+        self._daily_realized_pnl_usd = value
+
     def get_daily_realized_pnl_usd(self) -> Optional[float]:
         """당일 realized PnL (USD 단위)."""
         return self._daily_realized_pnl_usd

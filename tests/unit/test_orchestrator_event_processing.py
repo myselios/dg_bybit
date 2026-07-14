@@ -58,6 +58,9 @@ class MockRestClient:
         category: str = "linear",
         reduce_only: bool = False,
         is_post_only: bool = False,
+        stop_loss: str = None,
+        sl_trigger_by: str = "MarkPrice",
+        **kwargs,
     ):
         """Mock place_order method"""
         if self.should_fail:

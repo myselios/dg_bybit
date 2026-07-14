@@ -218,7 +218,9 @@ class BybitRestClient:
             RateLimitError: retCode 10006 (rate limit)
             requests.exceptions.Timeout: Timeout (max_retries 초과)
         """
-        params = params or {}
+        # 서명은 sorted(params) 기준이므로 전송 순서도 동일하게 정렬
+        # (비알파벳 삽입 순서 시 Bybit retCode 10004 Error sign 방지)
+        params = dict(sorted((params or {}).items()))
         url = f"{self.base_url}{endpoint}"
         timestamp = self._get_timestamp()
 
@@ -298,6 +300,8 @@ class BybitRestClient:
         reduce_only: bool = False,
         position_idx: int = 0,
         is_post_only: bool = False,
+        stop_loss: Optional[str] = None,
+        sl_trigger_by: str = "MarkPrice",
     ) -> Dict[str, Any]:
         """
         주문 발주
@@ -354,6 +358,12 @@ class BybitRestClient:
         # Post-Only (Wave5 Stream B: Maker fee 보장, entry 주문)
         if is_post_only:
             params["isPostOnly"] = True
+
+        # Phase 2 Safety: 진입 주문에 Stop Loss 첨부 (체결~첫 stop 사이 보호 공백 제거)
+        # Bybit v5 order/create는 stopLoss/slTriggerBy를 지원 (체결 시 자동 SL 설정)
+        if stop_loss is not None:
+            params["stopLoss"] = str(stop_loss)
+            params["slTriggerBy"] = sl_trigger_by
 
         return self._make_request("POST", "/v5/order/create", params)
 
@@ -726,6 +736,40 @@ class BybitRestClient:
             "buyLeverage": buy_leverage,
             "sellLeverage": sell_leverage,
             "tradeMode": trade_mode,
+        }
+
+        return self._make_request("POST", "/v5/position/set-leverage", params)
+
+    def set_leverage(
+        self,
+        symbol: str,
+        buy_leverage: str,
+        sell_leverage: str,
+        category: str = "linear",
+    ) -> Dict[str, Any]:
+        """
+        레버리지 설정 (Bybit V5 /v5/position/set-leverage).
+
+        buyLeverage/sellLeverage 동일값 (one-way mode). Margin mode는 건드리지 않음.
+
+        Args:
+            symbol: 심볼 (예: BTCUSDT)
+            buy_leverage: Buy leverage (문자열, 예: "5")
+            sell_leverage: Sell leverage (문자열, 예: "5")
+            category: 카테고리 (기본: linear)
+
+        Returns:
+            Dict: 응답 JSON. retCode=0 성공.
+            retCode=110043("leverage not modified")은 이미 설정된 상태로 성공 취급
+            (호출자 orchestrator._configure_leverage에서 처리).
+
+        SSOT: account_builder_policy.md Section 5 (Stage Leverage)
+        """
+        params = {
+            "category": category,
+            "symbol": symbol,
+            "buyLeverage": buy_leverage,
+            "sellLeverage": sell_leverage,
         }
 
         return self._make_request("POST", "/v5/position/set-leverage", params)

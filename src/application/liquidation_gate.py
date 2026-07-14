@@ -20,6 +20,21 @@ from dataclasses import dataclass
 
 
 @dataclass
+class LiquidationParams:
+    """Liquidation gate 입력 파라미터 (check_liquidation_gate용).
+
+    SSOT: FLOW.md Section 7.5, Policy.md Section 5/10.1.4
+    """
+    entry_price_usd: float
+    contracts: int
+    leverage: float
+    direction: str  # "LONG" or "SHORT"
+    equity_usdt: float
+    stop_distance_pct: float
+    stage_id: int
+
+
+@dataclass
 class LiquidationGateResult:
     """Liquidation gate 검증 결과"""
     allowed: bool

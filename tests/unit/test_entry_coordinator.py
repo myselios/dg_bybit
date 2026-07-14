@@ -204,30 +204,30 @@ def test_sizing_sell_signal_returns_short():
 
 
 def test_sizing_atr_based_stop_distance():
-    """ATR=500, price=50000 → raw=(500*0.8)/50000=0.008, within [0.004, 0.015] → 0.008."""
+    """정책 단일화(ATR*0.7, clamp 0.5%~2.0%): ATR=500, price=50000 → 350/50000=0.007."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=500.0)
-    # raw = (500 * 0.8) / 50000 = 0.008, within [0.004, 0.015]
-    assert params.stop_distance_pct == pytest.approx(0.008)
+    # raw = (500 * 0.7) / 50000 = 0.007, within [0.005, 0.020]
+    assert params.stop_distance_pct == pytest.approx(0.007)
 
 
 def test_sizing_atr_stop_clamp_min():
-    """ATR very small → clamp to 0.4% min (변경: 0.5% → 0.4%)."""
+    """ATR very small → clamp to 0.5% min (Policy Sec 10.1.1)."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=100.0)
-    # raw = (100 * 0.8) / 50000 = 0.0016, clamped to 0.004
-    assert params.stop_distance_pct == pytest.approx(0.004)
+    # raw = (100 * 0.7) / 50000 = 0.0014, clamped to 0.005
+    assert params.stop_distance_pct == pytest.approx(0.005)
 
 
 def test_sizing_atr_stop_clamp_max():
-    """ATR very large → clamp to 1.5% max (변경: 2.0% → 1.5%)."""
+    """ATR very large → clamp to 2.0% max (Policy Sec 10.1.1)."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=5000.0)
-    # raw = (5000 * 0.8) / 50000 = 0.08, clamped to 0.015
-    assert params.stop_distance_pct == pytest.approx(0.015)
+    # raw = (5000 * 0.7) / 50000 = 0.07, clamped to 0.020
+    assert params.stop_distance_pct == pytest.approx(0.020)
 
 
 def test_sizing_atr_zero_uses_fallback():
@@ -369,44 +369,45 @@ def test_generate_signal_id_is_reasonable_timestamp():
 
 
 # ============================================================
-# build_sizing_params() — SL 범위 조정 (ATR * 0.8, clamp 0.4%~1.5%)
+# build_sizing_params() — SL 단일화 (ATR * 0.7, clamp 0.5%~2.0%, Policy Sec 10.1.1)
+# stop_manager.calculate_stop_distance_pct와 동일 소스
 # ============================================================
 
 
-def test_sizing_atr_based_stop_distance_new_multiplier():
-    """ATR=1000, price=50000 → raw = (1000*0.8)/50000 = 0.016, clamped to max 0.015."""
+def test_sizing_atr_based_stop_distance_mid_range():
+    """ATR=1000, price=50000 → raw = (1000*0.7)/50000 = 0.014, within [0.005, 0.020]."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=1000.0)
-    # raw = (1000 * 0.8) / 50000 = 0.016, clamped to 0.015
-    assert params.stop_distance_pct == pytest.approx(0.015)
+    # raw = (1000 * 0.7) / 50000 = 0.014, unclamped
+    assert params.stop_distance_pct == pytest.approx(0.014)
 
 
-def test_sizing_atr_stop_new_clamp_min():
-    """ATR very small → clamp to 0.4% min (변경 전 0.5%)."""
+def test_sizing_atr_stop_unified_clamp_min():
+    """ATR very small → clamp to 0.5% min (Policy Sec 10.1.1)."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=100.0)
-    # raw = (100 * 0.8) / 50000 = 0.0016, clamped to 0.004
-    assert params.stop_distance_pct == pytest.approx(0.004)
+    # raw = (100 * 0.7) / 50000 = 0.0014, clamped to 0.005
+    assert params.stop_distance_pct == pytest.approx(0.005)
 
 
-def test_sizing_atr_stop_new_clamp_max():
-    """ATR very large → clamp to 1.5% max (변경 전 2.0%)."""
+def test_sizing_atr_stop_unified_clamp_max():
+    """ATR very large → clamp to 2.0% max (Policy Sec 10.1.1)."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=5000.0)
-    # raw = (5000 * 0.8) / 50000 = 0.08, clamped to 0.015
-    assert params.stop_distance_pct == pytest.approx(0.015)
+    # raw = (5000 * 0.7) / 50000 = 0.07, clamped to 0.020
+    assert params.stop_distance_pct == pytest.approx(0.020)
 
 
-def test_sizing_atr_within_new_range():
-    """ATR=500, price=50000 → raw = (500*0.8)/50000 = 0.008, within [0.004, 0.015]."""
+def test_sizing_atr_within_unified_range():
+    """ATR=500, price=50000 → raw = (500*0.7)/50000 = 0.007, within [0.005, 0.020]."""
     signal = _make_signal(price=50000.0, qty=3)
     md = _make_market_data()
     params = build_sizing_params(signal, md, atr=500.0)
-    # raw = (500 * 0.8) / 50000 = 0.008, unclamped
-    assert params.stop_distance_pct == pytest.approx(0.008)
+    # raw = (500 * 0.7) / 50000 = 0.007, unclamped
+    assert params.stop_distance_pct == pytest.approx(0.007)
 
 
 # ============================================================
