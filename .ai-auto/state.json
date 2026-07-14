@@ -1,0 +1,35 @@
+{
+  "pipeline_id": "b3ed7e34-e686-4782-a3d1-fadbba7921bb",
+  "project": "cbgb_agentic_v1",
+  "scale": "L",
+  "started_at": "2026-03-18T14:04:46.380063+00:00",
+  "current_phase": 3,
+  "completed_phases": [
+    1,
+    2
+  ],
+  "completed_tasks": [
+    "T-S6"
+  ],
+  "failed_tasks": [],
+  "skipped_tasks": [],
+  "baseline_failures": [
+    "test_telegram_notifier(3)",
+    "test_dockerfile_build",
+    "integration_real(2)"
+  ],
+  "phase_timings": {
+    "1": {
+      "completed": "2026-03-18T14:10:00Z"
+    },
+    "2": {
+      "completed": "2026-03-18T14:15:00Z"
+    }
+  },
+  "last_updated": "2026-03-18T14:28:46.394510+00:00",
+  "notes": {
+    "S6": "CRITICAL \ubc84\uadf8 \uc218\uc815 + Docker \ubc30\ud3ec \uc644\ub8cc. T_TREND 0.4%\u21920.1288% \uc790\ub3d9\ubcf4\uc815. SHORT 3 contracts \uccb4\uacb0.",
+    "S8_status": "GREEN (434 passed)",
+    "S7_status": "TDD-RED \uc644\ub8cc \ub300\uae30 \uc911"
+  }
+}

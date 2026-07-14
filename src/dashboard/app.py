@@ -29,13 +29,20 @@ from src.dashboard.metrics_calculator import (
     calculate_regime_breakdown,
     calculate_slippage_stats,
     calculate_latency_stats,
+    calculate_cumulative_pnl,
+    calculate_win_rate_by_regime,
+    calculate_max_drawdown,
+    calculate_hold_time_stats,
+    calculate_daily_pnl,
 )
 from src.dashboard.ui_components import (
     create_pnl_chart,
     create_trade_distribution,
     create_session_risk_gauge,
+    create_journal_tab,
     get_date_range,
 )
+from src.dashboard.data_pipeline import load_journal_df, calculate_journal_stats, load_all_trades, get_summary_stats
 from src.dashboard.file_watcher import (
     get_latest_modification_time,
     has_directory_changed,
@@ -445,8 +452,14 @@ def main():
 
     st.markdown("---")
 
-    # --- Tabs (Overview / Risk / Diagnostics) ---
-    tab1, tab2, tab3 = st.tabs(["📊 Overview", "⚙️ Risk & Config", "⚡ Diagnostics"])
+    # --- Tabs (Overview / 성과 분석 / Risk / Diagnostics / 매매일지) ---
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Overview",
+        "📈 성과 분석",
+        "⚙️ Risk & Config",
+        "⚡ Diagnostics",
+        "📒 매매일지",
+    ])
 
     # TAB 1: Overview
     with tab1:
@@ -470,8 +483,158 @@ def main():
             st.metric("승률", f"{summary['win_rate'] * 100:.1f}%")
             st.metric("거래 횟수", f"{summary['trade_count']}")
 
-    # TAB 2: Risk & Config
+    # TAB 2: 성과 분석
     with tab2:
+        st.header("📈 성과 분석")
+
+        # load_all_trades로 enriched DataFrame 사용 (entry_time/exit_time 포함)
+        all_trades_df = load_all_trades(log_dir)
+
+        if all_trades_df.empty:
+            st.info("ℹ️ 트레이드 데이터가 없습니다.")
+        else:
+            import plotly.graph_objects as _go
+            import plotly.express as _px
+
+            # --- 요약 통계 배너 ---
+            summary_stats = get_summary_stats(all_trades_df)
+            s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns(5)
+            with s_col1:
+                st.metric("총 트레이드", summary_stats["total_trades"])
+            with s_col2:
+                st.metric("승률", f"{summary_stats['win_rate'] * 100:.1f}%")
+            with s_col3:
+                st.metric("총 손익", f"${summary_stats['total_pnl']:.2f}")
+            with s_col4:
+                rr = summary_stats["rr_ratio"]
+                st.metric("R:R 비율", f"{rr:.2f}" if rr > 0 else "N/A")
+            with s_col5:
+                md = summary_stats["max_drawdown"]
+                st.metric("최대 드로다운", f"${md:.2f}", delta=None)
+
+            st.markdown("---")
+
+            # --- PnL 누적 곡선 ---
+            st.subheader("누적 PnL 곡선")
+            cum_pnl = calculate_cumulative_pnl(all_trades_df)
+            if not cum_pnl.empty:
+                cum_df = cum_pnl.reset_index()
+                cum_df.columns = ["exit_time", "cumulative_pnl"]
+                cum_df = cum_df.dropna(subset=["exit_time"])
+
+                fig_cum = _go.Figure()
+                fig_cum.add_trace(_go.Scatter(
+                    x=cum_df["exit_time"],
+                    y=cum_df["cumulative_pnl"],
+                    mode="lines+markers",
+                    name="누적 PnL",
+                    line=dict(color="#4F46E5", width=2),
+                    marker=dict(size=5),
+                ))
+                fig_cum.add_hline(y=0, line_dash="dash", line_color="gray",
+                                  annotation_text="손익분기")
+                fig_cum.update_layout(
+                    xaxis_title="청산 시각",
+                    yaxis_title="누적 손익 (USDT)",
+                    template="plotly_white",
+                    height=320,
+                    margin=dict(l=40, r=40, t=30, b=40),
+                    hovermode="x unified",
+                )
+                st.plotly_chart(fig_cum, use_container_width=True)
+            else:
+                st.info("exit_time 데이터가 없어 누적 PnL 곡선을 표시할 수 없습니다.")
+
+            st.markdown("---")
+
+            # --- 일별 PnL bar chart + Regime 승률 ---
+            perf_left, perf_right = st.columns(2)
+
+            with perf_left:
+                st.subheader("일별 PnL")
+                daily = calculate_daily_pnl(all_trades_df)
+                if not daily.empty:
+                    colors = ["#10B981" if v >= 0 else "#EF4444" for v in daily.values]
+                    fig_daily = _go.Figure(_go.Bar(
+                        x=daily.index,
+                        y=daily.values,
+                        marker_color=colors,
+                        name="일별 PnL",
+                    ))
+                    fig_daily.add_hline(y=0, line_dash="dash", line_color="gray")
+                    fig_daily.update_layout(
+                        xaxis_title="날짜",
+                        yaxis_title="PnL (USDT)",
+                        template="plotly_white",
+                        height=300,
+                        margin=dict(l=30, r=30, t=30, b=30),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig_daily, use_container_width=True)
+                else:
+                    st.info("exit_time 정보가 없어 일별 PnL을 표시할 수 없습니다.")
+
+            with perf_right:
+                st.subheader("Regime별 승률")
+                regime_wr = calculate_win_rate_by_regime(all_trades_df)
+                if regime_wr:
+                    fig_regime = _go.Figure(_go.Bar(
+                        x=list(regime_wr.keys()),
+                        y=[v * 100 for v in regime_wr.values()],
+                        marker_color="#7C3AED",
+                        name="승률(%)",
+                    ))
+                    fig_regime.add_hline(y=50, line_dash="dash", line_color="gray",
+                                         annotation_text="50%")
+                    fig_regime.update_layout(
+                        xaxis_title="Market Regime",
+                        yaxis_title="승률 (%)",
+                        template="plotly_white",
+                        height=300,
+                        margin=dict(l=30, r=30, t=30, b=30),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig_regime, use_container_width=True)
+                else:
+                    st.info("market_regime 데이터가 없습니다.")
+
+            st.markdown("---")
+
+            # --- 최대 드로다운 ---
+            st.subheader("드로다운 분석")
+            dd_stats = calculate_max_drawdown(all_trades_df)
+            dd_col1, dd_col2 = st.columns(2)
+            with dd_col1:
+                st.metric("최대 드로다운 (USD)", f"${dd_stats['max_drawdown_usd']:.2f}")
+            with dd_col2:
+                dd_pct = dd_stats["max_drawdown_pct"] * 100
+                st.metric("최대 드로다운 (%)", f"{dd_pct:.1f}%")
+
+            dd_series = dd_stats["drawdown_series"]
+            if not dd_series.empty:
+                dd_df = dd_series.reset_index()
+                dd_df.columns = ["exit_time", "drawdown"]
+                dd_df = dd_df.dropna(subset=["exit_time"])
+                fig_dd = _go.Figure(_go.Scatter(
+                    x=dd_df["exit_time"],
+                    y=dd_df["drawdown"],
+                    fill="tozeroy",
+                    mode="lines",
+                    line=dict(color="#EF4444", width=1.5),
+                    fillcolor="rgba(239,68,68,0.15)",
+                    name="드로다운",
+                ))
+                fig_dd.update_layout(
+                    xaxis_title="시각",
+                    yaxis_title="드로다운 (USDT)",
+                    template="plotly_white",
+                    height=250,
+                    margin=dict(l=30, r=30, t=20, b=30),
+                )
+                st.plotly_chart(fig_dd, use_container_width=True)
+
+    # TAB 3: Risk & Config
+    with tab3:
         # Current Position Details (real-time from Bybit API)
         st.header("📍 현재 포지션")
 
@@ -551,15 +714,15 @@ def main():
             with col_cfg2:
                 st.metric(
                     label="거래 방향",
-                    value="LONG",
-                    help="매수 전용 (하락장 거래 금지)"
+                    value="LONG/SHORT",
+                    help="앙상블 신호 기반 양방향 거래 (Trending Up=LONG, Trending Down=SHORT)"
                 )
 
             with col_cfg3:
                 st.metric(
                     label="레버리지",
                     value="3x",
-                    help="Stage 1/2: 3x, Stage 3: 2x (Equity 기준)"
+                    help="전 Stage 3x 통일 (v2.5, Isolated Margin)"
                 )
 
             # Row 2: Grid Strategy Parameters
@@ -569,8 +732,8 @@ def main():
             with col_grid1:
                 st.metric(
                     label="Stop Distance",
-                    value="3%",
-                    help="손절 거리 (Entry 대비)"
+                    value="ATR×0.7 (0.5%~2.0%)",
+                    help="손절 거리: ATR × 0.7, clamp(0.5%, 2.0%) — policy v2.5"
                 )
 
             with col_grid2:
@@ -669,8 +832,52 @@ def main():
             hide_index=True,
         )
 
-    # TAB 3: Diagnostics
-    with tab3:
+        # 시스템 상태 (거래 지표 기반)
+        st.markdown("---")
+        st.header("🖥️ 시스템 상태")
+
+        _sys_risk = calculate_session_risk(df)
+        _sys_summary = calculate_summary(df)
+
+        sys_col1, sys_col2, sys_col3, sys_col4 = st.columns(4)
+
+        with sys_col1:
+            # 봇 상태: 연속손실 기반
+            _streak = int(_sys_risk.get("max_loss_streak", 0))
+            if _streak >= 5:
+                _bot_status = "HALT (5연패)"
+                _bot_delta = "72h cooldown"
+            elif _streak >= 3:
+                _bot_status = "WARN (3연패)"
+                _bot_delta = "당일 주의"
+            else:
+                _bot_status = "정상"
+                _bot_delta = f"연속손실 {_streak}회"
+            st.metric("봇 헬스", _bot_status, delta=_bot_delta)
+
+        with sys_col2:
+            # 오늘 거래 수 / 한도
+            _today_count = 0
+            if "exit_time" in df.columns:
+                _today_df = df.copy()
+                _today_df["_exit_date"] = pd.to_datetime(
+                    _today_df["exit_time"], unit="s", utc=True, errors="coerce"
+                ).dt.date
+                from datetime import date as _date_cls
+                _today_count = int((_today_df["_exit_date"] == _date_cls.today()).sum())
+            st.metric("오늘 거래 수", f"{_today_count} / 10", delta="일일 한도 10회")
+
+        with sys_col3:
+            st.metric("연속 손실", f"{_streak}회",
+                      delta="HALT 기준 3연패" if _streak < 3 else "HALT 도달!")
+
+        with sys_col4:
+            _daily_loss = _sys_risk.get("daily_max_loss", 0.0)
+            st.metric("일일 최대 손실", f"${_daily_loss:.2f}",
+                      delta="한도: -5% Equity")
+
+    # TAB 4: Diagnostics
+    with tab4:
         st.header("⚡ 체결 품질")
 
         col_slippage, col_latency = st.columns(2)
@@ -684,6 +891,110 @@ def main():
             st.subheader("레이턴시 통계")
             latency = calculate_latency_stats(df)
             st.json(latency)
+
+        # 보유 시간 통계
+        st.markdown("---")
+        st.subheader("포지션 보유 시간")
+        hold_stats_diag = calculate_hold_time_stats(df)
+        if hold_stats_diag["valid_count"] > 0:
+            h_col1, h_col2, h_col3 = st.columns(3)
+            with h_col1:
+                st.metric("평균 보유 시간",
+                          f"{hold_stats_diag['mean_seconds'] / 60:.1f}분")
+            with h_col2:
+                st.metric("중앙값 보유 시간",
+                          f"{hold_stats_diag['median_seconds'] / 60:.1f}분")
+            with h_col3:
+                st.metric("유효 레코드", hold_stats_diag["valid_count"])
+        else:
+            st.info("hold_seconds 데이터가 없습니다.")
+
+    # TAB 5: 매매일지
+    with tab5:
+        st.header("📒 매매일지")
+        log_path_journal = Path(log_dir)
+        journal_df = load_journal_df(log_path_journal) if log_path_journal.exists() else pd.DataFrame()
+        journal_stats = calculate_journal_stats(journal_df)
+
+        # 요약 통계
+        col_j1, col_j2, col_j3, col_j4 = st.columns(4)
+        with col_j1:
+            st.metric("총 거래", journal_stats["total_trades"])
+        with col_j2:
+            st.metric("승률", f"{journal_stats['win_rate'] * 100:.1f}%")
+        with col_j3:
+            st.metric("평균 PnL", f"${journal_stats['avg_pnl']:.2f}")
+        with col_j4:
+            st.metric("최대 손실", f"${journal_stats['max_loss']:.2f}")
+
+        st.markdown("---")
+
+        journal_data = create_journal_tab(journal_df)
+        if journal_data["empty"]:
+            st.info("거래 기록이 없습니다.")
+        else:
+            # 누적 PnL 차트
+            if journal_data["cumulative_pnl"]:
+                import plotly.graph_objects as _go
+                fig_j = _go.Figure(
+                    _go.Scatter(
+                        y=journal_data["cumulative_pnl"],
+                        mode="lines+markers",
+                        name="누적 PnL",
+                        line=dict(color="#00cec9", width=2),
+                    )
+                )
+                fig_j.update_layout(
+                    title="누적 PnL",
+                    yaxis_title="PnL (USDT)",
+                    template="plotly_white",
+                    height=300,
+                    margin=dict(l=40, r=40, t=40, b=40),
+                )
+                st.plotly_chart(fig_j, use_container_width=True)
+
+            # 거래 테이블 (entry_time, exit_time, hold_seconds 컬럼 포함)
+            _jdf_raw = load_all_trades(log_dir)
+            if not _jdf_raw.empty:
+                _cols_show = [c for c in [
+                    "direction", "entry_price", "exit_price",
+                    "qty_btc", "realized_pnl_usd", "fee_usd",
+                    "entry_time", "exit_time", "hold_seconds", "market_regime",
+                ] if c in _jdf_raw.columns]
+                _jdf_display = _jdf_raw[_cols_show].copy()
+
+                # entry_time, exit_time → 사람이 읽기 쉬운 형식
+                for _ts_col in ("entry_time", "exit_time"):
+                    if _ts_col in _jdf_display.columns:
+                        _jdf_display[_ts_col] = pd.to_datetime(
+                            _jdf_display[_ts_col], unit="s", utc=True, errors="coerce"
+                        ).dt.strftime("%m/%d %H:%M")
+
+                # hold_seconds null → "-"
+                if "hold_seconds" in _jdf_display.columns:
+                    _jdf_display["hold_seconds"] = _jdf_display["hold_seconds"].apply(
+                        lambda x: f"{x:.0f}s" if pd.notna(x) else "-"
+                    )
+
+                # realized_pnl_usd 컬럼 색상 (st.dataframe에서 직접 지원 안 됨, 수치만 표시)
+                _col_rename = {
+                    "direction": "방향",
+                    "entry_price": "진입가",
+                    "exit_price": "청산가",
+                    "qty_btc": "수량(BTC)",
+                    "realized_pnl_usd": "PnL($)",
+                    "fee_usd": "수수료",
+                    "entry_time": "진입시각",
+                    "exit_time": "청산시각",
+                    "hold_seconds": "보유시간",
+                    "market_regime": "시장",
+                }
+                _jdf_display = _jdf_display.rename(columns=_col_rename)
+                st.dataframe(_jdf_display, use_container_width=True, hide_index=True)
+            else:
+                # fallback: 기존 journal_data 테이블
+                table_df = pd.DataFrame(journal_data["table_data"])
+                st.dataframe(table_df, use_container_width=True, hide_index=True)
 
     # --- Footer ---
     st.sidebar.markdown("---")

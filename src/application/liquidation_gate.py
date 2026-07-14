@@ -20,6 +20,21 @@ from dataclasses import dataclass
 
 
 @dataclass
+class LiquidationParams:
+    """Liquidation gate 입력 파라미터 (check_liquidation_gate용).
+
+    SSOT: FLOW.md Section 7.5, Policy.md Section 5/10.1.4
+    """
+    entry_price_usd: float
+    contracts: int
+    leverage: float
+    direction: str  # "LONG" or "SHORT"
+    equity_usdt: float
+    stop_distance_pct: float
+    stage_id: int
+
+
+@dataclass
 class LiquidationGateResult:
     """Liquidation gate 검증 결과"""
     allowed: bool
@@ -123,8 +138,8 @@ def check_liquidation_gate(params, api_failure: bool = False) -> LiquidationGate
 
     # 3. Fallback 처리 (API 실패 시)
     if liq_distance_pct is None:
-        # Fallback Rule 1: leverage > 3 → REJECT
-        if params.leverage > 5.0:  # 2026-02-20: 3.0 → 5.0
+        # Fallback Rule 1: leverage > 3 → REJECT (v2.5: max 3x)
+        if params.leverage > 3.0:
             return LiquidationGateResult(
                 allowed=False,
                 reject_reason="leverage_too_high_without_liq_check",

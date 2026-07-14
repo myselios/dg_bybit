@@ -201,3 +201,115 @@ def test_calculate_pnl_from_trade():
         # pnl 필드가 없는 경우
         trade_without_pnl = {"order_id": "order_2"}
         assert analyzer._calculate_pnl(trade_without_pnl) == 0.0
+
+
+# ============================================================================
+# Bug Fix 1: hold_seconds 필드 지원 (실제 로그 필드명) + 음수 제외
+# ============================================================================
+
+def test_avg_holding_time_uses_hold_seconds_field():
+    """정상: 실제 로그 필드 hold_seconds를 보유시간으로 사용"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        trades = [
+            {"order_id": "o1", "hold_seconds": 100.0},
+            {"order_id": "o2", "hold_seconds": 300.0},
+        ]
+        # holding_time_seconds가 아니라 hold_seconds를 읽어야 함
+        assert analyzer._calculate_avg_holding_time(trades) == pytest.approx(200.0)
+
+
+def test_avg_holding_time_hold_seconds_priority_over_legacy():
+    """정상: hold_seconds가 있으면 legacy holding_time_seconds보다 우선"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        trades = [
+            {"order_id": "o1", "hold_seconds": 100.0, "holding_time_seconds": 9999.0},
+        ]
+        assert analyzer._calculate_avg_holding_time(trades) == pytest.approx(100.0)
+
+
+def test_avg_holding_time_falls_back_to_legacy_field():
+    """정상: hold_seconds 부재 시 legacy holding_time_seconds 사용"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        trades = [
+            {"order_id": "o1", "holding_time_seconds": 3600.0},
+            {"order_id": "o2", "holding_time_seconds": 1800.0},
+        ]
+        assert analyzer._calculate_avg_holding_time(trades) == pytest.approx(2700.0)
+
+
+def test_avg_holding_time_excludes_negative_hold_seconds():
+    """정상: 음수 hold_seconds(과거 ms 버그 데이터)는 평균에서 제외"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        trades = [
+            {"order_id": "o1", "hold_seconds": 100.0},
+            {"order_id": "o2", "hold_seconds": -1772845257734.26},  # ms 버그 잔재
+            {"order_id": "o3", "hold_seconds": 300.0},
+        ]
+        # 음수 제외 → (100 + 300) / 2 = 200
+        assert analyzer._calculate_avg_holding_time(trades) == pytest.approx(200.0)
+
+
+def test_avg_holding_time_handles_none_and_missing():
+    """경계: hold_seconds가 None이거나 필드 부재인 거래는 건너뜀"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        trades = [
+            {"order_id": "o1", "hold_seconds": 200.0},
+            {"order_id": "o2", "hold_seconds": None},
+            {"order_id": "o3"},  # 필드 없음
+        ]
+        assert analyzer._calculate_avg_holding_time(trades) == pytest.approx(200.0)
+
+
+def test_avg_holding_time_all_invalid_returns_zero():
+    """경계: 유효한 보유시간이 하나도 없으면 0.0"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        trades = [
+            {"order_id": "o1", "hold_seconds": -5.0},
+            {"order_id": "o2", "hold_seconds": None},
+        ]
+        assert analyzer._calculate_avg_holding_time(trades) == 0.0
+
+
+# ============================================================================
+# Bug Fix 2: max_drawdown을 시작자본 기준 equity curve로 계산
+# ============================================================================
+
+def test_max_drawdown_uses_equity_curve():
+    """정상: 시작자본 기준 equity curve로 낙폭 계산 (누적 PnL 분모 발산 방지)"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        # equity: 100 -> 90 -> 80, peak=100, max_dd=(100-80)/100=20%
+        assert analyzer._calculate_max_drawdown([-10.0, -10.0]) == pytest.approx(20.0)
+
+
+def test_max_drawdown_peak_then_decline():
+    """정상: 상승 후 하락 시 직전 peak 기준 낙폭"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        # equity: 100 -> 110 -> 90 -> 95, peak=110, max_dd=(110-90)/110
+        assert analyzer._calculate_max_drawdown([10.0, -20.0, 5.0]) == pytest.approx(
+            20.0 / 110.0 * 100, abs=0.01
+        )
+
+
+def test_max_drawdown_respects_starting_capital():
+    """정상: starting_capital 파라미터가 분모(equity)에 반영됨"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        # start=50: 50 -> 40, dd=(50-40)/50=20%
+        assert analyzer._calculate_max_drawdown([-10.0], starting_capital=50.0) == pytest.approx(20.0)
+        # start=100 default: 100 -> 90, dd=10%
+        assert analyzer._calculate_max_drawdown([-10.0]) == pytest.approx(10.0)
+
+
+def test_max_drawdown_no_loss_is_zero():
+    """경계: 단조 증가 equity는 낙폭 0"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        analyzer = TradeAnalyzer(log_dir=str(tmpdir))
+        assert analyzer._calculate_max_drawdown([10.0, 5.0, 20.0]) == 0.0

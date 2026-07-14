@@ -28,9 +28,16 @@ class MockRestClient:
     def __init__(self, should_fail=False):
         self.should_fail = should_fail
         self.orders = []
+        self._position_size: float = 0.0
+
+    def inject_position_size(self, size: float):
+        """포지션 크기 주입 (IN_POSITION 테스트용)"""
+        self._position_size = size
 
     def get_position(self, symbol: str, category: str = "linear"):
-        """Mock get_position — returns empty (no position)"""
+        """Mock get_position — inject_position_size로 주입 가능"""
+        if self._position_size > 0:
+            return {"retCode": 0, "result": {"list": [{"size": str(self._position_size)}]}}
         return {"retCode": 0, "result": {"list": []}}
 
     def set_trading_stop(self, symbol: str, stop_loss: str, category: str = "linear", position_idx: int = 0, sl_trigger_by: str = "MarkPrice"):
@@ -48,6 +55,10 @@ class MockRestClient:
         order_link_id: str,
         category: str = "linear",
         reduce_only: bool = False,
+        is_post_only: bool = False,
+        stop_loss: str = None,
+        sl_trigger_by: str = "MarkPrice",
+        **kwargs,
     ):
         """Mock place_order method"""
         if self.should_fail:
@@ -150,6 +161,7 @@ def test_entry_blocked_state_not_flat():
     fake_data.inject_last_fill_price(49800.0)
 
     mock_rest_client = MockRestClient()
+    mock_rest_client.inject_position_size(0.001)  # IN_POSITION 동기화 통과용
     orchestrator = Orchestrator(market_data=fake_data, rest_client=mock_rest_client)
     orchestrator.state = State.IN_POSITION  # Force state
 

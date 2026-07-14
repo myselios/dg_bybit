@@ -81,6 +81,12 @@ done
 # 프로젝트 루트로 이동
 cd "$(dirname "$0")/.."
 
+# 빌드 시점 커밋을 이미지에 굽기 위해 export (docker-compose build.args 가 참조)
+# 낡은 .env 의 GIT_COMMIT 대신 항상 현재 HEAD 를 사용한다.
+GIT_COMMIT="$(git rev-parse --short HEAD)"
+export GIT_COMMIT
+echo -e "${BLUE}  빌드 대상 커밋: ${GIT_COMMIT}${NC}"
+
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${BLUE}  CBGB Docker 재빌드 시작${NC}"
 echo -e "${BLUE}==================================================${NC}"
@@ -130,6 +136,32 @@ echo ""
 echo -e "${GREEN}✅ 컨테이너 상태:${NC}"
 docker-compose ps
 echo ""
+
+# Step 5.5: 배포 검증 (실행 중인 코드 == HEAD 확인)
+# bot 컨테이너에 구워진 커밋이 현재 HEAD 와 일치하는지 확인한다.
+# 불일치 = 구코드가 돌고 있다는 뜻 (재빌드 누락/캐시/‑n 재시작) → 즉시 실패.
+if [ -z "$SERVICE" ] || [ "$SERVICE" = "bot" ]; then
+    echo -e "${YELLOW}🔎 배포 검증: 컨테이너 커밋 == HEAD 확인...${NC}"
+    EXPECTED_COMMIT="$(git rev-parse --short HEAD)"
+    ACTUAL_COMMIT="$(docker exec cbgb-bot cat /app/BUILD_COMMIT 2>/dev/null | tr -d '[:space:]')"
+
+    if [ -z "$ACTUAL_COMMIT" ]; then
+        echo -e "${RED}❌ 배포 검증 실패: 컨테이너에서 /app/BUILD_COMMIT 을 읽지 못함${NC}"
+        echo -e "${RED}   (이미지에 커밋 스탬프가 없음 — 재빌드 필요)${NC}"
+        exit 1
+    fi
+
+    if [ "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT" ]; then
+        echo -e "${RED}❌ 배포 검증 실패: 구코드가 실행 중입니다${NC}"
+        echo -e "${RED}   컨테이너 커밋: ${ACTUAL_COMMIT}${NC}"
+        echo -e "${RED}   HEAD 커밋:     ${EXPECTED_COMMIT}${NC}"
+        echo -e "${RED}   → 재빌드(-n 없이)로 다시 배포하세요.${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✅ 배포 검증 통과: 컨테이너 == HEAD (${ACTUAL_COMMIT})${NC}"
+    echo ""
+fi
 
 # Step 6: 로그 확인 (옵션)
 if [ "$SHOW_LOGS" = true ]; then

@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-03-20T10:16:24.890547+00:00",
+  "analysis_type": "ensemble_signal_backtest_wave2b",
+  "data_source": "logs/mainnet/trades_*.jsonl",
+  "total_trades": 29,
+  "win_rate_baseline": 0.3448,
+  "pnl_baseline": -12.3765,
+  "net_pnl_baseline": -15.5878,
+  "total_fee_usd": 3.2113,
+  "regime_breakdown": {
+    "trending_up": {
+      "count": 3,
+      "wins": 1,
+      "win_rate": 0.3333,
+      "gross_pnl": -0.5285,
+      "net_pnl": -0.8282
+    },
+    "trending_down": {
+      "count": 8,
+      "wins": 5,
+      "win_rate": 0.625,
+      "gross_pnl": 5.4957,
+      "net_pnl": 4.7699
+    },
+    "ranging": {
+      "count": 14,
+      "wins": 3,
+      "win_rate": 0.2143,
+      "gross_pnl": -15.2503,
+      "net_pnl": -16.8261
+    },
+    "high_vol": {
+      "count": 4,
+      "wins": 1,
+      "win_rate": 0.25,
+      "gross_pnl": -2.0934,
+      "net_pnl": -2.7034
+    }
+  },
+  "counter_trend_entries": 2,
+  "counter_trend_long_in_downtrend": 1,
+  "counter_trend_short_in_uptrend": 1,
+  "counter_trend_loss_rate": 0.5,
+  "counter_trend_net_pnl": -0.9966,
+  "ensemble_method": "synthetic_prices_from_trade_metadata",
+  "ensemble_threshold": 3,
+  "trades_blocked_by_ensemble": 10,
+  "trades_passing_ensemble": 19,
+  "blocked_trade_win_rate": 0.1,
+  "blocked_net_pnl": -15.8669,
+  "projected_win_rate_after_filtering": 0.4737,
+  "projected_pnl_after_filtering": 2.3016,
+  "projected_net_pnl_after_filtering": 0.2791,
+  "recommendation": "proceed",
+  "rationale": "Win rate improves 34.5%\u219247.4% (+12.9%) by filtering 10 low-quality entries. Net PnL improves from $-15.59 to $0.28 after filtering. Counter-trend loss rate 50.0% confirms ensemble MA-slope filter will reduce adverse entries. Blocked trades win rate 10.0% below baseline 34.5%: ensemble filters below-average entries."
+}

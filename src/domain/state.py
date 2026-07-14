@@ -93,6 +93,9 @@ class Position:
     # 복구 카운터
     stop_recovery_fail_count: int = 0
 
+    # 진입 시각 (대시보드/분석용)
+    entry_time: Optional[float] = None  # Unix timestamp (seconds)
+
     # DCA / TP 상태
     base_qty: int = 0
     dca_count: int = 0

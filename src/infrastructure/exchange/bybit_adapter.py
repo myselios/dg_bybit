@@ -31,6 +31,16 @@ from application.market_regime import MarketRegimeAnalyzer, Kline as RegimeKline
 logger = logging.getLogger(__name__)
 
 
+def _ms_to_seconds(ts: float) -> float:
+    """Bybit execTime (ms) → seconds 변환.
+
+    Bybit API는 execTime을 밀리초(ms) 단위로 반환한다.
+    ExecutionEvent.timestamp는 초(seconds) 단위를 사용한다.
+    1e12 기준: 2001-09-09 이후의 ms 타임스탬프 판별.
+    """
+    return ts / 1000.0 if ts > 1e12 else ts
+
+
 class BybitAdapter:
     """
     Bybit Adapter — MarketDataInterface 완전 구현
@@ -63,7 +73,7 @@ class BybitAdapter:
         self.atr_calculator = ATRCalculator(period=14, default_multiplier=0.5)
         self.session_risk_tracker = SessionRiskTracker()
         self.market_regime_analyzer = MarketRegimeAnalyzer(
-            ma_period=20,
+            ma_period=10,  # 2026-03-19: 20→10, slope 민감도 2배 향상
             trend_threshold_pct=0.2,
             high_vol_threshold_percentile=70.0
         )
@@ -109,6 +119,7 @@ class BybitAdapter:
         self._index_price: float = 0.0
         self._ma_slope_pct: float = 0.0
         self._atr_percentile: float = 50.0
+        self._cached_klines: List[RegimeKline] = []
         self._exchange_server_time_offset_ms: float = 0.0
 
         logger.info(f"BybitAdapter initialized (testnet={testnet})")
@@ -243,6 +254,35 @@ class BybitAdapter:
         """거래소 서버 시간 오프셋 (ms)"""
         return self._exchange_server_time_offset_ms
 
+    def get_klines(self, limit: int = 500) -> List[RegimeKline]:
+        """캐시된 kline 데이터 반환 (ThresholdCalibrator 용)"""
+        return self._cached_klines[-limit:] if self._cached_klines else []
+
+    def fetch_klines(self, symbol: str = "BTCUSDT", interval: str = "1", limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Recent klines with close and volume via REST API.
+
+        Returns:
+            List of dicts with keys: close (float), volume (float)
+            Returns [] on error.
+        """
+        try:
+            response = self.rest_client.get_kline(
+                category="linear",
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+            )
+            raw_list = response.get("result", {}).get("list", [])
+            # Bybit returns newest-first; reverse for chronological order
+            return [
+                {"close": float(k[4]), "volume": float(k[5])}
+                for k in reversed(raw_list)
+            ]
+        except Exception as e:
+            logger.warning(f"fetch_klines failed: {e}")
+            return []
+
     # ========== Phase 12a-1: REST API Integration ==========
 
     def update_market_data(self):
@@ -342,7 +382,8 @@ class BybitAdapter:
                         low = float(kline_data[3])
                         close = float(kline_data[4])
                         klines_atr.append(ATRKline(high=high, low=low, close=close))
-                        klines_regime.append(RegimeKline(close=close, high=high, low=low))
+                        volume = float(kline_data[5]) if len(kline_data) > 5 else 0.0
+                        klines_regime.append(RegimeKline(close=close, high=high, low=low, volume=volume))
 
                     if len(klines_atr) >= 15:
                         self._atr = self.atr_calculator.calculate_atr(klines_atr)
@@ -358,6 +399,7 @@ class BybitAdapter:
 
                     if len(klines_regime) >= 21:
                         self._ma_slope_pct = self.market_regime_analyzer.calculate_ma_slope(klines_regime)
+                        self._cached_klines = klines_regime
 
                 self._last_kline_refresh_ts = now
 
@@ -416,7 +458,7 @@ class BybitAdapter:
                     order_link_id=raw_event.get("orderLinkId", ""),
                     filled_qty=filled_qty_contracts,
                     order_qty=order_qty_contracts,
-                    timestamp=float(raw_event.get("execTime", 0)),
+                    timestamp=_ms_to_seconds(float(raw_event.get("execTime", 0))),
                     exec_price=float(raw_event.get("execPrice", 0.0)),  # ✅ executed_price → exec_price
                     fee_paid=float(raw_event.get("execFee", 0.0)),  # ✅ fee → fee_paid
                 )

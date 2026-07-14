@@ -233,6 +233,59 @@ def create_session_risk_gauge(
     return fig
 
 
+def create_journal_tab(df: pd.DataFrame) -> dict:
+    """매매일지 탭 컴포넌트 데이터 생성.
+
+    Args:
+        df: load_journal_df()로 로드한 DataFrame
+
+    Returns:
+        dict with keys: table_data, columns, cumulative_pnl (list), empty (bool)
+    """
+    if df.empty:
+        return {"empty": True, "table_data": [], "columns": [], "cumulative_pnl": []}
+
+    columns_map = {
+        "exit_time": "날짜",
+        "direction": "방향",
+        "entry_price": "진입가",
+        "exit_price": "청산가",
+        "qty_btc": "수량(BTC)",
+        "realized_pnl_usd": "PnL($)",
+        "fee_usd": "수수료",
+        "hold_minutes": "Hold(분)",
+        "market_regime": "시장",
+    }
+
+    display_cols = [c for c in columns_map if c in df.columns]
+    df_display = df[display_cols].copy()
+
+    # exit_time 포맷
+    if "exit_time" in df_display.columns:
+        df_display["exit_time"] = pd.to_datetime(
+            df_display["exit_time"], unit="s", utc=True, errors="coerce"
+        ).dt.strftime("%m/%d %H:%M")
+
+    # hold_minutes: None → '-'
+    if "hold_minutes" in df_display.columns:
+        df_display["hold_minutes"] = df_display["hold_minutes"].apply(
+            lambda x: f"{x:.0f}" if x is not None and str(x) != "nan" else "-"
+        )
+
+    # 누적 PnL
+    cum_pnl: list = []
+    if "realized_pnl_usd" in df.columns:
+        pnl_values = df["realized_pnl_usd"].fillna(0)
+        cum_pnl = list(pnl_values.cumsum())
+
+    return {
+        "empty": False,
+        "table_data": df_display.rename(columns=columns_map).to_dict("records"),
+        "columns": [{"name": columns_map[c], "id": columns_map[c]} for c in display_cols],
+        "cumulative_pnl": cum_pnl,
+    }
+
+
 def get_date_range(df: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:
     """
     DataFrame에서 날짜 범위 추출 (fills.timestamp 기준)

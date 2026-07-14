@@ -14,9 +14,10 @@ Telegram Bot API를 통한 거래 알림 전송
 - API 실패 시 로그만 출력, 예외 전파 안 함 (거래 중단 방지)
 """
 
+import json
 import os
 import logging
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from urllib import request, parse, error
 
 
@@ -376,6 +377,178 @@ class TelegramNotifier:
         text += f"📈 평가 금액: ${total_value:,.0f}\n"
         text += f"📉 총 손익: {pnl_sign}{total_pnl_pct:.2f}% ({pnl_sign}${total_pnl_usd:,.0f})"
         return text
+
+    def send_param_change(
+        self,
+        param_name: str,
+        old_val: float,
+        new_val: float,
+        reason: str,
+    ) -> bool:
+        """파라미터 자동 변경 알림 (단방향, 승인 불필요).
+
+        Args:
+            param_name: 변경된 파라미터 이름
+            old_val: 기존 값
+            new_val: 변경된 값
+            reason: 변경 근거 (ReflectionAgent hypothesis)
+
+        Returns:
+            bool: 전송 성공 여부
+        """
+        if not self.enabled:
+            return False
+
+        direction = "▲" if new_val > old_val else "▼"
+        change_pct = abs(new_val - old_val) / old_val * 100 if old_val != 0 else 0
+
+        text = (
+            f"🔧 *파라미터 자동 조정*\n\n"
+            f"*{param_name}*: `{old_val:.4f}%` → `{new_val:.4f}%` "
+            f"({direction}{change_pct:.0f}%)\n\n"
+            f"📋 근거: {reason}"
+        )
+        return self._send_message(text)
+
+    def send_approval_request(
+        self,
+        approval_id: str,
+        param_name: str,
+        old_val: float,
+        new_val: float,
+        reason: str,
+    ) -> bool:
+        """파라미터 변경 승인 요청 (Inline Keyboard 버튼 포함).
+
+        Args:
+            approval_id: 승인 요청 고유 ID
+            param_name: 변경할 파라미터 이름 (예: T_TREND)
+            old_val: 기존 값
+            new_val: 변경 제안 값
+            reason: 변경 근거
+
+        Returns:
+            bool: 전송 성공 여부
+        """
+        if not self.enabled:
+            return False
+
+        change_pct = abs(new_val - old_val) / old_val * 100 if old_val != 0 else 0
+        direction = "▲" if new_val > old_val else "▼"
+
+        text = (
+            f"🤖 *파라미터 변경 승인 요청*\n\n"
+            f"*{param_name}*: `{old_val:.4f}%` → `{new_val:.4f}%` "
+            f"({direction}{change_pct:.0f}%, MAJOR)\n\n"
+            f"📋 근거: {reason}\n\n"
+            f"승인하면 다음 틱부터 즉시 적용됩니다."
+        )
+
+        buttons = [
+            [
+                {"text": "✅ 승인", "callback_data": f"approve_{approval_id}"},
+                {"text": "❌ 거부", "callback_data": f"reject_{approval_id}"},
+            ]
+        ]
+        return self._send_message_with_buttons(text, buttons)
+
+    def get_updates(self, offset: int = 0) -> List[Dict[str, Any]]:
+        """Telegram getUpdates polling.
+
+        Args:
+            offset: 이전 update_id + 1 (처리된 메시지 skip)
+
+        Returns:
+            list: update 목록 (빈 리스트면 새 메시지 없음)
+        """
+        if not self.enabled:
+            return []
+
+        url = (
+            f"https://api.telegram.org/bot{self.bot_token}"
+            f"/getUpdates?offset={offset}&timeout=0&limit=10"
+        )
+
+        try:
+            req = request.Request(url, method="GET")
+            with request.urlopen(req, timeout=5) as response:
+                if response.status == 200:
+                    body = json.loads(response.read().decode("utf-8"))
+                    return body.get("result", [])
+                return []
+        except Exception as e:
+            logger.error(f"Telegram getUpdates error: {type(e).__name__}: {e}")
+            return []
+
+    def answer_callback_query(self, callback_query_id: str, text: str = "") -> bool:
+        """버튼 클릭 후 스피너 해제.
+
+        Args:
+            callback_query_id: Telegram callback query ID
+            text: 팝업 텍스트 (선택)
+
+        Returns:
+            bool: 성공 여부
+        """
+        if not self.enabled:
+            return False
+
+        url = f"https://api.telegram.org/bot{self.bot_token}/answerCallbackQuery"
+        data: Dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text:
+            data["text"] = text
+
+        try:
+            req = request.Request(
+                url,
+                data=parse.urlencode(data).encode("utf-8"),
+                method="POST",
+            )
+            with request.urlopen(req, timeout=5) as response:
+                return response.status == 200
+        except Exception as e:
+            logger.error(f"Telegram answerCallbackQuery error: {e}")
+            return False
+
+    def _send_message_with_buttons(
+        self, text: str, buttons: List[List[Dict[str, str]]]
+    ) -> bool:
+        """Inline Keyboard 버튼이 포함된 메시지 전송.
+
+        Args:
+            text: 메시지 본문
+            buttons: inline_keyboard 배열 (행 × 열)
+
+        Returns:
+            bool: 전송 성공 여부
+        """
+        if not self.enabled:
+            return False
+
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        reply_markup = json.dumps({"inline_keyboard": buttons})
+        data = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "reply_markup": reply_markup,
+        }
+
+        try:
+            req = request.Request(
+                url,
+                data=parse.urlencode(data).encode("utf-8"),
+                method="POST",
+            )
+            with request.urlopen(req, timeout=5) as response:
+                if response.status == 200:
+                    logger.debug("Telegram approval request sent")
+                    return True
+                logger.error(f"Telegram API error: HTTP {response.status}")
+                return False
+        except Exception as e:
+            logger.error(f"Telegram _send_message_with_buttons error: {e}")
+            return False
 
     def _send_message(self, text: str) -> bool:
         """

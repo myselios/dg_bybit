@@ -33,6 +33,7 @@ class Kline:
     close: float
     high: float = 0.0
     low: float = 0.0
+    volume: float = 0.0
 
 
 class MarketRegimeAnalyzer:

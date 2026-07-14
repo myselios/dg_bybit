@@ -452,8 +452,8 @@ def test_clock_injection_for_deterministic_timestamp():
     # When: _get_timestamp() 호출
     timestamp_ms = client._get_timestamp()
 
-    # Then: Fake clock의 timestamp 사용 (고정, -3초 조정)
-    assert timestamp_ms == int((fixed_timestamp - 3.0) * 1000)
+    # Then: Fake clock의 timestamp 사용 (고정, 조정 없음)
+    assert timestamp_ms == int(fixed_timestamp * 1000)
 
     # When: 다시 호출해도 동일 (deterministic)
     timestamp_ms_2 = client._get_timestamp()
@@ -512,3 +512,34 @@ def test_cancel_order_payload_satisfies_bybit_spec():
         assert request_json["symbol"] == "BTCUSDT"
         assert request_json["orderId"] == "test_order_123"
         assert request_json["category"] == "linear"  # Default (V5 Linear USDT)
+
+
+def test_get_request_param_order_matches_signature():
+    """GET 전송 쿼리 순서가 서명 순서(정렬)와 일치해야 한다.
+
+    회귀 방지: 서명은 sorted(params)인데 전송은 삽입 순서라
+    비알파벳 순서 파라미터(closed-pnl 등)에서 retCode 10004 발생하던 버그.
+    """
+    from infrastructure.exchange.bybit_rest_client import BybitRestClient
+
+    client = BybitRestClient(
+        api_key="test_key", api_secret="test_secret",
+        base_url="https://api-testnet.bybit.com",
+    )
+    # 의도적으로 비알파벳 삽입 순서 (startTime이 limit보다 앞)
+    params = {"category": "linear", "symbol": "BTCUSDT",
+              "startTime": "1", "endTime": "2", "limit": "100"}
+
+    with patch("requests.get") as mock_get:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        mock_response.json.return_value = {"retCode": 0, "result": {}}
+        mock_get.return_value = mock_response
+
+        client._make_request("GET", "/v5/position/closed-pnl", params)
+
+        sent_params = mock_get.call_args.kwargs["params"]
+        assert list(sent_params.keys()) == sorted(params.keys()), (
+            "전송 파라미터 순서가 서명 기준(정렬)과 다름 → Bybit 10004"
+        )

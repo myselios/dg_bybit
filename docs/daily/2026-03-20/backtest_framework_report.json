@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-03-23T00:09:11.650280+00:00",
+  "period": "7d",
+  "symbol": "BTCUSDT",
+  "interval": "1min",
+  "total_candles": 10080,
+  "results": {
+    "threshold_2": {
+      "trades": 1747,
+      "win_rate": 0.1019,
+      "net_pnl": -43.0459,
+      "max_dd": 43.075,
+      "sharpe": -794.543
+    },
+    "threshold_3": {
+      "trades": 662,
+      "win_rate": 0.1118,
+      "net_pnl": -19.73,
+      "max_dd": 19.73,
+      "sharpe": -802.5701
+    },
+    "threshold_4": {
+      "trades": 223,
+      "win_rate": 0.1256,
+      "net_pnl": -6.5971,
+      "max_dd": 6.5971,
+      "sharpe": -695.9356
+    }
+  },
+  "optimal_threshold": 2,
+  "recommendation": "threshold=2 권장: Sharpe=-794.54, win_rate=10.2%, net_pnl=$-43.05, max_dd=$43.08. 신호 빈도 높음 — 수수료 영향 모니터링 필요."
+}

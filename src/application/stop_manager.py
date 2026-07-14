@@ -61,23 +61,20 @@ def should_update_stop(
     if entry_working:
         return False
 
-    # (2) Delta 계산
+    # (2) Debounce 체크 (stop_qty=0 포함 — 매 틱 API 호출 방지)
+    time_since_last_update = current_time - last_stop_update_at
+    if time_since_last_update < debounce_seconds:
+        return False
+
+    # (3) stop_qty=0이면 초기 설정 필요 (debounce 통과 후)
     if stop_qty == 0:
-        # stop_qty=0이면 갱신 필요 (초기 상태)
         return True
 
     delta = abs(position_qty - stop_qty)
-    delta_pct = delta / stop_qty if stop_qty > 0 else 0.0
+    delta_pct = delta / stop_qty
 
-    # (3) Delta threshold 체크
+    # (4) Delta threshold 체크
     if delta_pct < threshold_pct:
-        # Delta < 20% → 갱신 불필요
-        return False
-
-    # (4) Debounce 체크
-    time_since_last_update = current_time - last_stop_update_at
-    if time_since_last_update < debounce_seconds:
-        # Debounce 2초 이내 → 차단
         return False
 
     # (5) Delta >= 20% + Debounce 통과 → 갱신 필요
@@ -147,7 +144,24 @@ def recover_missing_stop(
     return False, "NONE"
 
 
-SL_MULTIPLIER = 1.2  # 2026-02-20: 0.7 → 1.2 (손절 완화, 노이즈 필터링)
+# SL 계산 상수 (SSOT: account_builder_policy.md Section 10.1.1)
+# 사이징(build_sizing_params)과 실제 스탑(calculate_stop_price)이 동일 값을 쓰도록 단일화.
+SL_ATR_MULTIPLIER = 0.7  # stop_distance = ATR * 0.7 (Policy Sec 10.1.1)
+SL_MIN_PCT = 0.005       # clamp 하한 0.5%
+SL_MAX_PCT = 0.020       # clamp 상한 2.0%
+SL_FALLBACK_PCT = 0.01   # ATR 없음 → 1.0% fallback
+
+
+def calculate_stop_distance_pct(entry_price: float, atr: Optional[float]) -> float:
+    """손절 거리(pct) 계산 — 사이징/스탑 공용 단일 소스 (Policy Sec 10.1.1).
+
+    stop_distance_pct = clamp(ATR * 0.7 / entry_price, 0.5%, 2.0%).
+    ATR 없음/비정상 또는 entry_price<=0이면 1.0% fallback.
+    """
+    if atr is None or atr <= 0 or entry_price <= 0:
+        return SL_FALLBACK_PCT
+    raw_pct = (atr * SL_ATR_MULTIPLIER) / entry_price
+    return max(SL_MIN_PCT, min(raw_pct, SL_MAX_PCT))
 
 
 @dataclass
@@ -165,8 +179,8 @@ def calculate_stop_price(
     direction: Direction,
     atr: Optional[float],
 ) -> float:
-    """고정 손절가 계산 (평단 대비 2.2%)"""
-    stop_distance_usd = entry_price * 0.022
+    """손절가 계산 (ATR * 0.7, clamp 0.5%~2.0%). ATR 없으면 1% fallback."""
+    stop_distance_usd = entry_price * calculate_stop_distance_pct(entry_price, atr)
 
     if direction == Direction.LONG:
         return entry_price - stop_distance_usd

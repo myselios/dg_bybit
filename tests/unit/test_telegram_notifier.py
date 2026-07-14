@@ -40,16 +40,18 @@ def test_init_with_args():
 
 # Test 3: Disabled 상태 (bot token 없음)
 def test_disabled_when_no_token():
-    """bot token 없으면 disabled"""
-    notifier = TelegramNotifier(bot_token=None, chat_id="12345")
-    assert notifier.enabled is False
+    """bot token 없으면 disabled (env var 격리)"""
+    with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": ""}):
+        notifier = TelegramNotifier(bot_token=None, chat_id="12345")
+        assert notifier.enabled is False
 
 
 # Test 4: Disabled 상태 (chat ID 없음)
 def test_disabled_when_no_chat_id():
-    """chat ID 없으면 disabled"""
-    notifier = TelegramNotifier(bot_token="test_token", chat_id=None)
-    assert notifier.enabled is False
+    """chat ID 없으면 disabled (env var 격리)"""
+    with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": ""}):
+        notifier = TelegramNotifier(bot_token="test_token", chat_id=None)
+        assert notifier.enabled is False
 
 
 # Test 5: send_entry() 성공
@@ -82,24 +84,24 @@ def test_send_entry_success(mock_urlopen):
 
 # Test 6: send_entry() disabled
 def test_send_entry_disabled():
-    """Disabled 상태에서 send_entry() 호출 → 즉시 False 반환"""
-    notifier = TelegramNotifier(bot_token=None, chat_id=None)
-    result = notifier.send_entry(
-        side="Buy",
-        qty=0.012,
-        price=104500,
-        entry_reason="Test entry",
-        equity_before=100000.0,
-        position_size_pct=1.0,
-        wallet_balance=100000.0,
-        positions_count=1,
-        total_invested=0.0,
-        total_value=0.0,
-        total_pnl_pct=0.0,
-        total_pnl_usd=0.0,
-    )
-
-    assert result is False
+    """Disabled 상태에서 send_entry() 호출 → 즉시 False 반환 (env var 격리)"""
+    with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": ""}):
+        notifier = TelegramNotifier(bot_token=None, chat_id=None)
+        result = notifier.send_entry(
+            side="Buy",
+            qty=0.012,
+            price=104500,
+            entry_reason="Test entry",
+            equity_before=100000.0,
+            position_size_pct=1.0,
+            wallet_balance=100000.0,
+            positions_count=1,
+            total_invested=0.0,
+            total_value=0.0,
+            total_pnl_pct=0.0,
+            total_pnl_usd=0.0,
+        )
+        assert result is False
 
 
 # Test 7: send_exit() profit

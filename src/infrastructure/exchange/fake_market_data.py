@@ -82,11 +82,17 @@ class FakeMarketData:
 
         # Phase 11b: Entry Flow test support
         self._atr: Optional[float] = 100.0  # Default ATR (Grid spacing용)
+        self._position_size: float = 0.0  # Default: 포지션 없음
+        self._position_side: str = "None"
+        self._position_avg_price: float = 0.0
         self._last_fill_price: Optional[float] = None  # Default None (Entry 불가 상태)
         self._trades_today: int = 0  # Default 0 (거래 없음)
         self._atr_pct_24h: float = 0.03  # Default 3% (ATR gate 통과)
         self._winrate: float = 0.6  # Default 60% (winrate gate 통과)
         self._position_mode: str = "MergedSingle"  # Default one-way mode
+        # Wave 5A: Regime 필터 테스트 지원
+        self._ma_slope_pct: float = 0.05  # Default: trending_up 아님 (기존 동작 유지)
+        self._atr_percentile: float = 40.0  # Default: ranging
 
     # ========== MarketDataInterface Implementation ==========
 
@@ -360,6 +366,10 @@ class FakeMarketData:
         """BTC Mark Price (USD 기준)."""
         return self._mark_price
 
+    def inject_daily_realized_pnl(self, value: float):
+        """당일 realized PnL 주입 (DrawdownRecovery 테스트용)."""
+        self._daily_realized_pnl_usd = value
+
     def get_daily_realized_pnl_usd(self) -> Optional[float]:
         """당일 realized PnL (USD 단위)."""
         return self._daily_realized_pnl_usd
@@ -415,10 +425,26 @@ class FakeMarketData:
         현재 Position 정보 (Bybit API 구조).
 
         Returns:
-            Dict[str, Any]: Position data (Default: size=0, 포지션 없음)
+            Dict[str, Any]: Position data (inject_position_size로 주입 가능)
         """
-        # Default: 포지션 없음
-        return {"size": "0", "side": "None", "avgPrice": "0"}
+        return {
+            "size": str(self._position_size),
+            "side": self._position_side,
+            "avgPrice": str(self._position_avg_price),
+        }
+
+    def inject_position_size(self, size: float, side: str = "Buy", avg_price: float = 0.0):
+        """
+        포지션 크기 주입 (IN_POSITION 상태 테스트용).
+
+        Args:
+            size: 포지션 크기 (BTC, e.g., 0.001)
+            side: "Buy" or "Sell" (default: "Buy")
+            avg_price: 평균 진입가 (default: 0.0)
+        """
+        self._position_size = size
+        self._position_side = side
+        self._position_avg_price = avg_price
 
     # ========== Phase 11b: Test Injection Methods ==========
 
@@ -487,13 +513,55 @@ class FakeMarketData:
         return self._mark_price
 
     def get_ma_slope_pct(self) -> float:
-        """MA slope (%) - market_regime 계산용 (기본값: 0.05 = 5%)."""
-        return 0.05
+        """MA slope (%) - market_regime 계산용."""
+        return self._ma_slope_pct
 
     def get_atr_percentile(self) -> float:
-        """ATR percentile (0-100) - market_regime 계산용 (기본값: 40.0)."""
-        return 40.0
+        """ATR percentile (0-100) - market_regime 계산용."""
+        return self._atr_percentile
+
+    def inject_ma_slope_pct(self, value: float) -> None:
+        """MA slope (%) 주입 (regime 필터 테스트용)."""
+        self._ma_slope_pct = value
+
+    def inject_atr_percentile(self, value: float) -> None:
+        """ATR percentile 주입 (regime 필터 테스트용)."""
+        self._atr_percentile = value
 
     def get_exchange_server_time_offset_ms(self) -> float:
         """거래소 서버 시간 오프셋 (ms) - 기본값: 10.0ms."""
         return 10.0
+
+    def get_available_usdt(self) -> float:
+        """사용 가능한 USDT 잔고 (주문 가능 금액)."""
+        return self._equity_usdt
+
+    # ========== S6 ThresholdCalibrator Support ==========
+
+    def get_klines(self, limit: int = 500):
+        """
+        Kline 데이터 반환 (ThresholdCalibrator.calibrate용).
+
+        inject_klines()로 주입하거나 기본 합성 데이터 반환.
+
+        Args:
+            limit: 반환할 kline 수 (default: 500)
+
+        Returns:
+            List[Kline]: Kline 목록
+        """
+        from src.application.market_regime import Kline as MRKline
+        if hasattr(self, "_klines") and self._klines:
+            return self._klines[:limit]
+        # 기본 합성 kline: 현재 가격 기반 평탄 데이터 (calibration은 가능하지만 T_TREND 최소값 반환)
+        base_price = self._mark_price
+        return [MRKline(close=base_price) for _ in range(limit)]
+
+    def inject_klines(self, klines):
+        """
+        Kline 데이터 주입 (ThresholdCalibrator 테스트용).
+
+        Args:
+            klines: List[Kline] 주입할 kline 목록
+        """
+        self._klines = klines

@@ -47,7 +47,7 @@ class ExecutionEvent:
     order_link_id: str
     filled_qty: int
     order_qty: int
-    timestamp: float
+    timestamp: float  # Unix 초(seconds) 단위. Bybit execTime(ms)에서 변환 필요 (_ms_to_seconds)
 
     # WS Event Processing (FLOW Section 2.7)
     execution_id: Optional[str] = None  # Bybit execId (dedup용)

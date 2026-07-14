@@ -88,6 +88,217 @@ def parse_jsonl(file_path: Path) -> List[TradeLogV1]:
     return logs
 
 
+def load_journal_df(log_dir: Path) -> pd.DataFrame:
+    """trades_*.jsonl 파일들을 읽어 DataFrame 반환.
+
+    Args:
+        log_dir: trades_*.jsonl 파일이 있는 디렉토리 경로,
+                 또는 단일 .jsonl 파일 경로
+
+    Returns:
+        pd.DataFrame with columns: direction, entry_price, exit_price,
+        qty_btc, realized_pnl_usd, fee_usd, hold_minutes, market_regime,
+        exit_time, order_id, side
+    """
+    all_trades = []
+
+    # 단일 파일 경로인 경우
+    if log_dir.is_file():
+        files = [log_dir]
+    else:
+        files = sorted(log_dir.glob("trades_*.jsonl"))
+
+    for f in files:
+        with open(f) as fp:
+            for line in fp:
+                line = line.strip()
+                if line:
+                    try:
+                        all_trades.append(json.loads(line))
+                    except Exception:
+                        pass
+
+    if not all_trades:
+        return pd.DataFrame(columns=[
+            "order_id", "direction", "side", "entry_price", "exit_price",
+            "qty_btc", "realized_pnl_usd", "fee_usd", "hold_minutes",
+            "market_regime", "exit_time"
+        ])
+
+    df = pd.DataFrame(all_trades)
+
+    # hold_minutes: hold_seconds / 60 (None 유지)
+    if "hold_seconds" in df.columns:
+        df["hold_minutes"] = df["hold_seconds"].apply(
+            lambda x: x / 60 if x is not None and not pd.isna(x) else None
+        )
+    else:
+        df["hold_minutes"] = None
+
+    return df
+
+
+def calculate_journal_stats(df: pd.DataFrame) -> dict:
+    """DataFrame에서 요약 통계 계산.
+
+    Returns:
+        dict with keys: win_rate, avg_pnl, max_loss, total_trades, total_pnl
+    """
+    if df.empty or "realized_pnl_usd" not in df.columns:
+        return {
+            "win_rate": 0.0,
+            "avg_pnl": 0.0,
+            "max_loss": 0.0,
+            "total_trades": 0,
+            "total_pnl": 0.0,
+        }
+
+    pnl = df["realized_pnl_usd"].dropna()
+    wins = (pnl > 0).sum()
+    total = len(pnl)
+
+    return {
+        "win_rate": wins / total if total > 0 else 0.0,
+        "avg_pnl": float(pnl.mean()) if total > 0 else 0.0,
+        "max_loss": float(pnl.min()) if total > 0 else 0.0,
+        "total_trades": int(total),
+        "total_pnl": float(pnl.sum()),
+    }
+
+
+def load_all_trades(log_dir: str) -> pd.DataFrame:
+    """
+    지정 디렉토리의 모든 trades_*.jsonl 파일을 로드하여 DataFrame 반환.
+
+    - entry_time null → NaN으로 처리 (crash 없음)
+    - hold_seconds null → NaN으로 처리
+    - exit_time float → datetime 변환 없이 raw float 유지 (하류에서 변환)
+    - 파일이 없으면 빈 DataFrame 반환
+
+    Args:
+        log_dir: 로그 디렉토리 경로 (str)
+
+    Returns:
+        pd.DataFrame: 모든 트레이드 레코드 (정렬: exit_time asc)
+    """
+    log_path = Path(log_dir)
+    if not log_path.exists():
+        return pd.DataFrame()
+
+    files = sorted(log_path.glob("trades_*.jsonl"))
+    if not files:
+        return pd.DataFrame()
+
+    all_rows: list = []
+    for f in files:
+        with open(f, encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    all_rows.append(row)
+                except json.JSONDecodeError:
+                    pass
+
+    if not all_rows:
+        return pd.DataFrame()
+
+    # 구 스키마(2026-02-12 이전) 호환: 누락 필드에 기본값 적용
+    for row in all_rows:
+        row.setdefault("market_regime", "unknown")
+        row.setdefault("signal_reason", "")
+        row.setdefault("hold_seconds", None)
+        row.setdefault("fee_usd", 0.0)
+        row.setdefault("side", "Buy")
+
+    df = pd.DataFrame(all_rows)
+
+    # null 처리: entry_time, hold_seconds → NaN
+    for col in ("entry_time", "hold_seconds", "exit_time"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        else:
+            df[col] = float("nan")
+
+    # realized_pnl_usd null → 0; 누락 시 0.0 컬럼 생성
+    if "realized_pnl_usd" in df.columns:
+        df["realized_pnl_usd"] = pd.to_numeric(df["realized_pnl_usd"], errors="coerce").fillna(0.0)
+    else:
+        df["realized_pnl_usd"] = 0.0
+
+    # exit_time 기준 정렬 (NaT 뒤로)
+    df = df.sort_values("exit_time", na_position="last").reset_index(drop=True)
+
+    return df
+
+
+def get_summary_stats(df: pd.DataFrame) -> dict:
+    """
+    요약 통계 반환.
+
+    Args:
+        df: load_all_trades() 또는 load_journal_df() 로 로드한 DataFrame
+
+    Returns:
+        dict with:
+            - total_trades: int
+            - win_rate: float (0.0~1.0)
+            - total_pnl: float
+            - avg_win: float (승리 트레이드 평균 PnL)
+            - avg_loss: float (손실 트레이드 평균 PnL, 음수)
+            - rr_ratio: float (avg_win / abs(avg_loss), 0 if no losses)
+            - max_drawdown: float (최대 드로다운 USD, 0 이하)
+    """
+    empty: dict = {
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "total_pnl": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "rr_ratio": 0.0,
+        "max_drawdown": 0.0,
+    }
+
+    pnl_col = None
+    for candidate in ("realized_pnl_usd", "pnl"):
+        if candidate in df.columns:
+            pnl_col = candidate
+            break
+
+    if df.empty or pnl_col is None:
+        return empty
+
+    pnl = df[pnl_col].dropna()
+    total = len(pnl)
+    if total == 0:
+        return empty
+
+    wins = pnl[pnl > 0]
+    losses = pnl[pnl < 0]
+
+    avg_win = float(wins.mean()) if not wins.empty else 0.0
+    avg_loss = float(losses.mean()) if not losses.empty else 0.0
+    rr_ratio = avg_win / abs(avg_loss) if avg_loss != 0 else 0.0
+
+    # max drawdown 계산
+    cum_pnl = pnl.cumsum()
+    running_max = cum_pnl.cummax()
+    drawdown = cum_pnl - running_max
+    max_drawdown = float(drawdown.min()) if not drawdown.empty else 0.0
+
+    return {
+        "total_trades": int(total),
+        "win_rate": float((pnl > 0).sum()) / total,
+        "total_pnl": float(pnl.sum()),
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "rr_ratio": rr_ratio,
+        "max_drawdown": max_drawdown,
+    }
+
+
 def to_dataframe(logs: List[TradeLogV1]) -> pd.DataFrame:
     """
     TradeLogV1 리스트를 DataFrame으로 변환

@@ -69,9 +69,12 @@ class SizingResult:
 
 
 # HOTFIX 2026-03-06: Limit max contracts to prevent margin issues
-MAX_CONTRACTS_HARD_CAP = 1000  # Reset: Allow normal sizing
+MAX_CONTRACTS_HARD_CAP = 3  # Safety limit: prevent 110007 ab not enough (2026-03-19: 5→3, 4계약 시 잔고부족 반복)
 
-def calculate_contracts(params: SizingParams) -> SizingResult:
+def calculate_contracts(
+    params: SizingParams,
+    kelly_fraction: float | None = None,
+) -> SizingResult:
     """
     Position sizing (loss budget + margin 제약) — Linear USDT
 
@@ -87,19 +90,22 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
             - qty_step: Lot size (예: 1)
             - tick_size: Tick size (예: 0.5)
             - contract_size: Contract size in BTC (기본: 0.001)
+        kelly_fraction: Kelly 분수 (Optional). 제공 시 Kelly 기반
+            position budget(equity * fraction)과 loss_budget 중 min 선택.
 
     Returns:
         SizingResult: contracts + reject_reason
 
     Steps:
         1. Loss budget 기준 qty 계산 (Linear 공식)
+        1a. [Optional] Kelly budget 계산 → loss_budget과 min()
         2. Margin 기준 qty 계산
         3. min(loss_based, margin_based)
         4. Qty → Contracts 변환 (contract_size 기준)
         5. Tick/Lot size 보정
         6. 보정 후 재검증 (margin feasibility)
         7. 최소 수량 검증
-        8. HOTFIX: Max contracts hard cap (5)
+        8. HOTFIX: Max contracts hard cap
 
     Linear Formula:
         loss_usdt_at_stop = qty * entry_price * stop_distance_pct
@@ -114,13 +120,22 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
         params.entry_price_usd * params.stop_distance_pct
     )
 
+    # Step 1a: Kelly budget override (optional, 보수적 선택)
+    if kelly_fraction is not None and kelly_fraction > 0:
+        kelly_budget_usdt = params.equity_usdt * kelly_fraction
+        # Kelly budget → qty 환산 (loss budget과 동일 공식 역산)
+        qty_from_kelly = kelly_budget_usdt / (
+            params.entry_price_usd * params.stop_distance_pct
+        )
+        qty_from_loss = min(qty_from_loss, qty_from_kelly)
+
     # Step 2: Margin 기준 qty 계산
     # available_usdt = equity_usdt * 0.5 (50%만 사용, buffer)
     # Reason: totalEquity != availableBalance (Bybit UNIFIED account)
     # availableBalance can be significantly lower due to margin requirements
     # max_notional_usdt = available_usdt * leverage
     # qty_from_margin = max_notional_usdt / entry_price
-    available_usdt = params.available_usdt * 0.8  # Reduced from 0.8 to 0.5
+    available_usdt = params.available_usdt * 0.8  # 80% 사용 (20% 버퍼)
     max_notional_usdt = available_usdt * params.leverage
     qty_from_margin = max_notional_usdt / params.entry_price_usd
 
@@ -137,19 +152,20 @@ def calculate_contracts(params: SizingParams) -> SizingResult:
     if contracts < params.qty_step:
         return SizingResult(contracts=0, reject_reason="qty_below_minimum")
 
+    # HOTFIX 2026-03-06: Hard cap on max contracts to prevent "ab not enough" error
+    # Manual test showed 5 contracts works, 9 contracts fails
+    # Apply before re-validation so margin check uses capped value
+    if contracts > MAX_CONTRACTS_HARD_CAP:
+        contracts = MAX_CONTRACTS_HARD_CAP
+
     # Step 7: 보정 후 재검증 (margin feasibility, USDT-denominated)
     actual_qty = contracts * params.contract_size
     notional_usdt = actual_qty * params.entry_price_usd
     required_margin_usdt = notional_usdt / params.leverage
     fee_buffer_usdt = notional_usdt * params.fee_rate * 2  # entry + exit
 
-    if required_margin_usdt + fee_buffer_usdt > params.available_usdt:
+    if required_margin_usdt + fee_buffer_usdt > available_usdt:
         return SizingResult(contracts=0, reject_reason="margin_insufficient")
-
-    # HOTFIX 2026-03-06: Hard cap on max contracts to prevent "ab not enough" error
-    # Manual test showed 5 contracts works, 9 contracts fails
-    if contracts > MAX_CONTRACTS_HARD_CAP:
-        contracts = MAX_CONTRACTS_HARD_CAP
 
     # 성공
     return SizingResult(contracts=contracts, reject_reason=None)

@@ -418,3 +418,71 @@ class TestBybitAdapterSessionRiskTracking:
 
         # Assert
         assert loss_streak == 3
+
+
+class TestMsToSecondsConversion:
+    """execTime ms → timestamp seconds 변환 검증 (Wave 7 Stream A)"""
+
+    def test_ms_to_seconds_converts_milliseconds(self):
+        """execTime (ms) → timestamp (seconds) 변환: 1000으로 나누기"""
+        from infrastructure.exchange.bybit_adapter import _ms_to_seconds
+
+        exec_time_ms = 1774374327646.0  # 2026-03-24 17:45 UTC in ms
+        result = _ms_to_seconds(exec_time_ms)
+
+        assert abs(result - 1774374327.646) < 0.001
+
+    def test_ms_to_seconds_passes_through_small_value(self):
+        """이미 초 단위인 값(< 1e12)은 그대로 반환"""
+        from infrastructure.exchange.bybit_adapter import _ms_to_seconds
+
+        exec_time_s = 1_000_000_000.0  # 2001-09-09 UTC in seconds
+        result = _ms_to_seconds(exec_time_s)
+
+        assert result == exec_time_s
+
+    def test_execution_event_timestamp_not_negative(self):
+        """execTime ms → hold_seconds가 음수가 되지 않음 검증"""
+        from infrastructure.exchange.bybit_adapter import _ms_to_seconds
+        import time
+
+        exec_time_ms = 1774374327646.0  # Bybit execTime (ms)
+        timestamp_s = _ms_to_seconds(exec_time_ms)
+        now_s = time.time()
+
+        # timestamp_s와 now_s가 동일한 단위(초)이므로 차이가 합리적 범위
+        diff = now_s - timestamp_s
+        assert diff > -1e6, f"hold_seconds would be negative: {diff}"
+
+    def test_ws_execution_event_timestamp_in_seconds(self):
+        """WS 체결 이벤트: execTime ms → ExecutionEvent.timestamp seconds"""
+        # Arrange
+        rest_client = MagicMock()
+        ws_client = MagicMock()
+        adapter = BybitAdapter(rest_client, ws_client, testnet=True)
+
+        exec_time_ms = 1774374327646  # 2026-03-24 17:45 UTC ms
+        raw_events = [
+            {
+                "execType": "Trade",
+                "orderId": "order-001",
+                "orderLinkId": "link-001",
+                "execQty": "0.001",
+                "orderQty": "0.001",
+                "execTime": str(exec_time_ms),
+                "execPrice": "70000.0",
+                "execFee": "0.07",
+                "leavesQty": "0",
+            }
+        ]
+        ws_client.get_execution_events.return_value = raw_events
+
+        # Act
+        events = adapter.get_fill_events()
+
+        # Assert: timestamp가 초 단위 (ms/1000)
+        assert len(events) == 1
+        expected_ts = exec_time_ms / 1000.0
+        assert abs(events[0].timestamp - expected_ts) < 0.001
+        # timestamp가 합리적인 초 단위 범위 (2020~2030년)
+        assert 1_580_000_000 < events[0].timestamp < 1_900_000_000
